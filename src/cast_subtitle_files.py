@@ -135,9 +135,14 @@ class SubtitleFileMixin:
         self._caption_cue_pending = token
 
         def work():
-            if track is not None:
-                return subtitle_encoding.load_embedded_timed_cues(source, track.index)
-            return subtitle_encoding.load_timed_cues(source)
+            try:
+                if track is not None:
+                    return subtitle_encoding.load_embedded_timed_cues(source, track.index)
+                return subtitle_encoding.load_timed_cues(source)
+            except subtitle_encoding.SubtitleEncodingError:
+                # An unsupported/unreadable sidecar simply has no hover preview.
+                # Cache "no cues" so hovering cannot retry and log it per move.
+                return subtitle_encoding.TimedCues((), (), ())
 
         def done(cues):
             if getattr(self, "_caption_cue_pending", None) == token:
@@ -151,6 +156,8 @@ class SubtitleFileMixin:
         def failed(message):
             if getattr(self, "_caption_cue_pending", None) == token:
                 self._caption_cue_pending = None
+            if source_valid():
+                self._caption_cue_cache = (key, subtitle_encoding.TimedCues((), (), ()))
             if not getattr(self, "_closing", False):
                 self._console(f"Subtitle cue preview unavailable: {message}")
 

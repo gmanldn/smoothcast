@@ -32,7 +32,10 @@
             Message="A different SmoothCast package with this version is already installed. Use the installed package to repair it, or install a newer version." />
     <MediaTemplate EmbedCab="yes" />
     <Launch Condition="VersionNT64" Message="SmoothCast needs a 64-bit version of Windows." />
-    <Launch Condition="VersionNT &gt;= 1000" Message="SmoothCast needs Windows 10 or newer." />
+    <!-- Windows Installer reports Windows 10/11 as VersionNT 603 (and WindowsBuild 9600)
+         to packages without a Windows 10 compatibility declaration, so 603 is the only
+         usable floor; the frozen app's GTK4 runtime enforces Windows 10 in practice. -->
+    <Launch Condition="VersionNT &gt;= 603" Message="SmoothCast needs Windows 10 or newer." />
 
     <Icon Id="SmoothCast.ico" SourceFile="$(IconFile)" />
     <Property Id="ARPPRODUCTICON" Value="SmoothCast.ico" />

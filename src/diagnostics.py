@@ -9,6 +9,7 @@ to run without GTK, a display or a prepared virtual environment.
 from __future__ import annotations
 
 import command_trace
+import jank_watchdog
 
 import json
 import os
@@ -190,6 +191,8 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "reliability": recent_reliability(reliability),
         # Deliberately excludes paths, media titles, receiver names and payloads.
         "command_traces": command_trace.recent(),
+        # Main-loop jank: stall count and p99 lag when the detector is wired (#442).
+        "jank": jank_watchdog.diagnostics_summary(),
         # Milliseconds since SmoothCast code started: where the first second goes.
         "startup": startup_timeline.snapshot(),
         # Clean vs unclean previous exits and how long the last shutdown took (#465).

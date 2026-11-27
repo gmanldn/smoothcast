@@ -8,6 +8,15 @@ smoothcast.egg-info/
 # Python caches
 __pycache__/
 *.pyc
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.benchmarks/
+
+# Local tool/test artifacts created at the repo root
+.cache/
+.config/
 
 # OS / editor
 .DS_Store

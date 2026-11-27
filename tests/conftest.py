@@ -51,6 +51,24 @@ _REAL_FFMPEG_PROBE_MODULES = {"test_ffmpeg_version_guard"}
 
 
 @pytest.fixture(autouse=True)
+def _no_real_cast_status_connection():
+    """A failed fake catt read must never open a real PyChromecast socket.
+
+    ``CattBackend`` falls back to a kept direct status connection (#686);
+    tests that want it substitute ``backend._mirror`` with a fake.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    try:
+        import castctl
+    except ImportError:
+        yield
+        return
+    with mock.patch.object(castctl._StatusMirror, "info", lambda self, host, timeout: None), \
+         mock.patch.object(castctl._StatusMirror, "connected", lambda self, host: False):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _stub_ffmpeg_version_probe(request):
     """Tests that mock subprocesses must not hit the real ``ffmpeg -version`` probe.
 

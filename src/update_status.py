@@ -179,3 +179,4 @@ def describe(f: UpdateFacts) -> UpdateStatus:
                     f"Build {short(candidate_id)} is available on {channel}. Nothing is installed yet.",
                     "check_now")
     return make("current", "SmoothCast is up to date", f"You are running the latest {channel} build.", "check_now")
+

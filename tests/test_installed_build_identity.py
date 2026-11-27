@@ -41,7 +41,8 @@ class InstalledBuildIdentityTests(unittest.TestCase):
 
     def test_clean_checkout_identity_survives_copy_without_git(self):
         sha = self.git("rev-parse", "HEAD")
-        expected_date = self.git("show", "-s", "--format=%cI", sha)[:10]
+        stamp = self.git("show", "-s", "--format=%cI", sha)
+        expected_date = stamp[:10] + " " + stamp[11:13] + stamp[14:16]
         with install_location.installed_sources(self.source, self.target):
             self.assertFalse((self.target / ".git").exists())
             self.assertEqual(version.read_checkout_revision(self.target), sha)
@@ -65,7 +66,8 @@ class InstalledBuildIdentityTests(unittest.TestCase):
 
     def test_install_rollback_restores_previous_identity(self):
         old = self.git("rev-parse", "HEAD")
-        old_date = self.git("show", "-s", "--format=%cI", old)[:10]
+        stamp = self.git("show", "-s", "--format=%cI", old)
+        old_date = stamp[:10] + " " + stamp[11:13] + stamp[14:16]
         with install_location.installed_sources(self.source, self.target):
             pass
         self.git("commit", "--allow-empty", "-qm", "new")
@@ -98,7 +100,10 @@ class InstalledBuildIdentityTests(unittest.TestCase):
         self.assertEqual(version.read_checkout_revision(self.target), sha)
         self.assertEqual(version.read_checkout_commit_date(self.target), "2026-11-09")
         self.assertIsNone(version.read_checkout_commit_date(self.target, "b" * 40))
-        for date in ("not-a-date", "2026-13-40", "2026-11-09T00:00:00Z"):
+        marker.write_text(f"{sha}\n2026-11-09 0726\n", encoding="ascii")
+        self.assertEqual(version.read_checkout_commit_date(self.target), "2026-11-09 0726")
+        for date in ("not-a-date", "2026-13-40", "2026-11-09T00:00:00Z",
+                     "2026-11-09 2460", "2026-11-09 726"):
             marker.write_text(f"{sha}\n{date}\n", encoding="ascii")
             self.assertIsNone(version.read_checkout_commit_date(self.target), date)
         marker.write_text(sha + "\n", encoding="ascii")

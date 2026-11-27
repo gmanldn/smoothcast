@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -98,6 +99,21 @@ def candidate_manifest(repo: Path, commit: str, *, timeout: int = GIT_TIMEOUT,
         return export_manifest(repo, commit, Path(scratch), timeout)
 
 
+def require_free_space(root: Path, entries: object, generations: int = 2) -> None:
+    """Refuse to stage unless ``generations`` copies of the candidate fit (#580)."""
+    need = 0
+    if isinstance(entries, dict):
+        for attributes in entries.values():
+            size = attributes.get("size") if isinstance(attributes, dict) else None
+            if isinstance(size, int) and size > 0:
+                need += size
+    probe = Path(root)
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    if shutil.disk_usage(probe).free < need * generations:
+        raise SourceError("Not enough free space to stage the update safely")
+
+
 def stage_trusted_candidate(root: Path, repo: Path, *, channel: str,
                             timeout: int = GIT_TIMEOUT, verify=signed_provenance) -> Path:
     """Pin, verify, export and stage one trusted candidate; never activate it.
@@ -113,4 +129,5 @@ def stage_trusted_candidate(root: Path, repo: Path, *, channel: str,
         raise SourceError("Candidate signature could not be verified against a trusted key")
     with tempfile.TemporaryDirectory(prefix="smoothcast-candidate-") as scratch:
         entries = export_manifest(repo, commit, Path(scratch), timeout)
+        require_free_space(root, entries)
         return managed_generations.stage_local_snapshot(root, Path(scratch) / "tree", commit, entries)

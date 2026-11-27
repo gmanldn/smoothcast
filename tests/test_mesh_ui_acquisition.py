@@ -64,3 +64,18 @@ def test_popover_builds_both_switches_with_accessible_labels_and_a_guarded_handl
     assert "AccessibleProperty.LABEL" in options  # each switch is named for screen readers
     toggled = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_toggled")
     assert "_syncing" in ast.get_source_segment(source, toggled)  # programmatic sync cannot re-save
+
+
+def test_acquisition_defaults_are_on_for_legacy_and_fresh_profiles(tmp_path):
+    path = tmp_path / "config.json"
+    assert mesh_service.load_settings(path)["remote_acquisition"] is True
+    assert mesh_service.load_settings(path)["accept_acquisition"] is True
+    path.write_text(json.dumps({"mesh_remote_acquisition": False,
+                                "mesh_accept_acquisition": False}))
+    assert mesh_service.load_settings(path)["remote_acquisition"] is True
+    assert mesh_service.load_settings(path)["accept_acquisition"] is True
+    path.write_text(json.dumps({"acquisition_defaults_applied": True,
+                                "mesh_remote_acquisition": False,
+                                "mesh_accept_acquisition": False}))
+    assert mesh_service.load_settings(path)["remote_acquisition"] is False
+    assert mesh_service.load_settings(path)["accept_acquisition"] is False

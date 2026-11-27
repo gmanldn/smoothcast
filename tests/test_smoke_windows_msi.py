@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "ci"))
 import smoke_windows_msi as smoke  # noqa: E402
@@ -41,3 +42,16 @@ class LifecyclePreflightTests(unittest.TestCase):
         for name in ("PYTHONPATH", "MSYSTEM", "GI_TYPELIB_PATH"):
             self.assertNotIn(name, env)
         self.assertNotIn("hostile", env["PATH"])
+
+    def test_installed_cli_version_must_match_exactly(self):
+        expected = "SmoothCast v2.1.6"
+        for output in ("SmoothCast v2.1.60", "prefix " + expected, expected + " extra"):
+            with self.subTest(output=output), patch.object(
+                smoke.subprocess, "run", return_value=smoke.subprocess.CompletedProcess(
+                    [], 0, stdout=output, stderr="")
+            ), self.assertRaises(smoke.InstallerError):
+                smoke.cli_check(Path("SmoothCastCLI.exe"), ["--version"], expected, {}, Path("."))
+        with patch.object(smoke.subprocess, "run", return_value=smoke.subprocess.CompletedProcess(
+            [], 0, stdout=expected + "\n", stderr=""
+        )):
+            smoke.cli_check(Path("SmoothCastCLI.exe"), ["--version"], expected, {}, Path("."))

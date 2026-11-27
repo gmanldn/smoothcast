@@ -110,3 +110,12 @@ def test_failed_stage_leaves_an_existing_generation_untouched(tmp_path, checkout
                                                verify=lambda *a: True)
     assert first.is_dir() and (first / "src" / "version.py").is_file()
     assert not (root / "current").exists() and not (root / "previous").exists()
+
+
+def test_free_space_check_needs_two_generations(tmp_path, monkeypatch):
+    entries = {"a": {"size": 100}, "b": {"size": 50}}
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: type("U", (), {"free": 299})())
+    with pytest.raises(managed_source.SourceError):
+        managed_source.require_free_space(tmp_path / "new", entries)
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: type("U", (), {"free": 300})())
+    managed_source.require_free_space(tmp_path / "new", entries)

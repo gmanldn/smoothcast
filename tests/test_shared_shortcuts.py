@@ -23,7 +23,9 @@ def test_single_source_maps_all_required_keys_to_both_surfaces():
     gtk = (ROOT / "src" / "cast_ui.py").read_text()
     for item in shortcut_map.SHARED:
         assert 'add("' + item.desktop + '"' in gtk, item.desktop
-    lifecycle = (ROOT / "src" / "cast_lifecycle.py").read_text()
+    # The shortcuts action lives in the lifecycle-actions mixin after the
+    # #634 split.
+    lifecycle = (ROOT / "src" / "cast_lifecycle_actions.py").read_text()
     assert "shortcut_map.desktop_labels()" in lifecycle
     html = portal._page().decode("utf-8")
     assert "__SC_SHORTCUTS__" not in html
@@ -47,7 +49,9 @@ def test_web_key_handler_protects_inputs_focus_permissions_and_busy_state():
     assert "typeof __SC_SHORTCUTS__" in html
     if shutil.which("node"):
         start = html.index("function shortcutCommand(")
-        end = html.index('window.addEventListener("keydown"', start)
+        # Stop before the extra-transport wiring, which runs at page load and
+        # needs the page scope; this harness exercises the pure function only.
+        end = html.index("const extraTransportClient", start)
         function = html[start:end]
         runner = function + """
 const good={active:true,busy:false,can_seek:true,duration:7500,volume:50};

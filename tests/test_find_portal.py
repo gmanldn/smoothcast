@@ -58,6 +58,7 @@ class Host(PortalQueueMixin):
 
     def _enqueue(self, paths):
         self.enqueued += paths
+        self.queue += paths
 
 
 def test_queue_add_key_resolves_inside_the_library_and_enqueues(tmp_path):
@@ -78,13 +79,13 @@ def test_queue_add_key_refuses_unknown_remote_and_escaped_paths(tmp_path):
     with pytest.raises(portal.PortalRequestError) as escaped:
         host._portal_queue_action("queue_add_key", {"key": host.key})
     assert escaped.value.status == 404 and host.enqueued == []
+    # Up Next edits do not own the receiver: a busy transport still accepts the add (#324).
     host.busy = True
     host._library_indexer._conn.execute(
         "UPDATE entries SET rel_path='Alien (1979).mkv' WHERE content_key=?", (host.key,))
     host._library_indexer._conn.commit()
-    with pytest.raises(portal.PortalRequestError) as busy:
-        host._portal_queue_action("queue_add_key", {"key": host.key})
-    assert busy.value.status == 409
+    assert host._portal_queue_action("queue_add_key", {"key": host.key}) == "Added to the queue."
+    assert host.enqueued == [str((host.lib / "Alien (1979).mkv").resolve())]
 
 
 def test_queue_add_key_over_http_validates_key_and_requires_session():
@@ -108,3 +109,28 @@ def test_add_button_is_enabled_for_any_online_copy_and_disabled_when_all_are_off
     html = page()
     assert 'if(!(it.copies||[]).some(c=>c.online)){add.disabled=true;add.title="Its computer is offline"}' in html
     assert "coming soon" not in html.split('const input=$("findInput")')[1]
+
+
+def test_find_has_explicit_sources_and_recovery_controls():
+    html = page()
+    for ident in ("findForm", "findSubmit", "findClear", "findReset", "findEmpty", "findBrowse"):
+        assert html.count(f'id="{ident}"') == 1
+    assert 'role="search" aria-label="Search shared libraries"' in html
+    assert 'id="youtubeSearch" type="button"' in html
+    assert 'Searches your house as you type' in html
+    assert 'input.dispatchEvent(new Event("input"));run()' in html
+    assert 'if(ul.children.length)out.append(h,ul)' in html
+    assert 'if(current!==generation||csrf!==session)return;' in html
+    assert 'No currently available matches. Turn off Available now' in html
+
+
+
+def test_find_open_torrents_are_explicit_and_use_existing_acquisition():
+    html = page()
+    for ident in ("magnetSearch", "magnetAuto", "magnetResultsPanel", "magnetAuthorised"):
+        assert html.count(f'id="{ident}"') == 1
+    assert 'type="checkbox"><span>Search open torrents as I type' in html
+    assert 'setTimeout(()=>request(),850)' in html
+    assert 'post("/api/search/magnets",{q:job.q})' in html
+    assert 'url:"magnet:?xt=urn:btih:"+result.id' in html
+    assert 'job.generation===generation&&csrf===job.session' in html

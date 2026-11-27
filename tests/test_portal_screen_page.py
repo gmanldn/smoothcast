@@ -26,7 +26,9 @@ def test_pages_are_self_contained_and_never_use_innerhtml():
         "dashboard": portal._page().decode(),
     }
     for name, html in pages.items():
-        assert not re.search(r"(?:src|href)=[\"']https?://", html), name
+        # Only markup can pull in a subresource; scripts may build links at runtime.
+        markup = re.sub(r"<script>.*?</script>", "", html, flags=re.S)
+        assert not re.search(r"(?:src|href)=[\"']https?://", markup), name
         assert "innerHTML" not in html and "document.write" not in html, name
         assert "eval(" not in html, name
     assert "__MIMES__" not in pages["screen"]

@@ -43,6 +43,7 @@ import room_event_replay
 import portal_screen_page
 import portal_media
 import portal_mesh_http
+import portal_update_http
 import portal_mesh_panel
 import portal_screens_http
 import portal_uploads
@@ -165,8 +166,8 @@ def _page() -> bytes:
     # Keep optional panels inside #dashboard: their grid placement and login
     # visibility must follow the rest of the authenticated room controls.
     dashboard_close = '</div>\n<dialog id="shortcutsHelp"'
-    markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
-                           + portal_mesh_panel.panel_html() + dashboard_close, 1)
+    markup = _HTML.replace("<!--SC_MESH_DETAILS-->", portal_mesh_panel.panel_html(), 1)
+    markup = markup.replace(dashboard_close, portal_screen_page.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_VERSION__", version.identity_label())
             .replace("<!--SC_DEMO-->", _demo_badge())
@@ -224,6 +225,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._sessions: OrderedDict[str, _Session] = OrderedDict()
         self.queue_ids: set[str] = set()
         portal_screens_http.attach(self)
+        self.update_runner = None   # UpdateRunner, attached by the app (#711)
+        self.update_allow_remote = False
         self.mesh_feed = None       # set by the app when the mesh runs (#402/#405)
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
@@ -814,6 +817,11 @@ class _Handler(BaseHTTPRequestHandler):
         state["room"] = self.server.room.snapshot(participant_id)
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
+        state["link_search_available"] = (jobs.search_available() if jobs is not None
+                                          and callable(getattr(jobs, "search_available", None))
+                                          else bool(state["link_capabilities"].get("youtube")))
+        state["magnet_search_available"] = bool(jobs is not None
+            and callable(getattr(jobs, "magnet_search_available", None)) and jobs.magnet_search_available())
         state["link_storage_available"] = jobs.storage_available() if jobs is not None else None
         provider = getattr(self.server, "link_readiness_provider", None)
         if provider is not None:
@@ -1063,6 +1071,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
+        if portal_update_http.route(self, "GET", path):
+            return
         if portal_mesh_http.route(self, "GET", path):
             return
         if path == "/api/libraries" or path.startswith("/api/libraries/"):
@@ -1125,15 +1135,17 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
         if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/link-jobs/retry", "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
         if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/link-jobs/retry", "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
                 return
+        if portal_update_http.route(self, "POST", path):
+            return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads/target":
@@ -1146,6 +1158,17 @@ class _Handler(BaseHTTPRequestHandler):
                 })
                 return self._send(200, {"ok": True, **target})
             except PortalRequestError as exc:
+                return self._exception_error(exc)
+        if path == "/api/uploads/announce":
+            if not self._authenticated(csrf=True):
+                return self._error(403, guest_messages.SESSION_ENDED)
+            try:
+                if self.server.uploads is None:
+                    return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
+                body = self._body()
+                count = self.server.uploads.announce(self._cookie_token() or "", body.get("files"))
+                return self._send(200, {"ok": True, "announced": count})
+            except (PortalRequestError, portal_uploads.UploadError) as exc:
                 return self._exception_error(exc)
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
@@ -1165,9 +1188,12 @@ class _Handler(BaseHTTPRequestHandler):
                     })
                     if target.get("target_id") != cast_target:
                         raise PortalRequestError(409, "Casting target changed. Confirm the current receiver again.")
+                bi, bt = body.get("batch_index"), body.get("batch_total")
+                batch = (bi, bt) if type(bi) is int and type(bt) is int else None
                 created = self.server.uploads.create(
                     token, body.get("name"), body.get("size"),
-                    self.client_address[0], queue_only=queue_only, cast_target=cast_target if not queue_only else None)
+                    self.client_address[0], queue_only=queue_only, cast_target=cast_target if not queue_only else None,
+                    batch=batch)
                 key = self.server._session_key(token)
                 if not self.server.session_key_active(key):
                     self.server.uploads.revoke_owner_keys({key})
@@ -1262,6 +1288,17 @@ class _Handler(BaseHTTPRequestHandler):
                 "room": self.server.room.snapshot(participant.id),
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
+        if path == "/api/search/magnets":
+            if not self._authenticated(csrf=True):
+                return self._error(403, guest_messages.SESSION_ENDED)
+            jobs = self.server.link_jobs
+            if jobs is None or not callable(getattr(jobs, "search_magnets", None)):
+                return self._error(503, "Archive search is unavailable in this room.")
+            owner = self.server._session_key(self._cookie_token() or "")
+            try:
+                return self._send(200, {"results": jobs.search_magnets(owner, body.get("q"))})
+            except link_acquisition.LinkError as exc:
+                return self._error(exc.status, exc.message)
         if path == "/api/search/youtube":
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
@@ -1716,6 +1753,7 @@ _NODES_HTML = r"""<!doctype html>
 <style>/*TOKENS*/
 :root{font:16px ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+.update-btn{margin-left:auto;min-height:44px;padding:0 16px;border-radius:999px;border:2px solid var(--accent);background:var(--bg);color:var(--accent);font-weight:750;cursor:pointer}.update-btn:disabled{opacity:.7;cursor:progress}
 .app-bar{position:sticky;top:0;display:flex;align-items:center;gap:12px;height:64px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
 .home-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none}
 .home-btn svg{width:22px;height:22px;fill:currentColor}
@@ -1751,7 +1789,7 @@ dialog#shortcutsHelp::backdrop{background:var(--scrim)}
 #shortcutsList{display:grid;gap:8px}
 #shortcutsList li{display:flex;justify-content:space-between;gap:12px;align-items:center}
 #shortcutsList kbd{border:1px solid var(--border);border-radius:6px;padding:4px 7px;white-space:nowrap}
-button.secondary{background:var(--secondary);color:var(--on-secondary)}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
+button.secondary{background:var(--secondary);color:var(--on-secondary)}button:disabled,input:disabled{opacity:.55;cursor:default}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions button{flex:1 1 120px}.actions input{flex:1 1 160px;min-width:0}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
 progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:var(--danger);min-height:1.4em}
 .participants{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 0}.person{display:flex;align-items:center;gap:6px;background:var(--input);border:1px solid var(--chip-line);border-radius:999px;padding:4px 9px 4px 4px;font-size:.82rem}.person.offline{opacity:.45}.avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:750;color:var(--avatar-text)}
@@ -1777,7 +1815,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .field-hint{margin:6px 0}
 #dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 #dashboard>section,#dashboard>details,#dashboard>.welcome,#dashboard>p{margin:0;min-width:0}
-#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
 #dashboard nav{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0;padding:8px 0;background:var(--bg);scrollbar-width:thin}
 #dashboard nav a{white-space:nowrap;flex:none}
 .welcome{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
@@ -1797,12 +1835,37 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #playback .actions button{min-height:52px}
 #playback #title{overflow-wrap:anywhere}
 #playback #volume{margin-top:5px}
+#findPanel .find-intro{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+#findPanel .find-intro h2{margin:0}
+#findPanel .find-search{background:var(--input);border:1px solid var(--line);border-radius:16px;padding:clamp(12px,2.5vw,22px);margin:14px 0 18px;min-width:0}
+#findPanel .find-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+#findPanel #findInput{min-width:0;margin:0;font-size:1.05rem;min-height:48px;background:var(--card)}
+#findPanel #findClear{min-height:48px;padding-inline:12px}
+#findPanel .find-sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:8px;margin-top:12px}
+#findPanel .find-source{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);min-width:0}
+#findPanel .find-source button{width:100%;min-height:44px}
+#findPanel .find-source p{margin:6px 0 0}
 #findChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#findPanel #findChips button{min-height:44px;padding:8px 13px}
+#findPanel #findChips button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+#findPanel .find-results-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:18px}
+#findPanel .find-results-head h3{margin:0;font-size:1.1rem}
+#findPanel #findStatus{margin:6px 0 12px;overflow-wrap:anywhere}
+#findPanel .find-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px;margin:8px 0 18px}
+#findPanel .find-list .queue-item{display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--input);min-width:0}
+#findPanel .find-list .queue-item strong{font-size:1rem;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+#findPanel .find-list .queue-item .muted{font-size:.85rem;line-height:1.45}
+#findPanel .find-list .queue-actions{justify-content:flex-start}
+#findPanel .find-list .queue-actions button{min-height:44px;padding:8px 12px;width:100%}
+#findPanel .find-list .field-hint:empty{display:none}
+#findPanel .find-availability{font-weight:650}
+#findPanel #youtubeResultsPanel{box-shadow:none;margin-top:12px}
+#findPanel #libraries{margin-top:16px}
+#findPanel #findEmpty{padding:18px;text-align:left}
+#findPanel #findEmpty p{margin:5px 0}
+@media(max-width:360px){#findPanel .find-field{grid-template-columns:minmax(0,1fr)}#findPanel #findClear{width:100%}}
 #findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
 #queuePanel{border-top:3px solid var(--accent)}
-#queuePanel .queue-destination{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;overflow-wrap:anywhere}
-#queuePanel .queue-destination .eyebrow{margin:0 0 4px}
-#queuePanel #queueTarget{font-size:1.2rem;line-height:1.35;display:block}
 #queuePanel .contribute{margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--input)}
 #queuePanel .contribute h3{margin:0;font-size:1.1rem}
 #queuePanel .queue-add-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px;margin-top:10px}
@@ -1836,6 +1899,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .advanced-grid>section{margin:0;box-shadow:none;border:1px solid var(--line);min-width:0}
 .advanced-grid h3{font-size:1rem;margin:0 0 8px}
 #dashboard #errorDash:not(:empty){background:var(--input);padding:12px;border-radius:10px}
+#queuePanel #uploadCard{min-width:0;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--input);box-shadow:none}
 #uploadCard #videoFile{max-width:100%}
 .transfer-journey{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--input);min-width:0}
 .transfer-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:0;margin:0 0 14px;list-style:none}
@@ -1875,8 +1939,8 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
-  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
-  #playback,#uploadCard{grid-column:1}
+  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+  #playback{grid-column:1}
   #findPanel{grid-column:2}
   #queuePanel{grid-column:1/-1}
   #peoplePanel{grid-column:1/-1}
@@ -1929,17 +1993,14 @@ main{padding-top:6px}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
 #dashboard[data-room-blade="homePanel"]>:not(nav):not(#errorDash):not(#homePanel),
-#dashboard[data-room-blade="queuePanel"]>:not(nav):not(#errorDash):not(#queuePanel),
-#dashboard[data-room-blade="uploadCard"]>:not(nav):not(#errorDash):not(#uploadCard),
 #dashboard[data-room-blade="peoplePanel"]>:not(nav):not(#errorDash):not(#peoplePanel),
 #dashboard[data-room-blade="screensPanel"]>:not(nav):not(#errorDash):not(#screensPanel),
 #dashboard[data-room-blade="meshPanel"]>:not(nav):not(#errorDash):not(#meshPanel),
 #dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel),
-#dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel),
-#dashboard[data-room-blade="localLivePanel"]>:not(nav):not(#errorDash):not(#localLivePanel){display:none}
+#dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel){display:none}
 #dashboard:not([data-room-blade])>:not(nav):not(#errorDash):not(#homePanel){display:none}
-#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}
-#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
 #dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
@@ -1981,7 +2042,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .invite-qr figcaption{max-width:12rem;font-size:.85rem;color:var(--muted);text-align:center}
 @media(max-width:560px){.invite{gap:12px;padding:14px}.invite-qr img{width:112px;height:112px;padding:6px}.invite #roomLinkHint{display:none}.invite .room-link{grid-template-columns:minmax(0,1fr)}.invite .room-link button{width:100%}}
 @media(max-width:360px){.invite{grid-template-columns:minmax(0,1fr)}.invite-qr{justify-items:start}}
-@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px;flex:1 1 auto;min-width:0}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
+@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px;flex:1 1 auto;min-width:0}.brand h1{display:none}.sc-version{flex:0 1 auto;min-width:0;overflow-wrap:anywhere;text-align:left}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
@@ -2005,14 +2066,45 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .home-card{border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg);min-width:0}
 .home-card h3{margin:0 0 8px;font-size:1rem}
 .home-device{font-size:1.08rem;font-weight:700;margin:0;overflow-wrap:anywhere}
-.home-queue{display:grid;gap:9px;margin:0;padding:0}
-.home-queue li{padding:0;border:0;font-size:.86rem;min-width:0}
-.home-queue li strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home-queue li .muted{font-size:.76rem}
 #homePanel #castEntry{border-radius:var(--r-md);margin-top:14px;box-shadow:none;background:var(--input)}
 #homePanel #playback{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
 #homePanel #quickCastCard{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
-</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
+/* Flat, compact Home: one focal player, one quick cast action and a short queue. */
+#dashboard nav{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg);border-radius:0;gap:4px}
+#dashboard nav a{min-height:44px;border-color:transparent;background:transparent;padding:0 12px}
+#dashboard nav a[aria-current="page"]{background:var(--input);border-color:var(--accent)}
+#homePanel{background:transparent;border:0;box-shadow:none;padding:0;min-width:0}
+#homePanel>.room-heading{margin:0 0 12px;flex-wrap:wrap;gap:6px}
+#homePanel .home-lead{font-size:.84rem;color:var(--muted);margin:0}
+#homePanel #quickCastCard{padding:14px 16px}
+#homePanel #quickCastHeading{font-size:1rem;margin:0 0 8px}
+#homePanel #playback{padding:16px;background:var(--card)}
+#homePanel #playback::before{display:none}
+#homePanel #playbackHeading{font-size:1rem}
+#homePanel #playback .actions button[data-action="play_pause"]{min-height:44px;flex-basis:auto;flex-grow:2}
+#homePanel .home-actions{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:6px;margin:10px 0}
+#homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
+#homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
+#homePanel .home-action span:not(.home-icon){display:none}
+#homePanel .home-action strong{font-size:.85rem}
+#homePanel .home-icon{font-size:1rem}
+#homePanel .home-grid{grid-template-columns:minmax(0,1fr);gap:8px;margin-top:10px}
+#homePanel .home-card{padding:12px;background:var(--card)}
+#homePanel .home-card summary{cursor:pointer;min-height:32px;font-weight:650}
+#homePanel #castEntry{padding:0;margin-top:0;background:transparent;border:0}
+body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePanel"])) #roomInvite{display:none}
+@media(min-width:720px){#homePanel .home-actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
+/* GTK parity (#708): the Now Playing card is the same hero card as the desktop app. */
+#playback{padding:22px;background-image:linear-gradient(160deg,color-mix(in srgb,var(--accent) 10%,transparent),transparent 48%)}
+#playback #playbackHeading{color:var(--accent);font-size:.8rem;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+#playback #state{font-size:.85rem;font-weight:700;border-radius:99px;padding:4px 10px;background:color-mix(in srgb,currentColor 9%,transparent)}
+#playback #title.big{font-size:1.65rem;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
+#playback #receiver,#playback #nowDetails{font-size:.95rem}
+.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px}
+.glance-tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md,12px);padding:12px 14px;min-width:0}
+.glance-label{display:block;color:var(--accent);font-size:.75rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.glance-tile strong{display:block;font-size:1.05rem;overflow-wrap:anywhere}
+</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><button type="button" class="update-btn" id="updateBtn" hidden></button><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
@@ -2027,27 +2119,25 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
+<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
-<p class="eyebrow">Home</p>
-<h2 id="homeHeading" tabindex="-1">Your room</h2>
-<p class="home-lead">Add something to play, check which device is selected, and see what everyone is queueing. <span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a> · <a href="#castEntry">Cast with SmoothCast</a></p>
+<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
+<div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
-<div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
-<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker and asks for confirmation. The first overlapping Play now request gets priority; other files transfer to Up Next.</p>
+<h2 id="quickCastHeading">Cast from this device</h2>
 <div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard" id="quickQueueUpload">Add to Up Next instead</a></div>
 <p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
 </section>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
-<p class="section-desc">These controls affect the room's selected TV or speaker.</p>
-<p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
+<p id="title" class="big">Nothing playing</p><p id="nowDetails" class="muted" hidden></p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the TV or speaker cannot skip within it.</p>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking needs a connected TV or speaker and a known length.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
 <div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<label for="volume">TV or speaker volume</label><p class="field-hint" id="volumeHelp">Changes the volume on the TV or speaker, not on this phone.</p>
+<div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
+<label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the volume on the TV or speaker, not this device.</span>
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
@@ -2057,17 +2147,8 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <a class="home-action" id="homeMagnet" href="#queuePanel" data-home-link="magnet" title="Open the add-link box to paste a magnet link"><span class="home-icon" aria-hidden="true">🧲</span><strong>Cast a magnet link</strong><span>Paste a torrent magnet link</span></a>
 <a class="home-action" id="homeFind" href="#findPanel" title="Search the house libraries and YouTube"><span class="home-icon" aria-hidden="true">🔍</span><strong>Find something</strong><span>Search the house and YouTube</span></a>
 </div>
-<div class="home-grid">
-<div class="home-card"><h3>Playing on</h3><p class="home-device" id="homeTarget">Waiting for room status…</p><p class="field-hint" id="homeNowPlaying">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a></div></div>
-<div class="home-card"><h3>Up next <span id="homeQueueCount" class="muted"></span></h3><ul id="homeQueue" class="home-queue" aria-label="Up Next preview"><li class="empty">Nothing in Up Next yet</li></ul><div class="quick-links"><a href="#queuePanel">Open the shared queue</a></div></div>
-<div class="home-card"><h3>In the room</h3><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></div>
-</div>
-<section id="homeIncomingPanel" aria-labelledby="homeIncomingHeading" hidden><h3 id="homeIncomingHeading">Incoming media</h3><ul id="homeIncomingRows" aria-label="Files arriving in this room"></ul><p class="field-hint">These transfers are not yet confirmed playable.</p></section>
-<details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
-<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
-</section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
-<div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
+<div class="quick-links"><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div>
 <div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
 <p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
@@ -2076,40 +2157,12 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
 <section id="queueIncomingPanel" aria-labelledby="queueIncomingHeading" hidden><h3 id="queueIncomingHeading">Incoming media</h3><ul id="queueIncomingRows" aria-label="Files arriving before queue acceptance"></ul><p class="field-hint">Files appear here immediately, then move into playback or Up Next when accepted.</p></section>
 <section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
-<details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
-<p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
-<form id="linkForm">
-<label for="linkInput">YouTube video or magnet link</label>
-<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/… or magnet:…" aria-describedby="linkAvailability" required>
-<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I have permission to download this media.</span></label>
-<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
-</form>
-<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
-<section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
-</details>
-<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
-</section>
-
-<p id="errorDash" role="status" aria-live="polite"></p>
-<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
-<p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
-<label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
-<div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
-<p id="youtubeAvailability" class="field-hint">YouTube search is turned off on the SmoothCast computer.</p>
-<div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
-<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
-<section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
-<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
-<ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
-<details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
-<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
-</section>
-<section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
+<section id="uploadCard" aria-labelledby="uploadHeading" hidden><h3 id="uploadHeading" tabindex="-1">Add files from this device</h3>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Submitted filenames and transfer progress are visible to everyone in this room. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
-<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted. Untick to request Play now for video.</span></span></label>
+<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Default. Files transfer with smart buffering and join Up Next without interrupting what's playing. Untick to request Play now for video.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
 <ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
 <li data-stage="choose" class="done"><span class="stage-dot">1</span><span>Choose file</span></li>
@@ -2141,6 +2194,45 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
+<details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
+<p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
+<form id="linkForm">
+<label for="linkInput">YouTube video or magnet link</label>
+<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/… or magnet:…" aria-describedby="linkAvailability" required>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I have permission to download this media.</span></label>
+<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
+</form>
+<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
+<section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
+</details>
+<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+</section>
+<div class="home-grid">
+<details class="home-card"><summary>In the room</summary><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></details>
+</div>
+<details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
+<details id="castEntry" class="help"><summary id="castEntryHeading">Casting compatibility</summary><div class="help-body"><p>Use SmoothCast room controls to send media to the selected TV or speaker. Chrome’s own Cast button is not yet supported. If simultaneous Play now requests overlap, the first takes priority; other files go to Up Next.</p></div></details>
+</section>
+
+<p id="errorDash" role="status" aria-live="polite"></p>
+<section id="findPanel" aria-labelledby="findHeading"><div class="find-intro"><h2 id="findHeading" tabindex="-1">Find something to play</h2><a href="#queuePanel">View Up Next</a></div>
+<p class="section-desc">Search your house instantly, then discover YouTube or openly licensed torrent media.</p>
+<div class="find-search">
+<form id="findForm" role="search" aria-label="Search shared libraries">
+<label for="findInput">Search films, shows, music and online sources</label><div class="find-field"><input id="findInput" type="search" placeholder="Title, artist, album or keyword" autocomplete="off" maxlength="200" enterkeyhint="search"><button id="findClear" type="button" class="secondary">Clear</button></div>
+<div class="find-sources"><div class="find-source"><button type="submit" id="findSubmit">Search shared libraries</button><p class="field-hint">Searches your house as you type. Stays on your local network.</p></div><div class="find-source"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button><p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p></div><div class="find-source"><button id="magnetSearch" type="button" class="secondary" disabled>Find open torrents</button><p id="magnetAvailability" class="field-hint">Checking Archive search availability…</p><label class="toggle"><input id="magnetAuto" type="checkbox"><span>Search open torrents as I type (sends terms to Internet Archive)</span></label></div></div>
+</form>
+<div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
+</div>
+<div class="find-results-head"><h3>Shared library results</h3><button id="findReset" class="tiny secondary" type="button" hidden>Reset filters</button></div>
+<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findEmpty" class="empty"><strong>Find something you want to play</strong><p class="field-hint">Search by title or artist, select a media type, or browse the shared folders below.</p><div class="quick-links"><a href="#libraries" id="findBrowse">Browse shared libraries</a><a href="#uploadCard">Add your own files</a><a href="#linkAcquisition">Paste a video link</a></div></div><div id="findResults" aria-label="House search results"></div>
+<section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
+<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
+<ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
+<section id="magnetResultsPanel" aria-labelledby="magnetResultsHeading" hidden><h3 id="magnetResultsHeading">Open torrents · Internet Archive</h3><p id="magnetSearchStatus" role="status" aria-live="polite"></p><label class="toggle"><input id="magnetAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label><ul id="magnetResults" class="find-list" aria-label="Open torrent results"></ul></section>
+<details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
+<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <a href="#uploadCard">Add files in Queue</a> instead.</p></div></details>
+</section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
 <p class="section-desc">See who is connected. <a href="#advancedPanel">Change your name in Settings</a> or <a href="#localLivePanel">follow room activity</a>.</p>
 <div id="people" class="participants"></div>
@@ -2159,9 +2251,9 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
 </section>
 </div></section>
-<section id="localLivePanel" aria-labelledby="localLiveHeading"><h2 id="localLiveHeading" tabindex="-1">Live room activity</h2><p class="section-desc">Current room activity is available even without a connected mesh.</p><div class="advanced-grid"><section aria-labelledby="livePlaybackHeading"><h3 id="livePlaybackHeading">Current playback</h3><p id="liveRoomTarget">TV or speaker status unavailable</p><p id="liveRoomPlayback">Playback state unavailable</p><div class="quick-links"><a href="#queuePanel">Shared queue</a><a href="#uploadCard">Transfer monitor</a></div></section><section aria-label="Recent room activity"><h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section><section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
+<section id="meshPanel" aria-labelledby="meshTitle"><h2 id="meshTitle" tabindex="-1">Mesh</h2><p class="section-desc">Live room and network activity, transfers, playback targets, connected computers and mesh health in one place.</p><p id="meshAvailability" class="field-hint" role="status">Checking mesh availability…</p><section id="localLivePanel" aria-labelledby="localLiveHeading"><h2 id="localLiveHeading" tabindex="-1">This room · live activity</h2><p class="section-desc">Local activity remains available even when the mesh service is offline.</p><div class="advanced-grid"><section aria-labelledby="livePlaybackHeading"><h3 id="livePlaybackHeading">Current playback</h3><p id="liveRoomTarget">TV or speaker status unavailable</p><p id="liveRoomPlayback">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Shared queue</a><a href="#uploadCard">Transfer monitor</a></div></section><section aria-label="Recent room activity"><h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section><section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
 <section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Shows what is playing on other TVs and speakers in your home, updated every 15 seconds. Nothing here controls them.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Looking for other TVs and speakers…</p><ul id="networkActivityRows"><li>Nothing is playing on other TVs or speakers</li></ul></section>
-</div></section></div>
+</div></section><!--SC_MESH_DETAILS--></section></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
@@ -2348,7 +2440,7 @@ function schedulePlayhead(){
 }
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
 function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
-let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
+let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[],queueLimit=100;
 const queueElement=$("queue");
 function queueAction(button){
   const row=button.closest("[data-queue-id]");
@@ -2392,7 +2484,7 @@ function renderQueue(items,revision=queueRevision){
   if(queuePressed){deferredQueue={rows,revision};return}
   queueRevision=revision;
   queueState=rows;
-  const key=JSON.stringify(rows.map(item=>[
+  const key=queueLimit+JSON.stringify(rows.map(item=>[
     item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,item.media_kind,
   ]));
   if(key===queueRenderKey)return;
@@ -2409,7 +2501,7 @@ function renderQueue(items,revision=queueRevision){
     empty.className="empty";
     empty.textContent="Nothing in Up Next yet";
     nodes.push(empty);
-  }else rows.forEach((item,index)=>{
+  }else rows.slice(0,queueLimit).forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
     const id=String(item.id||"");
     let li=oldRows.get(id);
@@ -2457,6 +2549,23 @@ function renderQueue(items,revision=queueRevision){
     });
     nodes.push(li);
   });
+  if(rows.length>queueLimit){
+    const more=document.createElement("li"),button=document.createElement("button");
+    more.className="queue-more";
+    button.type="button";
+    button.className="secondary";
+    button.dataset.queueMore="1";
+    button.textContent="Show "+Math.min(100,rows.length-queueLimit)+" more of "+(rows.length-queueLimit)+" remaining";
+    button.addEventListener("click",()=>{
+      queueLimit+=100;
+      queueRenderKey=null;
+      renderQueue(queueState,queueRevision);
+      queueElement.querySelectorAll("[data-queue-id]")[queueLimit-100]?.querySelector("button")?.focus();
+      $("queueFeedback").textContent="Showing "+Math.min(queueLimit,queueState.length)+" of "+queueState.length+" Up Next items.";
+    });
+    more.append(button);
+    nodes.push(more);
+  }
   queue.replaceChildren(...nodes);
   if(focusTarget){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
@@ -2582,8 +2691,14 @@ function updateLinkControls(){
   }
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
-    search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
-    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask whoever runs SmoothCast to turn on YouTube downloads.";
+    const ready=linkCapabilities.youtube_search??linkCapabilities.youtube;
+    search.disabled=!ready||youtubeSearchBusy;
+    availability.textContent=ready?"Search YouTube explicitly; your house search stays local.":"YouTube search is unavailable. "+linkWorkerExplanation("youtube");
+  }
+  const magnetSearch=$("magnetSearch"),magnetAvailability=$("magnetAvailability");
+  if(magnetSearch&&magnetAvailability){
+    magnetSearch.disabled=!linkCapabilities.magnet_search;
+    magnetAvailability.textContent=linkCapabilities.magnet_search?"Openly licensed Archive media; ranked by title and downloads.":"Archive search needs a qualified local torrent worker and curl.";
   }
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return false;
@@ -2648,7 +2763,7 @@ function updateLinkControls(){
   return !button.disabled;
 }
 function renderLinkJobs(state){
-  linkCapabilities=state.link_capabilities||{};
+  linkCapabilities={...(state.link_capabilities||{}),youtube_search:state.link_search_available,magnet_search:state.magnet_search_available};
   linkOwnerEnabled=state.link_owner_enabled||null;
   linkLocalPrerequisites=state.link_local_prerequisites||null;
   linkStorageAvailable=state.link_storage_available;
@@ -2756,11 +2871,11 @@ function renderRoomTransfers(state){
   const rows=Array.isArray(state.room_transfers)?state.room_transfers.slice(0,24):[];
   const signature=JSON.stringify(rows);
   if(signature===roomTransferSignature)return;roomTransferSignature=signature;
-  const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
-  for(const [panelId,listId] of [["homeIncomingPanel","homeIncomingRows"],["queueIncomingPanel","queueIncomingRows"]]){
+  const labels={waiting:"Waiting in batch",receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
+  for(const [panelId,listId] of [["queueIncomingPanel","queueIncomingRows"]]){
     const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
     if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
-    // Reuse stable rows so chunk ACKs do not rebuild two entire lists,
+    // Reuse stable rows so chunk ACKs do not rebuild the entire list,
     // interrupt assistive technology or disturb the user's scroll position.
     const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
     rows.forEach((row,index)=>{
@@ -2774,7 +2889,7 @@ function renderRoomTransfers(state){
       previous.delete(id);
       const [title,detail,meter]=li.children;
       const name=row.title||"Incoming media";
-      const description=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
+      const description=[row.batch_total>1?"File "+row.batch_index+" of "+row.batch_total:"",mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
       if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
       if(detail.textContent!==description)detail.textContent=description;
       const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
@@ -2802,17 +2917,14 @@ function quickCastDestinationCopy(receiver){
 function renderQueueDestination(state){
   const quickStatus=$("quickCastStatus"),quickCopy=quickCastDestinationCopy(state.receiver);
   if(quickStatus&&quickStatus.textContent!==quickCopy)quickStatus.textContent=quickCopy;
-  const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
-  if(target)target.textContent=state.receiver||"No casting target selected";
-  if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
-  const homeTarget=$("homeTarget"),homePlaying=$("homeNowPlaying");
-  if(homeTarget&&target)homeTarget.textContent=target.textContent;
-  if(homePlaying&&playing)homePlaying.textContent=playing.textContent;
+  const mesh=$("queueMeshLink");
+  const target=state.receiver||"No casting target selected";
+  const playing=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
   const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
-  if(liveTarget&&target)liveTarget.textContent=target.textContent;
-  if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
+  if(liveTarget)liveTarget.textContent=target;
+  if(livePlayback)livePlayback.textContent=playing;
   // The mesh panel owns visibility. Never infer remote readiness from room selection.
-  if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
+  if(mesh){const details=$("meshDetails");mesh.hidden=!details||details.hidden;}
 }
 let networkActivityKey=null;
 function renderNetworkActivity(entries){
@@ -2823,8 +2935,9 @@ function renderNetworkActivity(entries){
 }
 function renderSharedQueue(s){
   const revision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;
-  renderQueue(s.queue,revision);renderHomeQueue(s.queue);
-  $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+  renderQueue(s.queue,revision);
+  const qTotal=Number.isSafeInteger(s.queue_total)&&s.queue&&s.queue_total>s.queue.length?s.queue_total:0;
+  $("queueCount").textContent=s.queue&&s.queue.length?(qTotal?`${s.queue.length} of ${qTotal} shown`:`${s.queue.length} waiting`):"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 }
 function applyStatus(d){
   if(!matchingBuild(d))return false;
@@ -2838,7 +2951,7 @@ function applyStatus(d){
     renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
     window.scRenderMeshRoom&&window.scRenderMeshRoom(s);renderNetworkActivity(s.network_activity);
     if(busy)return true;
-    applyAccentPreset(s.accent);shortcutState=s;
+    applyAccentPreset(s.accent);shortcutState=s;renderExtraTransport(s);
     renderPlaybackToggle(s.state);
     document.querySelectorAll("[data-action]").forEach(b=>{
       const action=b.dataset.action;
@@ -2847,6 +2960,7 @@ function applyStatus(d){
     });
     monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
     monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
+    {const d=$("nowDetails"),t=s.active&&typeof s.media_details==="string"?s.media_details:"";if(d){d.textContent=t;d.hidden=!t}}
     monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
@@ -2858,22 +2972,7 @@ if(statusFailures)showError("errorDash","");
 statusFailures=0;showJoinedRoom();
   return true;
 }
-let homeQueueKey=null,homePeopleKey=null;
-function renderHomeQueue(items){
-  const list=$("homeQueue");if(!list)return;
-  const rows=Array.isArray(items)?items:[];
-  const key=JSON.stringify(rows.map(item=>[item.id,item.title,item.votes,item.contributor,item.media_kind,item.duration]));
-  if(key===homeQueueKey)return;homeQueueKey=key;
-  const count=$("homeQueueCount");
-  if(count)count.textContent=rows.length?`${rows.length} waiting`:"";
-  if(!rows.length){const empty=document.createElement("li");empty.className="empty";empty.textContent="Nothing in Up Next yet";list.replaceChildren(empty);return}
-  list.replaceChildren(...rows.slice(0,3).map(item=>{
-    const li=document.createElement("li"),title=document.createElement("strong"),meta=document.createElement("span");
-    title.textContent=item.title||"Video";meta.className="muted";
-    meta.textContent=[mediaKindLabel(item.media_kind),item.duration?clock(item.duration):"",item.votes?`▲ ${item.votes}`:"",item.contributor?`Added by ${item.contributor}`:"Waiting to be played"].filter(Boolean).join(" · ");
-    li.append(title,meta);return li;
-  }));
-}
+let homePeopleKey=null;
 function renderHomePeople(room){
   const host=$("homePeople");if(!host)return;
   const participants=Array.isArray(room?.participants)?room.participants:[];
@@ -2916,7 +3015,17 @@ async function refresh(){
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
 let lastRoom=null,participantRenderKey=null;
-function renderRoom(room){lastRoom=room;renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+function renderGlance(room){
+  const set=(id,text)=>{const el=$(id);if(el&&el.textContent!==text)el.textContent=text};
+  const title=$("title"),receiver=$("receiver");
+  set("glanceTitle",title&&title.textContent.trim()||"Nothing playing");
+  const where=(receiver&&receiver.textContent||"").replace(/^Playing on:\s*/,"").trim();
+  set("glanceWhere",where&&where!=="—"?where:"No TV or speaker yet");
+  const people=Array.isArray(room&&room.participants)?room.participants:[];
+  const online=people.filter(p=>p.online).length;
+  set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
+}
+function renderRoom(room){lastRoom=room;renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
 if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
@@ -3002,6 +3111,36 @@ function shortcutCommand(action,state,seek,volume){
   return null;
 }
 
+const extraTransportClient="transport-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+let extraTransportSequence=0;
+function extraTransportEnvelope(action,state,seek,volume){
+  if(!["seek_back","seek_forward","mute"].includes(action)||!state||
+    typeof state.session_id!=="string"||!/^[a-f0-9]{32}$/.test(state.session_id)||
+    !Number.isSafeInteger(state.revision)||state.revision<0)return null;
+  if(action!=="mute"&&!Number.isFinite(seek))return null;
+  const command=shortcutCommand(action,state,seek,volume);
+  if(!command)return null;
+  return {action:command.action,client_id:extraTransportClient,command_id:"control-"+(++extraTransportSequence),
+    expected_session_id:state.session_id,expected_revision:state.revision,
+    payload:command.value===undefined?{}:{value:command.value}};
+}
+const extraTransportControls=[["seekBackTen","seek_back"],["seekForwardTen","seek_forward"],["toggleMute","mute"]];
+function renderExtraTransport(state){
+  const valid=state&&typeof state.session_id==="string"&&/^[a-f0-9]{32}$/.test(state.session_id)&&
+    Number.isSafeInteger(state.revision)&&state.revision>=0;
+  for(const [id,action] of extraTransportControls){
+    const button=$(id);if(button)button.disabled=!valid||!shortcutCommand(action,state,0,0);
+  }
+}
+for(const [id,action] of extraTransportControls){
+  $(id)?.addEventListener("click",()=>{
+    if(busy||stalePage||!csrf||editingControls.has("seek"))return;
+    const command=extraTransportEnvelope(action,shortcutState,Number($("seek").value),Number($("volume").value));
+    if(!command)return;
+    const {action:transportAction,...envelope}=command;
+    void act(transportAction,undefined,envelope);
+  });
+}
 window.addEventListener("keydown",event=>{
   if(event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
   if(event.target instanceof Element&&event.target.closest("input,textarea,select,button,[contenteditable],[role=textbox],[role=slider]"))return;
@@ -3544,8 +3683,15 @@ function resetUploadBatch(){
   showError("uploadStatus","");
   updateUploadControls();
 }
+function announceBatch(files,from){
+  // Best effort: lets everyone in the room see the whole batch before each file starts.
+  if(!csrf)return;
+  const rest=(files||[]).slice(from).map((f,i)=>({name:f.name,size:f.size,queue:batchQueueOnly||from+i>0}));
+  uploadRequest("POST","/api/uploads/announce",JSON.stringify({files:rest}),{"Content-Type":"application/json"}).catch(()=>{});
+}
 function finishUpload(){
   uploading=false;
+  if(!batchFiles&&csrf)announceBatch([],0);
   cancelUpload=false;
   if(csrf)updateUploadControls();
   else{
@@ -3606,6 +3752,7 @@ $("uploadButton").addEventListener("click",async()=>{
       batchAdded=0;
       batchTotal=selected.length;
       batchQueueOnly=queueIntent;
+      if(selected.length>1)announceBatch(selected,1);
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
@@ -3622,7 +3769,7 @@ $("uploadButton").addEventListener("click",async()=>{
       }else{
         transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length,queueOnly);
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
-        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly,cast_target:queueOnly?null:batchCastTarget}),json);
+        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly,cast_target:queueOnly?null:batchCastTarget,batch_index:batchIndex+1,batch_total:batchFiles.length}),json);
         const {id,chunk_size:chunkSize}=state;
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
@@ -3837,12 +3984,13 @@ function syncMediaSession(s){
 
 (()=>{
   const input=$("findInput"),out=$("findResults"),status=$("findStatus");
+  const empty=$("findEmpty"),reset=$("findReset");
   if(!input||!out||!status)return;
   let timer=null,source=null,controller=null,searchGeneration=0;
   const clock=s=>{s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")};
   const LABELS={films:"Films",shows:"Shows",artists:"Artists",albums:"Albums",songs:"Songs",other:"Other"};
   function where(copies){
-    const list=copies||[];if(!list.length)return"";
+    const list=copies||[];if(!list.length)return"Availability unknown";
     const online=list.filter(c=>c.online),names=c=>c.origin==="local"?"This computer":(c.origin_name||"Another computer");
     if(!online.length)return names(list[0])+" is offline"+(list[0].last_seen?" - last seen "+new Date(list[0].last_seen*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"");
     return"On "+online.map(names).join(" - also on ");
@@ -3855,7 +4003,7 @@ function syncMediaSession(s){
       meta.textContent=(it.artist?it.artist+" - ":"")+it.count+" "+(it.count===1?"song":"songs");
       text.append(title,meta);li.append(text);
       const go=document.createElement("button");go.className="tiny secondary";go.type="button";go.textContent="Show";
-      go.addEventListener("click",()=>{input.value=(type==="artists"?"artist:":"album:")+JSON.stringify(it.name);run()});
+      go.addEventListener("click",()=>{input.value=(type==="artists"?"artist:":"album:")+JSON.stringify(it.name);input.dispatchEvent(new Event("input"));run()});
       const a=document.createElement("div");a.className="queue-actions";a.append(go);li.append(a);return li;
     }
     if(type==="shows"){
@@ -3863,7 +4011,7 @@ function syncMediaSession(s){
     }
     const bits=[it.year,it.artist,it.album,it.duration?clock(it.duration):""].filter(Boolean);
     meta.textContent=bits.join(" - ");
-    const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
+    const where_=document.createElement("div");where_.className="muted find-availability";where_.textContent=where(it.copies);
     text.append(title,meta,where_);li.append(text);
     const feedback=document.createElement("p");feedback.className="field-hint";feedback.setAttribute("role","status");text.append(feedback);
     const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";add.setAttribute("aria-label","Add "+(it.title||it.name||"media")+" to Up Next");
@@ -3891,11 +4039,11 @@ function syncMediaSession(s){
       for(const it of g.items||[]){
         if(availableOnly&&g.type!=="artists"&&g.type!=="albums"&&g.type!=="shows"&&!(it.copies||[]).some(c=>c.online))continue;
         ul.append(item(it,g.type));n++}
-      out.append(h,ul);
+      if(ul.children.length)out.append(h,ul);
     }
     const pending=(d.pending_origins||[]).length;
     status.textContent=n?n+(n===1?" result":" results")+(pending?" - still checking "+pending+(pending===1?" computer":" computers"):""):
-      (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"...":"Nothing in the house matches "+JSON.stringify(input.value.trim())+".");
+      (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"…":availableOnly?"No currently available matches. Turn off Available now to see offline media.":input.value.trim()?"No shared library matches "+JSON.stringify(input.value.trim())+". Try another title or search YouTube.":"No shared media matches this filter.");
   }
   function stop(){searchGeneration++;if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
   async function run(){
@@ -3903,7 +4051,9 @@ function syncMediaSession(s){
     const generation=searchGeneration,session=csrf;
     const current=()=>generation===searchGeneration&&csrf===session;
     if(!session)return;
-    if(!typed&&!kind){out.replaceChildren();status.textContent="";return}
+    if(reset)reset.hidden=!kind&&!availableOnly;
+    if(empty)empty.hidden=Boolean(typed||kind);
+    if(!typed&&!kind){out.replaceChildren();status.textContent=availableOnly?"Choose a media type or enter a search term to filter available media.":"";return}
     const q=(typed+(kind?" kind:"+kind:"")).trim();
     const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
     out.replaceChildren();status.textContent="Searching shared libraries…";
@@ -3932,6 +4082,12 @@ function syncMediaSession(s){
     });
   }
   const lib=$("libraries"),body=$("libBody");
+  const form=$("findForm"),clear=$("findClear"),browseLink=$("findBrowse");
+  if(form)form.addEventListener("submit",event=>{event.preventDefault();run()});
+  function resetFilters(){kind="";availableOnly=false;for(const chip of document.querySelectorAll("#findChips button"))chip.setAttribute("aria-pressed","false");}
+  if(reset)reset.addEventListener("click",()=>{resetFilters();run()});
+  if(clear)clear.addEventListener("click",()=>{resetFilters();input.value="";input.dispatchEvent(new Event("input"));run();input.focus()});
+  if(browseLink)browseLink.addEventListener("click",()=>{lib.open=true});
   let libLoaded=false,libraryGeneration=0,libraryBusy=false;
   const libStatus=$("libStatus"),libRefresh=$("libRefresh");
   const libraryStatus=message=>{if(libStatus)libStatus.textContent=message};
@@ -4001,7 +4157,7 @@ function syncMediaSession(s){
   }
   if(libRefresh)libRefresh.addEventListener("click",showAll);
   lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded)showAll()});
-  input.addEventListener("input",()=>{clearTimeout(timer);stop();out.replaceChildren();status.textContent="";timer=setTimeout(run,120)});
+  input.addEventListener("input",()=>{clearTimeout(timer);stop();out.replaceChildren();if(empty)empty.hidden=Boolean(input.value.trim()||kind);status.textContent="";timer=setTimeout(run,120)});
 })();
 (()=>{
   const input=$("findInput"),search=$("youtubeSearch"),panel=$("youtubeResultsPanel"),
@@ -4013,14 +4169,14 @@ function syncMediaSession(s){
   });
   search.addEventListener("click",async()=>{
     const q=input.value.trim();
-    if(youtubeSearchBusy||!linkCapabilities.youtube)return;
+    if(youtubeSearchBusy||!(linkCapabilities.youtube_search??linkCapabilities.youtube))return;
     panel.hidden=false;out.replaceChildren();consent.checked=false;
     if(!q){status.textContent="Type something to search on YouTube.";input.focus();return}
-    const current=++generation;
+    const current=++generation,session=csrf;
     youtubeSearchBusy=true;updateLinkControls();status.textContent="Searching YouTube…";
     try{
       const response=await post("/api/search/youtube",{q});
-      if(current!==generation)return;
+      if(current!==generation||csrf!==session)return;
       const results=Array.isArray(response.results)?response.results.slice(0,10):[];
       for(const result of results){
         if(!result||typeof result.id!=="string"||!/^[A-Za-z0-9_-]{11}$/.test(result.id))continue;
@@ -4034,27 +4190,95 @@ function syncMediaSession(s){
         add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
-          if(add.disabled||current!==generation)return;
-          if(!linkCapabilities.youtube){status.textContent="YouTube downloads are turned off on the SmoothCast computer.";return}
+          if(add.disabled||current!==generation||csrf!==session)return;
+          if(!linkCapabilities.youtube){status.textContent="No eligible YouTube download worker is currently available.";return}
           if(linkStorageAvailable===false){status.textContent="Download storage is unavailable. Ask the host to check it and restart the room. Your search results are preserved.";return}
           if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
           add.disabled=true;add.textContent="Submitting…";
           try{
             const receipt=await post("/api/link-jobs",{url:"https://www.youtube.com/watch?v="+result.id,request_id,authorised:true});
             add.textContent="Download requested";
-            if(current===generation)status.textContent=receipt.message||"Download accepted; follow its progress below.";
+            if(current===generation&&csrf===session)status.textContent=receipt.message||"Download accepted; follow its progress in Queue.";
             void refresh();
           }catch(err){
-            if(current===generation)status.textContent=err.message;
+            if(current===generation&&csrf===session)status.textContent=err.message;
             add.disabled=false;add.textContent="Retry add to Up Next";
           }
         });
         actions.append(add);row.append(info,actions);out.append(row);
       }
       status.textContent=out.children.length?out.children.length+" YouTube results. Choose a video to download.":"No YouTube videos found.";
-    }catch(err){if(current===generation)status.textContent=err.message}
+    }catch(err){if(current===generation&&csrf===session)status.textContent=err.message}
     finally{youtubeSearchBusy=false;updateLinkControls()}
   });
+})();
+(()=>{
+  const input=$("findInput"),button=$("magnetSearch"),auto=$("magnetAuto"),panel=$("magnetResultsPanel"),
+    status=$("magnetSearchStatus"),out=$("magnetResults"),consent=$("magnetAuthorised");
+  if(!input||!button||!auto||!panel||!status||!out||!consent)return;
+  let generation=0,timer=null,busy=false,pending=null;
+  function invalidate(){
+    generation++;clearTimeout(timer);pending=null;panel.hidden=true;out.replaceChildren();consent.checked=false;
+  }
+  function schedule(){
+    invalidate();
+    if(auto.checked&&input.value.trim().length>=3)timer=setTimeout(()=>request(),850);
+  }
+  function request(){
+    clearTimeout(timer);
+    const q=input.value.trim(),session=csrf;
+    if(!session||!linkCapabilities.magnet_search)return;
+    if(q.length<3){panel.hidden=false;status.textContent="Enter at least three characters.";input.focus();return}
+    pending={q,session,generation:++generation};
+    out.replaceChildren();consent.checked=false;panel.hidden=false;
+    status.textContent=busy?"Waiting for the previous search…":"Searching open torrents…";
+    void drain();
+  }
+  async function drain(){
+    if(busy||!pending)return;
+    const job=pending;pending=null;busy=true;
+    const current=()=>job.generation===generation&&csrf===job.session;
+    try{
+      if(!current())return;
+      status.textContent="Searching Internet Archive…";
+      const response=await post("/api/search/magnets",{q:job.q});
+      if(!current())return;
+      const results=Array.isArray(response.results)?response.results.slice(0,4):[];
+      for(const result of results){
+        if(!result||typeof result.id!=="string"||!/^[a-f0-9]{40}$/.test(result.id))continue;
+        const row=document.createElement("li");row.className="queue-item";
+        const info=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+        title.textContent=result.title||"Archive media";meta.className="muted";
+        const downloads=Number.isSafeInteger(result.downloads)?result.downloads.toLocaleString()+" Archive downloads":"";
+        meta.textContent=[result.source||"Internet Archive",downloads,Number.isFinite(result.size)?(result.size/1048576).toFixed(0)+" MiB":""].filter(Boolean).join(" · ");
+        info.append(title,meta);
+        const source=document.createElement("a");
+        if(typeof result.archive_id==="string"&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(result.archive_id)){
+          source.href="https://archive.org/details/"+encodeURIComponent(result.archive_id);source.target="_blank";source.rel="noopener noreferrer";source.textContent="Check source and licence";info.append(source);
+        }
+        const add=document.createElement("button");add.type="button";add.className="tiny";add.textContent="Download & add";
+        const actions=document.createElement("div");actions.className="queue-actions";actions.append(add);
+        const request_id="archive-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+        add.addEventListener("click",async()=>{
+          if(add.disabled||!current())return;
+          if(!linkCapabilities.magnet||linkStorageAvailable===false){status.textContent="No eligible download worker or storage.";return}
+          if(!consent.checked){status.textContent="Confirm you have permission to download this media.";consent.focus();return}
+          add.disabled=true;add.textContent="Submitting…";
+          try{
+            const receipt=await post("/api/link-jobs",{url:"magnet:?xt=urn:btih:"+result.id,request_id,authorised:true});
+            if(current()){add.textContent="Download requested";status.textContent=receipt.message||"Download requested; follow Queue."}
+            void refresh();
+          }catch(err){if(current()){status.textContent=err.message;add.disabled=false;add.textContent="Retry download"}}
+        });
+        row.append(info,actions);out.append(row);
+      }
+      status.textContent=out.children.length?out.children.length+" compatible open torrents. Check the licence and choose a download.":"No compatible openly licensed torrents found.";
+    }catch(err){if(current())status.textContent=err.message||"Archive search unavailable."}
+    finally{busy=false;if(pending)void drain()}
+  }
+  input.addEventListener("input",schedule);
+  auto.addEventListener("change",schedule);
+  button.addEventListener("click",request);
 })();
 // #591: the Home control is always in the sticky app bar. It returns to the top
 // of the room and moves keyboard/screen-reader focus there; the now-playing pill
@@ -4066,7 +4290,7 @@ function syncMediaSession(s){
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   function syncRoomBlade(navigate=false){
     const target=$(location.hash.slice(1));
-    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#uploadCard,#peoplePanel,#screensPanel,#meshPanel,#localLivePanel,#advancedPanel");
+    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#findPanel,#peoplePanel,#screensPanel,#meshPanel,#advancedPanel");
     const selected=blade?blade.id:"";
     const previous=dash.getAttribute("data-room-blade")||"";
     if(selected)dash.setAttribute("data-room-blade",selected);
@@ -4077,8 +4301,8 @@ function syncMediaSession(s){
     }
     if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
       target.scrollIntoView({block:"start",behavior:"auto"});
-      if(blade===target&&!target.contains(document.activeElement)){
-        const heading=$(target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="queuePanel"?"queueHeading":selected==="findPanel"?"findHeading":selected==="uploadCard"?"uploadHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
+      if((blade===target||["uploadCard","queuePanel","playback"].includes(target.id))&&!target.contains(document.activeElement)){
+        const heading=$(target.id==="queuePanel"?"queueHeading":target.id==="uploadCard"?"uploadHeading":target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="findPanel"?"findHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
         if(heading&&heading.focus)heading.focus({preventScroll:true});
       }
     }
@@ -4122,6 +4346,34 @@ function syncMediaSession(s){
   img.addEventListener("load",()=>{img.hidden=false;fallback.hidden=true});
   img.addEventListener("error",()=>{img.hidden=true;img.removeAttribute("src");fallback.hidden=false});
   img.src="/join-qr.png";
+})();
+
+(function(){
+  const btn=document.getElementById("updateBtn");if(!btn)return;
+  let busy=false;
+  function show(d){
+    if(!d||!d.ok){btn.hidden=true;return}
+    btn.title=d.message||"";
+    if(d.state==="available"&&d.can_start){btn.hidden=false;btn.disabled=busy;btn.textContent="Update and restart"}
+    else if(d.state==="updating"||d.state==="restarting"){btn.hidden=false;btn.disabled=true;btn.textContent=d.state==="updating"?"Updating…":"Restarting…"}
+    else btn.hidden=true;
+  }
+  async function load(){
+    if(document.hidden||typeof csrf==="undefined"||!csrf)return;
+    try{const r=await fetch("/api/update",{credentials:"same-origin",cache:"no-store"});show(r.ok?await r.json():null)}catch(_){}
+  }
+  btn.addEventListener("click",async()=>{
+    busy=true;btn.disabled=true;
+    try{
+      let d=await post("/api/update",{});
+      if(d.needs_confirmation){if(!confirm(d.message+" Update anyway?")){busy=false;return load()}d=await post("/api/update",{confirmed:true})}
+      btn.textContent="Restarting…";
+      showError("errorDash",d.message||"Restarting SmoothCast…");
+      setTimeout(()=>location.reload(),15000);
+    }catch(e){showError("errorDash",e.message);busy=false;load()}
+  });
+  let last=0;
+  window.updateTick=function(){const n=Date.now();if(n-last<60000)return;last=n;load()};
 })();
 </script></body></html>"""
 _HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())

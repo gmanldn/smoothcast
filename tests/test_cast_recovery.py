@@ -132,6 +132,9 @@ def test_plan_is_pure_and_deterministic():
     ("Connection refused", "cast.receiver_offline"),
     ("Unsupported media type", "cast.no_supported_format"),
     ("probe timed out", "ffmpeg.decoder_timeout"),
+    ("SSDP multicast discovery failed: [Errno 101]", "discovery.failed"),
+    ("DLNA Play failed (UPnP error 701)", "dlna.command_failed"),
+    ("Port 8080 is still in use by the previous streaming server", "network.port_in_use"),
     ("something odd", None), ("", None), (None, None),
 ])
 def test_legacy_free_text_is_classified_conservatively(message, code):

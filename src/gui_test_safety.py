@@ -10,6 +10,8 @@ import hmac
 from pathlib import Path
 from typing import Mapping
 
+PRIVATE_BUS_NAME = "a11y-bus"
+
 
 def is_isolated_gui_test(env: Mapping[str, str] | None = None) -> bool:
     values = os.environ if env is None else env
@@ -21,7 +23,12 @@ def is_isolated_gui_test(env: Mapping[str, str] | None = None) -> bool:
         return False
     # A genuine Wayland session or DBus address could activate/focus the
     # user's primary application or use desktop portals.
-    if values.get("WAYLAND_DISPLAY") or values.get("DBUS_SESSION_BUS_ADDRESS"):
+    if values.get("WAYLAND_DISPLAY"):
+        return False
+    # Only the AT-SPI walk (#449) starts its own bus, at exactly this socket in
+    # the private runtime directory; any other address could be the user's.
+    bus = values.get("DBUS_SESSION_BUS_ADDRESS")
+    if bus and bus != f"unix:path={values.get('XDG_RUNTIME_DIR', '')}/{PRIVATE_BUS_NAME}":
         return False
     if not all(values.get(k) for k in (
         "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",

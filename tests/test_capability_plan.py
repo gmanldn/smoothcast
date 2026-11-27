@@ -155,3 +155,19 @@ def test_plan_is_deterministic_and_immutable():
     assert plan_session(CAST_BASELINE, GOOD) == plan_session(CAST_BASELINE, GOOD)
     with pytest.raises(Exception):
         plan_session(CAST_BASELINE, GOOD).mode = "transcode"
+
+
+def test_video_file_to_a_speaker_sends_only_the_soundtrack():
+    from receiver_profiles import profile_for_cast_model
+    _, speaker = profile_for_cast_model("Nest Mini")
+    plan = plan_session(speaker, GOOD)
+    assert plan.video == "none" and plan.audio == "copy" and plan.mode == "remux"
+    assert plan.scale_to_height is None and plan.subtitles == "none"
+    assert any("audio-only" in note for note in plan.notes)
+    odd = MediaFacts(container="mp4", video_codec="hevc", audio_codec="ac3", height=2160, hdr=True)
+    plan = plan_session(speaker, odd)
+    assert plan.video == "none" and plan.audio == "encode"
+
+
+def test_unknown_video_support_is_not_treated_as_a_speaker():
+    assert plan_session(ReceiverCaps(), GOOD).video == "encode"

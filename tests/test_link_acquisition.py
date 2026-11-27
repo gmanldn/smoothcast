@@ -559,7 +559,7 @@ def test_room_restart_cannot_take_cache_lock_until_old_delivery_exits(tmp_path):
         blocked = acquisition.LinkJobs(tmp_path, FakeProvider(), lambda *args: None, lambda owner: True)
         try:
             assert blocked.capabilities() == {"youtube": False, "magnet": False}
-            with pytest.raises(acquisition.LinkError, match="recovery storage"):
+            with pytest.raises(acquisition.LinkError, match="could not save the download"):
                 blocked.submit("new-owner", MAGNET, "another-request")
         finally:
             blocked.close()
@@ -582,7 +582,7 @@ def test_corrupt_journal_is_preserved_and_blocks_new_downloads(tmp_path):
     jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: None, lambda owner: True)
     try:
         assert not jobs.storage_available()
-        with pytest.raises(acquisition.LinkError, match="recovery storage"):
+        with pytest.raises(acquisition.LinkError, match="could not save the download"):
             jobs.submit("owner", YOUTUBE, "request")
         assert not provider.calls
         assert journal.read_text() == '{"schema":999,"jobs":[]}'
@@ -753,8 +753,8 @@ class Element{
 }
 const el=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel",
  "youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(k=>[k,new Element()]));
-const $=id=>el[id],document={createElement:()=>new Element()};
-let youtubeSearchBusy=false,linkCapabilities={youtube:true},calls=[],fail=true,refreshes=0;
+const $=id=>el[id],document={createElement:()=>new Element(),getElementById:()=>null};
+let youtubeSearchBusy=false,linkCapabilities={youtube:true},calls=[],fail=true,refreshes=0,csrf="csrf-token",linkStorageAvailable=null,linkPosting=false,linkOwnerEnabled=null,linkLocalPrerequisites=null,linkSignature="",linkAttempt=null,busy=false,queueRevision=0,queueState=[],roomSnapshotEpoch="",stalePage=false;
 function updateLinkControls(){}
 function clock(s){return String(s)}
 async function refresh(){refreshes++}
@@ -1044,3 +1044,127 @@ def test_room_http_retry_is_csrf_protected_owner_bound_and_truthful(tmp_path):
     finally:
         provider.resume.set()
         rig.close()
+
+
+
+def test_archive_search_ranks_explicit_licences_and_rejects_untrusted_metadata():
+    rows = [
+        {"identifier": "no-license", "title": "Open film", "downloads": 9000},
+        {"identifier": "../escape", "title": "Open film", "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/", "downloads": 9000},
+        {"identifier": "low", "title": "Open film", "licenseurl": "https://creativecommons.org/licenses/by/4.0/", "downloads": 10},
+        {"identifier": "high", "title": "Open film", "licenseurl": "https://creativecommons.org/publicdomain/mark/1.0/", "downloads": 20},
+        {"identifier": "fake", "title": "Open film", "licenseurl": "https://creativecommons.org.evil.example/publicdomain/zero/1.0/", "downloads": 1000},
+    ]
+    raw = json.dumps({"response": {"docs": rows}}).encode()
+    results = acquisition.archive_candidates(raw, "Open film")
+    assert [row["archive_id"] for row in results] == ["high", "low"]
+    assert results[0]["downloads"] == 20
+
+
+
+def test_archive_result_derives_exact_infohash_and_discards_tracker_metadata():
+    raw, digest, _ = _torrent(_info())
+    result = acquisition.archive_torrent_result(
+        {"archive_id": "demo", "title": "Demo", "downloads": 15}, raw)
+    assert result["id"] == digest and result["size"] == 8
+    assert "127.0.0.1" not in str(result) and "localhost" not in str(result)
+    unsafe, _, _ = _torrent(_info([{b"length": 8, b"path": [b"../escape.mp4"]}]))
+    with pytest.raises(acquisition.LinkError):
+        acquisition.archive_torrent_result({"archive_id": "demo"}, unsafe)
+
+
+
+def _archive_search_rows(count):
+    return json.dumps({"response": {"docs": [
+        {"identifier": f"film-{i}", "title": "Open film",
+         "licenseurl": ["https://creativecommons.org/publicdomain/zero/1.0/"],
+         "downloads": count - i} for i in range(count)
+    ]}}).encode()
+
+
+def test_archive_search_checks_fallback_candidates_after_failures(monkeypatch):
+    raw, digest, _ = _torrent(_info())
+    calls = []
+
+    def fetch(_launcher, _curl, url, _limit, _cancelled, _deadline):
+        calls.append(url)
+        if "advancedsearch" in url:
+            return _archive_search_rows(12)
+        if len(calls) <= 5:
+            raise acquisition.LinkError(502, "Source unavailable.")
+        return raw
+
+    monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
+    results = acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False)
+    assert [result["id"] for result in results] == [digest]
+    assert results[0]["archive_id"] == "film-4"
+    assert len(calls) == 1 + acquisition.ARCHIVE_CANDIDATE_LIMIT
+
+
+@pytest.mark.parametrize("status", [502, 504])
+def test_archive_search_reports_provider_failure_instead_of_empty(monkeypatch, status):
+    def fetch(_launcher, _curl, url, _limit, _cancelled, _deadline):
+        if "advancedsearch" in url:
+            return _archive_search_rows(2)
+        raise acquisition.LinkError(status, "Provider failure.")
+
+    monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
+    with pytest.raises(acquisition.LinkError) as exc:
+        acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False)
+    assert exc.value.status == status
+
+
+def test_archive_search_empty_when_all_metadata_is_incompatible(monkeypatch):
+    def fetch(_launcher, _curl, url, _limit, _cancelled, _deadline):
+        return _archive_search_rows(2) if "advancedsearch" in url else b"invalid torrent"
+
+    monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
+    assert acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False) == []
+
+
+def test_provisioned_wrapper_is_discovered_but_not_trusted(tmp_path, monkeypatch):
+    import link_provision
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    assert acquisition.CommandProvider().launcher == ""
+    wrapper = link_provision.wrapper_path()
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text("#!/bin/sh\nexit 0\n")
+    wrapper.chmod(0o700)
+    provider = acquisition.CommandProvider(("youtube",))
+    assert provider.launcher == str(wrapper)
+    assert provider.capabilities()["youtube"] is False  # unqualified stays off
+
+
+def test_install_reports_actionable_repair_when_unsupported(tmp_path, monkeypatch):
+    import link_provision
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(link_provision.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(link_provision.sys, "platform", "linux")
+    ok, message = link_provision.install()
+    assert not ok and "bubblewrap" in message
+    assert not link_provision.wrapper_path().exists()
+
+
+def test_setup_and_qualify_reports_unsupported_without_writing(monkeypatch, tmp_path):
+    import link_provision
+    import link_setup
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(link_provision, "unsupported_reason", lambda: "install bubblewrap")
+    ok, text = link_setup.setup_and_qualify()
+    assert not ok and "bubblewrap" in text
+    assert not link_provision.wrapper_path().exists()
+
+
+def test_setup_and_qualify_failed_probe_stays_off(monkeypatch, tmp_path):
+    import link_provision
+    import link_setup
+    import link_sandbox_probe
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(link_provision, "unsupported_reason", lambda: "")
+    saved = []
+    monkeypatch.setattr(link_sandbox_probe, "qualify",
+                        lambda _l: link_sandbox_probe.Qualification(False, {}, "lan reachable"))
+    monkeypatch.setattr(link_sandbox_probe, "save", lambda _l, r: saved.append(r.verified))
+    ok, text = link_setup.setup_and_qualify()
+    assert not ok and "lan reachable" in text and saved == [False]

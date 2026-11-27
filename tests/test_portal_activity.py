@@ -76,6 +76,7 @@ def _build_window(tmp_path, *, idle_add=None):
     saved = []
     window.busy = False
     window.now_playing = None
+    window.queue = []
     window._closing = False
     window._portal_cast_uploads = {}
     window._portal_cast_retried = set()

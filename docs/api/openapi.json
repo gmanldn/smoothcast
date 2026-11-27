@@ -93,6 +93,19 @@
         },
         "type": "object"
       },
+      "MagnetSearch": {
+        "properties": {
+          "q": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "type": "object"
+      },
       "Profile": {
         "properties": {
           "name": {
@@ -1103,6 +1116,48 @@
           }
         ],
         "summary": "Search every shared library in the house",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/search/magnets": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MagnetSearch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ],
+        "summary": "Explicit metadata-only archive (magnet) search through the room's link service",
         "tags": [
           "search"
         ]

@@ -161,3 +161,18 @@ def test_report_survives_a_tool_that_cannot_start(frozen_windows):
     result = media_tools.report(run=run)
     assert result["ok"] is False
     assert all(e["problem"] == "OSError" for e in result["tools"].values())
+
+
+def test_redirected_sidecar_directory_is_refused(frozen_windows, tmp_path):
+    outside = tmp_path / "external"
+    outside.mkdir()
+    (outside / "ffmpeg.exe").write_bytes(b"MZ")
+    sidecars = frozen_windows / "ffmpeg"
+    sidecars.rmdir()
+    try:
+        sidecars.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("directory symlinks unavailable")
+    with pytest.raises(media_tools.MediaToolMissing):
+        media_tools.resolve_media_tool("ffmpeg")
+

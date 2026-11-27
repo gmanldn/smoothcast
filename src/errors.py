@@ -15,7 +15,8 @@ from dataclasses import dataclass
 import threading
 import time
 
-CATEGORIES = ("app", "cast", "ffmpeg", "media", "room", "subtitle", "upload", "internal")
+CATEGORIES = ("app", "cast", "discovery", "dlna", "ffmpeg", "media", "network", "room",
+              "subtitle", "upload", "internal")
 SEVERITIES = ("info", "warning", "error")
 
 
@@ -138,6 +139,38 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
     _spec("media.type_unsupported", "error", False,
           "The media URL has no supported content type.",
           "Choose media with a known file type.", "Cast a local file instead."),
+    _spec("discovery.failed", "warning", True,
+          "SmoothCast could not search for receivers. Check your network and scan again.",
+          "Check that this computer is on the same network as your receivers.",
+          "Scan the network again.", "Turn off any VPN that blocks local devices."),
+    _spec("dlna.command_failed", "error", True,
+          "The DLNA receiver rejected the command. Try again or choose another receiver.",
+          "Retry the action.", "Restart the receiver if it keeps failing.",
+          "Choose a Google Cast target instead."),
+    _spec("network.port_in_use", "error", True,
+          "SmoothCast could not open its streaming port because another program is using it.",
+          "Retry the action; SmoothCast picks a free port when it can.",
+          "Close other media servers on this computer.", "Restart SmoothCast."),
+    _spec("network.vpn_default_route", "warning", True,
+          "A VPN is carrying your network traffic, so the TV may not be reachable.",
+          "Pause the VPN, or allow local network access in its settings.",
+          "Choose the receiver again from the list."),
+    _spec("network.interface_ambiguous", "warning", True,
+          "This computer is on more than one network, and SmoothCast could not tell which one the TV is on.",
+          "Choose the network that your TV uses in Network settings.",
+          "Disconnect networks you are not using, then scan again."),
+    _spec("network.subnet_mismatch", "error", False,
+          "The TV is on a different network segment than this computer.",
+          "Connect this computer to the same Wi-Fi or VLAN as the TV.",
+          "Ask your router admin to allow local discovery between the two networks."),
+    _spec("network.client_isolation", "error", False,
+          "The network blocks devices from talking to each other (client isolation).",
+          "Turn off AP or client isolation on your router, or use a different network.",
+          "Join this computer and the TV to the same non-guest network."),
+    _spec("network.discovery_blocked", "warning", True,
+          "This network does not pass the discovery messages SmoothCast uses to find TVs.",
+          "Add the TV by its address instead.",
+          "Allow multicast (mDNS) on your router or firewall, then scan again."),
     _spec("internal.unexpected", "error", True,
           "SmoothCast hit an unexpected problem. Retry the action.",
           "Retry the action.",
@@ -167,7 +200,13 @@ def _bounded_context(context: object) -> dict[str, str]:
 
 def record(code: str, context: object = None) -> None:
     """Remember that ``code`` reached a user (bounded ring; context is clipped)."""
-    entry = (time.time(), code if code in CATALOGUE else FALLBACK.code, _bounded_context(context))
+    # The failure-reporting path must tolerate invalid third-party metadata.
+    canonical = code if type(code) is str and code in CATALOGUE else FALLBACK.code
+    try:
+        facts = _bounded_context(context)
+    except Exception:
+        facts = {}
+    entry = (time.time(), canonical, facts)
     with _RECENT_LOCK:
         _RECENT.append(entry)
 
@@ -194,7 +233,7 @@ class SmoothCastError(Exception):
 
     def __init__(self, code: str, *, context: dict[str, str] | None = None,
                  detail: str = "") -> None:
-        self.spec = CATALOGUE.get(code, FALLBACK)
+        self.spec = CATALOGUE.get(code, FALLBACK) if type(code) is str else FALLBACK
         self.context = dict(context or {})
         super().__init__(f"{self.spec.code}: {detail}" if detail else self.spec.code)
 
@@ -207,7 +246,21 @@ class SmoothCastError(Exception):
         return self.spec.steps
 
 
+def coded(exc: BaseException, code: str) -> BaseException:
+    """Tag a legacy exception with its catalogue code (message text unchanged)."""
+    if code in CATALOGUE:
+        exc.code = code  # type: ignore[attr-defined]
+    return exc
+
+
 def describe(exc: object) -> ErrorSpec:
     """Catalogue entry for ``exc``; anything uncatalogued is ``internal.unexpected``."""
-    spec = getattr(exc, "spec", None)
-    return spec if isinstance(spec, ErrorSpec) else FALLBACK
+    try:
+        spec = getattr(exc, "spec", None)
+        if isinstance(spec, ErrorSpec) and type(spec.code) is str:
+            # Do not trust arbitrary messages or remediation supplied by an
+            # exception; the catalogue is the sole authority for public copy.
+            return CATALOGUE.get(spec.code, FALLBACK)
+    except Exception:
+        pass
+    return FALLBACK

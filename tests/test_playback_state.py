@@ -77,3 +77,44 @@ def test_external_runtime_is_unknown_for_live_or_malformed_reports():
                  {"duration": float("inf")}, {"duration": float("nan")},
                  {"duration": 10 ** 9}, {"duration": "soon"}, {"duration": [1]}):
         assert playback_state.external_runtime(info) is None, info
+
+
+def test_external_display_clock_projects_only_playing_and_keeps_unknowns_independent(monkeypatch):
+    import position_tracker
+    now = [100.0]
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
+    playing = playback_state.external_display_clock({"current_time": 12, "duration": 60}, "PLAYING")
+    paused = playback_state.external_display_clock({"current_time": 12, "duration": 60}, "PAUSED")
+    buffering = playback_state.external_display_clock({"current_time": 12, "duration": 60}, "BUFFERING")
+    now[0] = 105.0
+    assert playing.value() == 17
+    assert paused.value() == buffering.value() == 12
+    now[0] = 200.0
+    assert playing.value() == 60
+    length_only = playback_state.external_display_clock({"duration": 60}, "PLAYING")
+    assert length_only.value() is None and length_only.duration == 60
+    live = playback_state.external_display_clock({"current_time": 0}, "PLAYING")
+    assert live.value() == 0 and live.duration == 0
+    bad = playback_state.external_display_clock({"current_time": "nan", "duration": -5}, "PLAYING")
+    assert bad.value() is None and bad.duration == 0
+
+
+def test_external_metadata_is_receiver_only_and_never_invents_bytes():
+    assert playback_state.external_media_labels({"title": " Film ", "size_bytes": 4820000000}) == (
+        "Film", "4.82 GB"
+    )
+    assert playback_state.external_media_labels({"content_id": "http://private/token"}) == (
+        "External stream", "Size unavailable"
+    )
+    assert playback_state.external_media_labels({"title": "Live", "size_bytes": True}) == (
+        "Live", "Size unavailable"
+    )
+
+
+def test_catt_nested_metadata_title_rejects_another_apps_media():
+    # `catt info -j` has no top-level title; it is inside media_metadata (#686).
+    other = {"player_state": "PLAYING", "content_id": "http://192.168.0.16:8010/x",
+             "media_metadata": {"title": "Someone else's film"}}
+    assert not playback_state.direct_session_matches(other, "My film.mkv")
+    ours = dict(other, media_metadata={"title": "My film.mkv"})
+    assert playback_state.direct_session_matches(ours, "My film.mkv")

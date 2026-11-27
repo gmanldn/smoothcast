@@ -8,7 +8,9 @@ assumed compatible.
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 
 from async_jobs import UserFacingError
@@ -21,6 +23,12 @@ _HEADER = re.compile(
     r"(?:\.[0-9]+)?(?:[-+~][^\s]+)?(?:\s|$)",
     re.IGNORECASE,
 )
+
+
+# A loaded host can take seconds to start ffmpeg; the answer for one binary
+# never changes, so a good result is remembered per (path, mtime, size).
+VERSION_TIMEOUT = 15
+_verified: dict[tuple, tuple[int, int]] = {}
 
 
 class FFmpegVersionError(UserFacingError):
@@ -36,17 +44,29 @@ def parse_version(output: str) -> tuple[int, int] | None:
     return (int(match["major"]), int(match["minor"])) if match else None
 
 
-def require_supported_ffmpeg(*, run=subprocess.run) -> tuple[int, int]:
+def require_supported_ffmpeg(*, run=None) -> tuple[int, int]:
     """Query once before a cast starts an encoder; no GUI/network interaction."""
     command = [media_tools.resolve_media_tool("ffmpeg"), "-version"]
+    cacheable = run is None
+    run = run or subprocess.run
+    key = None
+    if cacheable:
+        try:
+            real = shutil.which(command[0]) or command[0]
+            st = os.stat(real)
+            key = (real, st.st_mtime_ns, st.st_size)
+        except OSError:
+            pass
+        if key in _verified:
+            return _verified[key]
     try:
         result = run(
             command, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, timeout=4, check=False,
+            capture_output=True, text=True, timeout=VERSION_TIMEOUT, check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise FFmpegVersionError(
-            "FFmpeg version check timed out; install FFmpeg 5.0 or newer",
+            "FFmpeg version check timed out because this computer is very busy; try the cast again",
             code="ffmpeg.missing",
         ) from exc
     except OSError as exc:
@@ -73,4 +93,6 @@ def require_supported_ffmpeg(*, run=subprocess.run) -> tuple[int, int]:
             "scale:force_divisible_by)",
             code="ffmpeg.too_old",
         )
+    if key is not None:
+        _verified[key] = version
     return version

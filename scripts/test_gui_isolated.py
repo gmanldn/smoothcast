@@ -7,6 +7,7 @@ no fallback to DISPLAY or WAYLAND_DISPLAY from the developer's desktop.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import secrets
@@ -19,6 +20,11 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_SECONDS = 20
+# The interaction benchmark is deliberately heavy (#627): 10 rounds of a
+# 1,000-item queue rebuild and removal with a 32-phone poll burst each. Its
+# cost is bounded by the queue-scaling work in #462, so give it a wide budget
+# rather than time out before it can write samples.
+INTERACTION_LIMIT_S = 600
 
 
 def isolated_environment(scratch: Path, parent: dict[str, str] | None = None) -> dict[str, str]:
@@ -100,6 +106,8 @@ def discard_scratch(folder: Path | str) -> None:
 
 def main() -> int:
     demo = sys.argv[1:] == ["--demo"]
+    interaction = sys.argv[1:] == ["--interaction"]
+    a11y = sys.argv[1:] == ["--a11y"]  # AT-SPI tree walk of the real window (#449)
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("GUI smoke tests are opt-in and must run outside pytest.",
               file=sys.stderr)
@@ -118,12 +126,19 @@ def main() -> int:
         scratch = Path(folder)
         env = isolated_environment(scratch)
         seeded = seed_isolated_state(scratch, env)
+        samples = scratch / "interaction-samples.json"
+        if interaction:
+            env["SMOOTHCAST_INTERACTION_SAMPLES"] = str(samples)
         before = {name: path.read_bytes() for name, path in seeded.items()}
         command = [
             shutil.which("xvfb-run"), "-a", "-s",
             "-screen 0 1280x800x24 -nolisten tcp",
             sys.executable, str(ROOT / "src" / "cast_control.py"), "--self-test",
         ]
+        if a11y:  # the walker starts its own private session bus; never the user's
+            command[-3:] = [sys.executable, str(ROOT / "scripts" / "gui_a11y_walk.py")]
+            env.pop("NO_AT_BRIDGE", None)
+            env["GTK_A11Y"] = "atspi"
         if demo:  # demo mode end to end inside the disposable display (#454)
             import site
             env.setdefault("PYTHONUSERBASE", site.getuserbase())
@@ -135,17 +150,39 @@ def main() -> int:
             # immediate xvfb-run shell and can leave children behind.
             process = subprocess.Popen(command, cwd=ROOT, env=env,
                                        start_new_session=True)
+            if interaction:
+                limit = INTERACTION_LIMIT_S
+            elif a11y and os.environ.get("SMOOTHCAST_A11Y_KEYS"):
+                limit = 120
+            else:
+                limit = MAX_SECONDS
             try:
-                code = process.wait(timeout=MAX_SECONDS)
+                code = process.wait(timeout=limit)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
-                print(f"GUI self-test exceeded {MAX_SECONDS}s; terminated.",
+                print(f"GUI self-test exceeded {limit}s; terminated.",
                       file=sys.stderr)
                 return 124
             after = {name: path.read_bytes() for name, path in seeded.items()}
             if demo:
                 return code
+            if interaction:
+                if not samples.is_file():
+                    print("interaction benchmark produced no samples", file=sys.stderr)
+                    return 1
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "interaction_latency_benchmark", ROOT / "scripts" / "interaction_latency_benchmark.py")
+                bench = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(bench)
+                payload = json.loads(samples.read_text(encoding="utf-8"))
+                print(bench.table(bench.summarize(payload)))
+                keep = os.environ.get("SMOOTHCAST_INTERACTION_KEEP")
+                if keep:
+                    shutil.copyfile(samples, keep)
+                    print(f"INTERACTION: samples kept at {keep}")
+                return 0
             changed = [name for name in before if before[name] != after[name]]
             if changed:
                 print("GUI self-test touched seeded state: " + ", ".join(changed),

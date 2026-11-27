@@ -28,7 +28,10 @@ def sync_rows(window, gtk) -> None:
         else:
             row.remove_css_class("current")
             state = "Queued"
-        title = queue_metadata.display_title(path, window._media_cache)
+        title = getattr(row, "display_title", None)
+        if title is None:
+            names = getattr(window, "_portal_queue_display_names", {})
+            title = queue_metadata.display_title(path, window._media_cache, names.get(path))
         row.update_property(
             [gtk.AccessibleProperty.LABEL],
             [f"{title}, {index + 1} of {len(window.queue)}, {state}"],

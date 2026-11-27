@@ -23,7 +23,7 @@ _INSTALL = {
               "aria2c": "run 'winget install aria2.aria2'",
               "ffprobe": "run 'winget install Gyan.FFmpeg' (it provides ffprobe)"},
 }
-_LAUNCHER_HELP = "set SMOOTHCAST_LINK_SANDBOX to the absolute path of an executable launcher that blocks local and private network access and limits files, disk, processes and time; a reference Linux launcher ships as scripts/link_sandbox_bwrap.py and 'smoothcast --link-check --qualify' attack-tests it before it is trusted"
+_LAUNCHER_HELP = "run 'smoothcast --link-check --setup' to install and attack-test the bundled bubblewrap launcher (needs the 'bubblewrap' package); it covers YouTube only, because BitTorrent peers cannot be filtered through it, so magnets also need your own torrent-capable launcher in SMOOTHCAST_LINK_SANDBOX that passes 'smoothcast --link-check --qualify'"
 _LAUNCHER_HELP_OTHER = "set SMOOTHCAST_LINK_SANDBOX to an executable launcher that blocks local and private network access and limits files, disk, processes and time; the shipped reference launcher uses bubblewrap and is Linux-only, so this platform needs its own launcher and 'smoothcast --link-check --qualify' must pass before it is trusted"
 _QUALIFY = "qualified isolation (run smoothcast --link-check --qualify)"
 _QUALIFY_STEP = "run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"

@@ -59,13 +59,20 @@ def load_settings(path: Path | None = None) -> dict[str, Any]:
     except (OSError, ValueError, RuntimeError):
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
+
+    def acquisition(key: str) -> bool:
+        value = raw.get(key, True)
+        if raw.get("acquisition_defaults_applied") is not True and value is False:
+            return True  # Retire the legacy default-off setting on upgrade.
+        return value is True
+
     return {"enabled": raw.get("mesh_enabled", True) is True,
             "strict": raw.get("mesh_strict") is True,
             "seeds": mb.parse_seeds(raw.get("mesh_seeds", [])
                                     if isinstance(raw.get("mesh_seeds"), list) else []),
-            # Remote link acquisition (#589): both strictly opt-in, default off.
-            "remote_acquisition": raw.get("mesh_remote_acquisition") is True,
-            "accept_acquisition": raw.get("mesh_accept_acquisition") is True}
+            # Only qualified workers on the trusted mesh may execute requests.
+            "remote_acquisition": acquisition("mesh_remote_acquisition"),
+            "accept_acquisition": acquisition("mesh_accept_acquisition")}
 
 
 def load_identity(path: Path) -> str:
@@ -173,7 +180,10 @@ class MeshService:
                             capabilities=("room", "screens", mesh_acquisition_activity.HINT,
                                           *((mesh_acquisition_bridge.HINT,)
                                             if cfg.acquisition_worker is not None
-                                            or cfg.acquisition_attach is not None else ()), *(
+                                            or cfg.acquisition_attach is not None else ()),
+                                          *((mesh_acquisition_bridge.SEARCH_HINT,)
+                                            if cfg.acquisition_worker is not None and cfg.acquisition_accept()
+                                            and "youtube" in cfg.link_acquisition_sources else ()), *(
                                 "acquire-" + kind + "-local" for kind in ("youtube", "magnet")
                                 if kind in cfg.link_acquisition_sources)),
                             addresses=(cfg.bind_ip,))

@@ -188,3 +188,17 @@ class ConfigRecoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_acquisition_defaults_migrate_legacy_flags_and_keep_new_admin_overrides():
+    defaults = real_defaults()
+    keys = ("portal_link_youtube", "portal_link_magnet",
+            "mesh_remote_acquisition", "mesh_accept_acquisition")
+    assert all(defaults[k] is True for k in keys)
+    old = dict.fromkeys(keys, False)
+    migrated = config_control.sanitise_config(old, defaults)
+    assert migrated["acquisition_defaults_applied"] is True
+    assert all(migrated[k] is True for k in keys)
+    explicit = config_control.sanitise_config(
+        {**old, "acquisition_defaults_applied": True}, defaults)
+    assert all(explicit[k] is False for k in keys)

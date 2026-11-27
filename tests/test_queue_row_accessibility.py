@@ -40,4 +40,5 @@ def test_queue_row_label_stays_in_step_with_rebuilt_position_and_playback():
                 if isinstance(node, ast.Constant) and isinstance(node.value, str)}
     assert "Now playing" in literals
     assert "Queued" in literals
-    assert "queue_metadata.display_title(path, self._media_cache)" in source
+    assert "queue_metadata.display_title(path, self._media_cache, display_name)" in source
+    assert "row.display_title = display_title" in source

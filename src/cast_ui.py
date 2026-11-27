@@ -454,6 +454,11 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             child = action_row.get_child_at_index(index)
             if child is not None:
                 child.set_focusable(False)  # the button inside is the focus stop
+                # GTK traps Tab when the only live stop shares a FlowBox with dead
+                # children, so a disabled button disables its FlowBoxChild too.
+                button = self.action_controls[index]
+                child.set_sensitive(button.get_sensitive())
+                button.connect("notify::sensitive", lambda b, _p, c=child: c.set_sensitive(b.get_sensitive()))
         body.append(action_row)
         return card
 
@@ -1121,7 +1126,6 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 report += "\n" + "\n".join(rows)
             if thread_label.get_text() != report:
                 thread_label.set_text(report)
-        info = self.device_info
         session = self.session
         media = self.media
         # Reuse the snapshot the seekbar used this tick; neither path touches
@@ -1148,15 +1152,11 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 encoder_text = f"{engine} · {speed} · {fps} fps"
             else:
                 encoder_text = "local MP4 preparation" if session.mode == "dlna" else "device-native"
-        if self.external and info:
-            title = f"{str(info.get('title') or 'external stream')} · external"
-            if self.np_title.get_text() != title:
-                self.np_title.set_text(title)
-            hint = "Another app started this stream — controls are limited"
-            if self.np_meta.get_text() != hint:
-                self.np_meta.set_text(hint)
-        position = self.tracker.value()
-        position_text = "unknown" if position is None else f"{fmt_time(position)} of {fmt_time(self.tracker.duration)}"
+        position, duration = self._portal_timing() if self.external else (
+            self.tracker.value(), self.tracker.duration)
+        position_text = "unknown" if position is None else (
+            f"{fmt_time(position)} of {fmt_time(duration) if duration else 'unknown'}"
+        )
         if self.tracker.known and session and session.mode == "transcode":
             position_text += " (estimated)"
         # Buffer health — how far ahead the encoder is from playback position.
@@ -1282,15 +1282,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _update_header_subtitle(self) -> None:
-        labels = {
-            "OFFLINE": "offline",
-            "IDLE": "idle",
-            "PLAYING": "playing",
-            "BUFFERING": "buffering",
-            "PAUSED": "paused",
-        }
-        state = labels.get(self.device_state, "idle")
-        if self.external and state not in {"offline", "idle"}:
+        state = state_labels.present(self.device_state).short.lower()
+        if self.external and state not in {"offline", "ready", "unknown", "error"}:
             state = "playing on TV"
         device = self._device()
         subtitle = f"{device} · {state}" if device else "No receiver selected"
@@ -1416,29 +1409,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             self.local_button.set_label("Pause preview")
         else:
             self.local_button.set_label("Play preview")
-        if self.session is None and not self.external and stream is not None and stream.get_playing():
-            self._set_chip("Playing locally", "playing")
-        elif local_ready:
-            self._set_chip("Preview paused" if stream is not None else "Ready to preview", "idle")
-        elif self.device_state == "OFFLINE":
-            self._set_chip(state_labels.present("OFFLINE").short, "offline")
-        elif self.busy:
-            self._set_chip(state_labels.present("PREPARING").label, "buffering")
-        elif self.external:
-            self._set_chip(state_labels.present("EXTERNAL").short, "paused")
-        elif self.device_state == "BUFFERING":
-            self._set_chip(state_labels.present("BUFFERING").label, "buffering")
-        elif playing:
-            self._set_chip("Live" if (self.session and self.session.mode == "transcode") else "Playing", "playing")
-        elif paused:
-            self._set_chip(state_labels.present("PAUSED").label, "paused")
-        else:
-            if stream is not None and stream.get_playing():
-                self._set_chip("Playing locally", "playing")
-            elif local_ready:
-                self._set_chip("Ready to preview", "idle")
-            else:
-                self._set_chip("Ready", "idle")
+        self._set_chip(*self._status_chip(stream, local_ready, playing, paused))
         thumbnails = getattr(self, "_thumbnail_render_key", None)
         if thumbnails and thumbnails[0] is not None and thumbnails[0] != self._thumbnail_identity():
             self._refresh_thumbnail_strip(0.0, visible=False)
@@ -1449,6 +1420,30 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self._sync_ui_timers()
         self._update_panel_badges()
 
+
+    def _status_chip(self, stream, local_ready: bool, playing: bool, paused: bool) -> tuple[str, str]:
+        """One decision table for the status chip: (label, css kind)."""
+        local_playing = stream is not None and stream.get_playing()
+        if self.session is None and not self.external and local_playing:
+            return state_labels.present("LOCAL_PLAYING").label, "playing"
+        if local_ready:
+            return ("Preview paused" if stream is not None else "Ready to preview"), "idle"
+        if self.device_state == "OFFLINE":
+            return state_labels.present("OFFLINE").short, "offline"
+        if self.busy:
+            return state_labels.present("PREPARING").label, "buffering"
+        if self.external:
+            return state_labels.present("EXTERNAL").short, "paused"
+        if self.device_state == "BUFFERING":
+            return state_labels.present("BUFFERING").label, "buffering"
+        if playing:
+            live = self.session and self.session.mode == "transcode"
+            return ("Live" if live else state_labels.present("PLAYING").label), "playing"
+        if paused:
+            return state_labels.present("PAUSED").label, "paused"
+        if local_playing:
+            return state_labels.present("LOCAL_PLAYING").label, "playing"
+        return state_labels.present("IDLE").label, "idle"
 
     def _refresh_direct_note(self) -> None:
         switch = getattr(self, "direct_switch", None)
@@ -1476,24 +1471,6 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         save_config(self.cfg)
         self.menu_button.set_menu_model(self._build_menu())
         self.toast(f"{'Pinned' if pinned else 'Unpinned'}: {pathlib.Path(path).name}")
-
-
-    def _clear_favourites(self) -> None:
-        self.cfg["favourites"] = []
-        save_config(self.cfg)
-        self.menu_button.set_menu_model(self._build_menu())
-        self.toast("Favourites cleared")
-
-
-    def _open_favourite(self, index: int) -> None:
-        favourites = self.cfg.get("favourites", [])
-        if not 0 <= index < len(favourites):
-            return
-        path = pathlib.Path(favourites[index])
-        if not path.is_file():
-            self.toast("That file has moved or been deleted", error=True)
-            return
-        self.open_paths([str(path)])
 
 
     def _note_device_used(self) -> None:

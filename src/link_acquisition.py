@@ -26,7 +26,7 @@ import tempfile
 import threading
 import unicodedata
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from typing import Callable
 import media_tools
 
@@ -246,7 +246,7 @@ def inspect_torrent(data: bytes, identity: str) -> TorrentMedia:
             seen.add(key)
             total += size
             if total > MAX_BYTES:
-                raise LinkError(413, "Torrent exceeds the 2 GiB acquisition limit.")
+                raise LinkError(413, "That torrent is larger than the 2 GiB download limit.")
             if size and relative.suffix.lower() in MEDIA_SUFFIXES:
                 candidates.append((size, -index, relative))
         pieces = info.get(b"pieces")
@@ -272,11 +272,11 @@ def _tree_bytes(root: Path) -> int:
             path = Path(directory) / name
             info = path.lstat()
             if count > MAX_FILES * 2 or stat.S_ISLNK(info.st_mode):
-                raise LinkError(422, "Unsafe or excessive files in acquisition staging.")
+                raise LinkError(422, "That download contains unsafe or too many files, so it was stopped.")
             if stat.S_ISREG(info.st_mode):
                 total += info.st_size
             elif not stat.S_ISDIR(info.st_mode):
-                raise LinkError(422, "Unsupported file in acquisition staging.")
+                raise LinkError(422, "That download contains a file SmoothCast cannot play.")
     return total
 
 
@@ -398,7 +398,173 @@ def _youtube_search_command(launcher: str, executable: str, text: str, cancelled
                             pass
                         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
-        raise LinkError(503, "The isolated YouTube search worker is unavailable.") from None
+        raise LinkError(503, guest_messages.YOUTUBE_OFF) from None
+    finally:
+        _SEARCH_SLOT.release()
+
+
+ARCHIVE_CANDIDATE_LIMIT = 8
+ARCHIVE_RESULT_LIMIT = 4
+_ARCHIVE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}\Z")
+_ARCHIVE_LICENSE = re.compile(
+    r"https?://creativecommons\.org/(?:licenses/(?:by|by-sa)/[1-4]\.0(?:/[a-z]{2})?"
+    r"|licenses/publicdomain|publicdomain/(?:zero|mark)/1\.0)/?\Z", re.I)
+
+
+def archive_candidates(raw: bytes, query: str) -> list[dict]:
+    """Only explicit open/public-domain licence claims; popularity is downloads, not seeds."""
+    if len(raw) > SEARCH_OUTPUT_LIMIT:
+        raise LinkError(502, "Archive search returned too much data.")
+    try:
+        envelope = json.loads(raw)
+        rows = envelope["response"]["docs"]
+    except (ValueError, KeyError, TypeError, RecursionError):
+        raise LinkError(502, "Archive search returned invalid data.") from None
+    if not isinstance(rows, list):
+        raise LinkError(502, "Archive search returned invalid results.")
+    terms = set(re.findall(r"\w+", query.casefold()))
+    found = []
+    seen = set()
+    for row in rows[:30]:
+        if not isinstance(row, dict):
+            continue
+        ident, license_url = row.get("identifier"), row.get("licenseurl")
+        # Advanced Search may represent a single metadata value as an array.
+        if isinstance(license_url, list) and len(license_url) == 1:
+            license_url = license_url[0]
+        if (not isinstance(ident, str) or not _ARCHIVE_ID.fullmatch(ident)
+                or ident in seen or not isinstance(license_url, str)
+                or not _ARCHIVE_LICENSE.fullmatch(license_url)):
+            continue
+        title = _search_label(row.get("title"), 200)
+        if not title:
+            continue
+        overlap = len(terms & set(re.findall(r"\w+", title.casefold())))
+        if not overlap:
+            continue
+        downloads = row.get("downloads")
+        downloads = downloads if type(downloads) is int and 0 <= downloads <= 10**12 else 0
+        seen.add(ident)
+        found.append((overlap, downloads, ident, {
+            "archive_id": ident, "title": title, "license": license_url,
+            "downloads": downloads,
+        }))
+    found.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    return [item[3] for item in found[:ARCHIVE_CANDIDATE_LIMIT]]
+
+
+def archive_torrent_result(candidate: dict, data: bytes) -> dict:
+    """Derive the exact v1 infohash and reuse the acquisition safety validator."""
+    if len(data) > 2 * 1024**2:
+        raise LinkError(422, "Archive torrent metadata is too large.")
+    try:
+        parser = _Bencode(data)
+        parser.read()
+        if parser.info is None or parser.pos != len(data):
+            raise ValueError("missing info")
+        digest = hashlib.sha1(parser.info).hexdigest()
+    except (ValueError, TypeError, RecursionError, IndexError):
+        raise LinkError(422, "Invalid Archive torrent metadata.") from None
+    media = inspect_torrent(data, digest)
+    return {**candidate, "id": digest, "size": media.size, "source": "Internet Archive"}
+
+
+def _archive_fetch(launcher: str, curl: str, url: str, limit: int, cancelled,
+                   deadline: float) -> bytes:
+    """Fixed public HTTPS URLs only, executed through the qualified egress sandbox."""
+    with tempfile.TemporaryDirectory(prefix="smoothcast-archive-") as directory:
+        with tempfile.TemporaryFile(dir=directory) as output:
+            seconds = max(1, min(6, int(deadline - time.monotonic())))
+            command = [launcher, curl, "--disable", "--silent", "--show-error",
+                       "--fail", "--location", "--max-redirs", "2", "--proto", "=https",
+                       "--proto-redir", "=https", "--max-time", str(seconds),
+                       "--max-filesize", str(limit), "--", url]
+            kwargs = {"start_new_session": True} if os.name == "posix" else {}
+            process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                                       stdout=output, stderr=subprocess.DEVNULL, **kwargs)
+            try:
+                while process.poll() is None:
+                    if cancelled():
+                        raise LinkError(403, guest_messages.ACCESS_REMOVED)
+                    if time.monotonic() >= deadline:
+                        raise LinkError(504, "Archive search timed out.")
+                    if os.fstat(output.fileno()).st_size > limit:
+                        raise LinkError(502, "Archive response exceeded its size limit.")
+                    time.sleep(0.05)
+                if cancelled():
+                    raise LinkError(403, guest_messages.ACCESS_REMOVED)
+                if process.returncode == 28:
+                    raise LinkError(504, "Archive search timed out.")
+                if process.returncode:
+                    raise LinkError(502, "Archive source unavailable.")
+                output.seek(0)
+                data = output.read(limit + 1)
+                if len(data) > limit:
+                    raise LinkError(502, "Archive response exceeded its size limit.")
+                return data
+            finally:
+                if process.poll() is None:
+                    try:
+                        if os.name == "posix":
+                            os.killpg(process.pid, signal.SIGKILL)
+                        else:
+                            process.kill()
+                    except OSError:
+                        pass
+                    process.wait(timeout=5)
+
+
+def _archive_search_command(launcher: str, curl: str, text: str, cancelled) -> list[dict]:
+    if not _SEARCH_SLOT.acquire(blocking=False):
+        raise LinkError(429, "External search is busy. Try again shortly.")
+    try:
+        terms = re.findall(r"[^\W_]+", text, re.UNICODE)[:12]
+        if not terms:
+            return []
+        query = ('format:"Archive BitTorrent" AND mediatype:(movies OR audio) '
+                 'AND licenseurl:* AND title:('
+                 + " AND ".join('"' + term + '"' for term in terms) + ")")
+        params = [("q", query), ("rows", "30"), ("output", "json"), ("sort[]", "downloads desc")]
+        params += [("fl[]", field) for field in ("identifier", "title", "licenseurl", "downloads")]
+        deadline = time.monotonic() + SEARCH_SECONDS
+        raw = _archive_fetch(launcher, curl, "https://archive.org/advancedsearch.php?" + urlencode(params),
+                             SEARCH_OUTPUT_LIMIT, cancelled, deadline)
+        results = []
+        seen = set()
+        failure: LinkError | None = None
+        for candidate in archive_candidates(raw, text):
+            if cancelled():
+                raise LinkError(403, guest_messages.ACCESS_REMOVED)
+            if deadline - time.monotonic() < 1:
+                failure = LinkError(504, "Archive search timed out before all candidates could be checked.")
+                break
+            ident = quote(candidate["archive_id"], safe="")
+            url = f"https://archive.org/download/{ident}/{ident}_archive.torrent"
+            try:
+                data = _archive_fetch(launcher, curl, url, 2 * 1024**2, cancelled, deadline)
+            except LinkError as exc:
+                if exc.status not in (502, 503, 504):
+                    raise
+                failure = exc
+                continue
+            try:
+                row = archive_torrent_result(candidate, data)
+            except LinkError as exc:
+                if exc.status not in (413, 422):
+                    raise
+                continue
+            if row["id"] not in seen:
+                seen.add(row["id"])
+                results.append(row)
+                if len(results) >= ARCHIVE_RESULT_LIMIT:
+                    break
+        if cancelled():
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
+        if not results and failure is not None:
+            raise failure
+        return results
+    except (OSError, subprocess.TimeoutExpired):
+        raise LinkError(503, guest_messages.ARCHIVE_OFF) from None
     finally:
         _SEARCH_SLOT.release()
 
@@ -414,11 +580,18 @@ class CommandProvider:
     """
     def __init__(self, kinds=(), *, launcher=None):
         raw = launcher or os.environ.get("SMOOTHCAST_LINK_SANDBOX", "")
+        if not raw:
+            try:
+                import link_provision
+                raw = link_provision.default_launcher()
+            except Exception:
+                raw = ""
         self.launcher = (str(raw) if raw and Path(raw).is_absolute()
                          and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
         self.tools = {kind: shutil.which(tool) for kind, tool in
                       (("youtube", "yt-dlp"), ("magnet", "aria2c"))}
         self.probe = media_tools.find_media_tool("ffprobe")
+        self.archive_curl = shutil.which("curl")
         self.kinds = frozenset(kinds)
 
     def _isolation_verified(self) -> bool:
@@ -455,6 +628,17 @@ class CommandProvider:
             raise LinkError(503, guest_messages.YOUTUBE_OFF)
         return _youtube_search_command(self.launcher, str(self.tools["youtube"]), text, cancelled)
 
+    def magnet_search_available(self) -> bool:
+        return bool(self.archive_curl and self.capabilities().get("magnet"))
+
+    def search_magnets(self, value: object, cancelled) -> list[dict]:
+        if not isinstance(value, str) or not 3 <= len(value.strip()) <= 200:
+            raise LinkError(400, "Enter a search of 3 to 200 characters.")
+        text = _search_text(value)
+        if not self.magnet_search_available():
+            raise LinkError(503, "Archive search is unavailable in this room. Try again later.")
+        return _archive_search_command(self.launcher, str(self.archive_curl), text, cancelled)
+
     def readiness_text(self, kind: str) -> str:
         row = self.readiness()[kind]
         if row["missing"]:
@@ -464,16 +648,16 @@ class CommandProvider:
 
     def _run(self, executable, args, directory, cancelled, progress, deadline):
         if cancelled():
-            raise LinkError(409, "Acquisition cancelled.")
+            raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
         if shutil.disk_usage(directory).free < FREE_RESERVE + MAX_BYTES:
-            raise LinkError(507, "Not enough host disk space for a bounded acquisition.")
+            raise LinkError(507, "There is not enough space on the SmoothCast computer for that download.")
         command = [self.launcher, str(executable), *args]
         kwargs = {"start_new_session": True} if os.name == "posix" else {}
         try:
             process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs)
         except OSError:
-            raise LinkError(503, "The configured acquisition worker could not start.") from None
+            raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE) from None
 
         def read_progress():
             assert process.stdout is not None
@@ -493,16 +677,16 @@ class CommandProvider:
         try:
             while process.poll() is None:
                 if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                    raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 if time.monotonic() >= deadline:
-                    raise LinkError(504, "The acquisition exceeded its time limit.")
+                    raise LinkError(504, "The download took too long and was stopped.")
                 if _tree_bytes(directory) > MAX_BYTES or shutil.disk_usage(directory).free < FREE_RESERVE:
-                    raise LinkError(507, "The host acquisition storage limit was reached.")
+                    raise LinkError(507, "The SmoothCast computer has reached its download storage limit.")
                 time.sleep(0.25)
             if process.returncode:
-                raise LinkError(502, "The external media worker failed or the source is unavailable.")
+                raise LinkError(502, "The download failed, or the source is unavailable.")
             if _tree_bytes(directory) > MAX_BYTES:
-                raise LinkError(413, "Downloaded media exceeds the acquisition limit.")
+                raise LinkError(413, "The downloaded file is larger than the download limit.")
         finally:
             if process.poll() is None:
                 try:
@@ -519,7 +703,7 @@ class CommandProvider:
 
     def acquire(self, source: Source, directory: Path, stage, progress, cancelled) -> Path:
         if not self.capabilities().get(source.kind):
-            raise LinkError(503, "This host has not enabled an isolated worker for that source.")
+            raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
         deadline = time.monotonic() + MAX_SECONDS
         tool = self.tools[source.kind]
         if source.kind == "youtube":
@@ -575,7 +759,7 @@ class CommandProvider:
                 raise LinkError(422, "Torrent media size does not match verified metadata.")
         stage("verifying")
         if cancelled():
-            raise LinkError(409, "Acquisition cancelled.")
+            raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
         # ffprobe receives a local file, with network protocols disabled.
         try:
             result = subprocess.run(
@@ -621,7 +805,7 @@ def _sha256(path: Path, cancelled: Callable[[], bool]) -> str:
     with open(path, "rb") as stream:
         while chunk := stream.read(1 << 20):
             if cancelled():
-                raise LinkError(409, "Acquisition cancelled.")
+                raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
             digest.update(chunk)
     return digest.hexdigest()
 JOURNAL_BYTES = 64 * 1024
@@ -779,10 +963,17 @@ class LinkJobs:
             return {"youtube": False, "magnet": False}
         return self.provider.capabilities()
 
+    def search_available(self) -> bool:
+        if self._journal_error or self._closed:
+            return False
+        available = getattr(self.provider, "search_available", None)
+        return bool(available()) if callable(available) else bool(
+            self.capabilities().get("youtube") and callable(getattr(self.provider, "search_youtube", None)))
+
     def search_youtube(self, owner: str, value: object) -> list[dict]:
         text = _search_text(value)
         search = getattr(self.provider, "search_youtube", None)
-        if not self.capabilities().get("youtube") or not callable(search):
+        if not self.search_available() or not callable(search):
             raise LinkError(503, guest_messages.YOUTUBE_OFF)
 
         def cancelled():
@@ -791,6 +982,24 @@ class LinkJobs:
         if cancelled():
             raise LinkError(403, guest_messages.ACCESS_REMOVED)
         results = search(text, cancelled)
+        if cancelled():
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
+        return results
+
+    def magnet_search_available(self) -> bool:
+        available = getattr(self.provider, "magnet_search_available", None)
+        return bool(not self._journal_error and not self._closed
+                    and callable(available) and available())
+
+    def search_magnets(self, owner: str, value: object) -> list[dict]:
+        search = getattr(self.provider, "search_magnets", None)
+        if not self.magnet_search_available() or not callable(search):
+            raise LinkError(503, "Archive search is unavailable in this room.")
+        def cancelled():
+            return self._closed or not self.owner_active(owner)
+        if cancelled():
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
+        results = search(value, cancelled)
         if cancelled():
             raise LinkError(403, guest_messages.ACCESS_REMOVED)
         return results
@@ -809,7 +1018,7 @@ class LinkJobs:
             self._journal_error = True
             for job in self._jobs.values():
                 if job.stage == "pending":
-                    self._change(job, stage="failed", error="Acquisition recovery storage is unavailable.")
+                    self._change(job, stage="failed", error="The SmoothCast computer could not save the download. Try again shortly.")
             self._revision += 1
             return False
 
@@ -828,9 +1037,9 @@ class LinkJobs:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
             if self._journal_error:
-                raise LinkError(503, "Acquisition recovery storage is unavailable.")
+                raise LinkError(503, "The SmoothCast computer could not save the download. Try again shortly.")
             if not self.capabilities().get(source.kind):
-                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
+                raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
             receipt = self._requests.get((owner, request))
             if receipt is not None:
                 job = self._jobs.get(receipt)
@@ -852,14 +1061,14 @@ class LinkJobs:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
             if self._journal_error:
-                raise LinkError(503, "Acquisition recovery storage is unavailable.")
+                raise LinkError(503, "The SmoothCast computer could not save the download. Try again shortly.")
             job = self._jobs.get(job_id) if isinstance(job_id, str) else None
             if job is None or job.owner != owner:
                 raise LinkError(404, "That download is not available to retry.")
             if job.stage not in {"failed", "cancelled"}:
                 raise LinkError(409, "Only a failed or cancelled download can be retried.")
             if not self.capabilities().get(job.source.kind):
-                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
+                raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
             return self._enqueue(owner, job.source, job.request)
 
     def _enqueue(self, owner: str, source: Source, request: str) -> str:
@@ -876,7 +1085,7 @@ class LinkJobs:
                     self._remember_request(owner, request, job.id)
                     return job.id
         if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
-            raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
+            raise LinkError(429, "The download queue is full. Try again when one of the current downloads finishes.")
         previous_jobs = self._jobs.copy()
         previous_requests = self._requests.copy()
         while len(self._jobs) >= MAX_RECORDS:
@@ -884,7 +1093,7 @@ class LinkJobs:
             expired = next((j for j in self._jobs.values()
                             if j.stage in TERMINAL - {"delivery_uncertain"}), None)
             if expired is None:
-                raise LinkError(429, "The room acquisition queue is full.")
+                raise LinkError(429, "The download queue is full.")
             self._jobs.pop(expired.id)
             for key, value in tuple(self._requests.items()):
                 if value == expired.id:
@@ -897,7 +1106,7 @@ class LinkJobs:
         self._remember_request(owner, request, job.id)
         if not self._save():
             self._jobs, self._requests = previous_jobs, previous_requests
-            raise LinkError(503, "Acquisition receipt could not be saved; no download started.")
+            raise LinkError(503, "The download could not be recorded, so nothing was downloaded. Try again shortly.")
         self._revision += 1
         if self._worker is None:
             self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
@@ -945,6 +1154,7 @@ class LinkJobs:
                     continue
             directory = self.root / (job.home or job.id)
             delivered = False
+            outcome: dict | None = None
             reused: Path | None = None
 
             def cancelled():
@@ -952,12 +1162,12 @@ class LinkJobs:
 
             def stage(value):
                 if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                    raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 self._change(job, stage=value, received=None, total=None, rate=None, measured_at=0.0)
 
             try:
                 if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                    raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 if job.home:
                     reused = self._verified_retained(job, directory, cancelled)
                 if reused is not None:
@@ -978,9 +1188,9 @@ class LinkJobs:
                 # owner's live session again when it receives the request.
                 with self._lock:
                     if cancelled() or self._closed:
-                        raise LinkError(409, "Acquisition cancelled.")
+                        raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                     if self._journal_error:
-                        raise LinkError(503, "Acquisition recovery storage is unavailable.")
+                        raise LinkError(503, "The SmoothCast computer could not save the download. Try again shortly.")
                     title = "".join(c for c in path.name if c.isprintable())[:120]
                     title = title.replace(job.source.identity, "[source]") or job.source.label
                     self._change(job, stage="queueing", title=title,
@@ -998,17 +1208,21 @@ class LinkJobs:
                         self._change(job, stage="delivery_uncertain",
                                      error="Queue accepted media but its receipt could not be saved. Check Up Next.")
             except LinkError as exc:
-                self._change(job, stage="cancelled" if cancelled() and not delivered else
-                             "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
+                outcome = dict(stage="cancelled" if cancelled() and not delivered else
+                               "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
             except Exception:
-                self._change(job, stage="delivery_uncertain" if delivered else
-                             "cancelled" if cancelled() else "failed",
-                             error="Queue delivery not confirmed; check Up Next." if delivered else
-                             "Acquisition could not finish on this host.", rate=None)
+                outcome = dict(stage="delivery_uncertain" if delivered else
+                               "cancelled" if cancelled() else "failed",
+                               error="Queue delivery not confirmed; check Up Next." if delivered else
+                               "Acquisition could not finish on this host.", rate=None)
             finally:
                 if not delivered and reused is None and not job.home:
                     shutil.rmtree(directory, ignore_errors=True)
+                # Publish a terminal failure only once staging is gone and the
+                # journal holds it, so no reader sees "failed" before it is durable.
                 with self._lock:
+                    if outcome:
+                        self._change(job, **outcome)
                     if job.stage != "ready":
                         self._save()
 
@@ -1049,12 +1263,12 @@ class LinkJobs:
         with self._lock:
             job = self._jobs.get(job_id) if isinstance(job_id, str) else None
             if job is None or job.owner != owner:
-                raise LinkError(404, "That acquisition is not available.")
+                raise LinkError(404, "That download is not available.")
             if job.stage in TERMINAL or job.stage == "queueing":
-                raise LinkError(409, "The acquisition has already finished or is entering Up Next.")
+                raise LinkError(409, "That download has already finished or is already in Up Next.")
             job.cancel.set()
             if job.stage == "pending":
-                self._change(job, stage="cancelled", error="Acquisition cancelled.")
+                self._change(job, stage="cancelled", error=guest_messages.DOWNLOAD_CANCELLED)
                 self._save()
 
     def revoke(self, owners):
@@ -1091,7 +1305,18 @@ def diagnostics_main(argv=None) -> int:
                         help="Attack-test the configured launcher (IPv4/IPv6 loopback, LAN, "
                              "cloud metadata, home, leftover processes); saves the result for "
                              "this exact launcher file")
+    parser.add_argument("--setup", action="store_true",
+                        help="Install the reference launcher wrapper (Linux + bubblewrap) "
+                             "and attack-test it; never enables a provider by itself")
     args = parser.parse_args(argv)
+    setup_note = None
+    if args.setup:
+        import link_provision
+        ok, setup_note = link_provision.install()
+        if not ok:
+            print(json.dumps({"setup": "unsupported_or_failed", "repair": setup_note}, indent=2))
+            return 1
+        args.qualify = True
     provider = CommandProvider()
     tools = {}
     for name, executable, flag in (
@@ -1137,6 +1362,7 @@ def diagnostics_main(argv=None) -> int:
         if provider.launcher:
             link_sandbox_probe.save(provider.launcher, qualification)
     report = {
+        **({"setup_launcher": setup_note} if setup_note else {}),
         "tools": tools,
         "launcher_configured": bool(provider.launcher),
         **({"engines_via_launcher": engines} if provider.launcher else {}),

@@ -87,7 +87,7 @@ def test_config_loader_validates_search_folders():
 def test_auto_resolution_consults_search_folders_before_embedded():
     av = (ROOT / "src" / "cast_av.py").read_text(encoding="utf-8")
     assert "subtitle_search.find_subtitle(" in av
-    assert "self.cfg.get(\"subtitle_search_folders\")" in av
+    assert "cfg.get(\"subtitle_search_folders\")" in av
     assert "Found subtitle:" in av
     assert "Found next to video:" not in av
 

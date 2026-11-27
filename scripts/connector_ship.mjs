@@ -1,4 +1,4 @@
-// Connector-only, develop-only progress transport (#598).
+// Connector-only, develop-only progress and explicit owner release transport (#598, #631).
 // Per-ticket PATCH allocation is retired (owner policy, 25 Nov 2026).
 // versionBlob MUST come from offline
 // canonical AST validation of exact pinned bytes; the connector re-derives
@@ -40,7 +40,7 @@ function validateVersionBump(baseSource,newSource){
 function validate(p){
   check(Number.isSafeInteger(p.issue)&&p.issue>0&&/^[A-Za-z0-9-]{1,80}$/.test(p.agent),"invalid issue/agent");
   check(isSha(p.base)&&isSha(p.versionBlob),"invalid base or version proof");
-  check(p.kind===undefined||p.kind==="progress"||p.kind==="finalise","invalid plan kind");
+  check(p.kind===undefined||p.kind==="progress"||p.kind==="release"||p.kind==="finalise","invalid plan kind");
   // Fence old manifests before they can create, publish or close anything.
   // Native finish closes verified tickets without allocating a version.
   check(p.kind!=="finalise","per-ticket PATCH finalise retired; ship progress and use native finish");
@@ -48,7 +48,7 @@ function validate(p){
   const paths=new Set();
   for(const c of p.changes){
     check(typeof c.path==="string"&&/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(c.path)&&!c.path.split("/").some(x=>[".","..",".git"].includes(x)),"invalid path");
-    check(p.kind==="finalise"||c.path!=="src/version.py","version edit or duplicate path");
+    check(p.kind==="release"||c.path!=="src/version.py","version edit or duplicate path");
     check(c.old===null||isSha(c.old),"invalid old blob");
     check(typeof c.content==="string"&&c.content.length<=500000,"bounded text only");
     check(!paths.has(c.path),"version edit or duplicate path");
@@ -57,6 +57,13 @@ function validate(p){
   for(const k of ["message","verification","next"]){
     check(typeof p[k]==="string"&&p[k].trim()&&!/[\x00-\x1f\x7f]/.test(p[k]),"missing or multiline "+k);
     check(!/<!--\s*sc-/i.test(p[k]),"reserved protocol marker in "+k);
+  }
+  if(p.kind==="release"){
+    check(paths.size===1&&paths.has("src/version.py"),"release ships exactly one version.py edit");
+    check(p.changes[0].old===p.versionBlob,"release must replace the pinned version blob");
+    check(isSha(p.releaseBlob)&&blobSha(p.changes[0].content)===p.releaseBlob,"release bytes disagree with offline AST proof");
+    const v=parseVersion(p.changes[0].content);
+    check(v!==null&&p.message==="chore(version): release "+[v.MAJOR,v.MINOR,v.PATCH].join("."),"release requires exact version subject");
   }
   if(p.kind==="finalise"){
     check(paths.size===1&&paths.has("src/version.py"),"finalise ships exactly one version.py edit");
@@ -174,6 +181,9 @@ async function checkBase(api,p){
   // bytes, not just the tree ID the API reports.
   const served=await api.file(p.base,"src/version.py");
   check(typeof served?.content==="string"&&blobSha(served.content)===p.versionBlob,"served version bytes disagree with the pinned proof");
+  if(p.kind==="release"){
+    validateVersionBump(served.content,p.changes[0].content);
+  }
   if(p.kind==="finalise"){
     // Complete historical PATCH attribution: walk every commit touching
     // src/version.py back to the initial import and refuse a second PATCH
@@ -228,7 +238,14 @@ async function verifyCandidate(api,p,candidate){
   check(c.message===candidateMessage(p),"candidate message/issue mismatch");
   const after=await treeSnapshot(api,c.tree.sha);
   const v=after.get("src/version.py");
-  if(p.kind==="finalise"){
+  if(p.kind==="release"){
+    const baseVersion=await api.file(p.base,"src/version.py");
+    const newVersion=await api.file(candidate,"src/version.py");
+    check(blobSha(baseVersion.content)===p.versionBlob,"release base bytes disagree with offline AST proof");
+    validateVersionBump(baseVersion.content,newVersion.content);
+    check(v?.mode==="100644"&&v.sha===p.releaseBlob&&newVersion.sha===p.releaseBlob&&
+          blobSha(newVersion.content)===p.releaseBlob,"release candidate bytes disagree with offline AST proof");
+  }else if(p.kind==="finalise"){
     const baseVersion=await api.file(p.base,"src/version.py");
     const newVersion=await api.file(candidate,"src/version.py");
     validateVersionBump(baseVersion.content,newVersion.content);

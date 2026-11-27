@@ -31,6 +31,10 @@ class NetworkActivityMixin:
         """Poll discovered receivers off-thread and publish a read-only snapshot."""
         if self._closing or getattr(self, "_network_activity_busy", False):
             return not self._closing
+        if getattr(self, "busy", False):
+            # A cast is starting: extra catt status processes would compete with
+            # its receiver confirmation for CPU and the TV connection. Skip a tick.
+            return True
         casts = tuple(getattr(self, "devices", ()))
         renderers = tuple(getattr(self, "dlna_devices", ()))
         if not casts and not renderers:

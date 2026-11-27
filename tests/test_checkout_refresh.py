@@ -83,13 +83,16 @@ def test_success_without_new_files_is_refused(roots, monkeypatch):
     assert refresh.refresh(source, installed, "linux", lambda: []) == 1
 
 
-def test_dirty_checkout_is_not_installed(roots, monkeypatch):
+def test_dirty_checkout_loads_installed_build(roots, monkeypatch, capsys):
     source, installed = roots
     monkeypatch.setattr(refresh.install_location, "_clean_source_revision", lambda _: None)
     call = Mock()
     monkeypatch.setattr(refresh.subprocess, "call", call)
-    assert refresh.refresh(source, installed, "linux", lambda: []) == 1
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
     call.assert_not_called()
+    message = capsys.readouterr().err
+    assert "cannot be installed automatically" in message
+    assert "Loading installed version v2.0.2" in message
 
 
 def test_exact_installed_revision_skips_reinstall(roots, monkeypatch):
@@ -149,7 +152,7 @@ def test_recorded_source_resolves_only_separate_checkout(tmp_path):
         assert refresh.installed_source(installed) is None
 
 
-def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, capsys):
+def test_known_behind_checkout_still_launches(roots, monkeypatch, capsys):
     source, installed = roots
     version(installed, 3)
     (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
@@ -162,17 +165,19 @@ def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, caps
             return Mock(returncode=1)
         return Mock(returncode=0)
     monkeypatch.setattr(refresh, "git", git)
-    assert refresh.refresh(source, installed, "linux", lambda: []) == 3
-    assert "behind known origin/develop" in capsys.readouterr().err
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    message = capsys.readouterr().err
+    assert "behind known origin/develop" not in message
+    assert "Loading latest checked-out version" in message
 
 
 @pytest.mark.parametrize("symbolic_ref", [
     Mock(returncode=1, stdout=""),            # detached HEAD (agent/worktree launch)
     Mock(returncode=0, stdout="main\n"),      # a checkout on another branch
 ])
-def test_non_develop_checkout_is_never_refused_as_behind(roots, monkeypatch, capsys,
-                                                         symbolic_ref):
-    """Only a real develop checkout may be judged against origin/develop (#595)."""
+def test_non_develop_checkout_launches_normally(roots, monkeypatch, capsys,
+                                                symbolic_ref):
+    """A detached or non-develop checkout is never refused as behind develop."""
     source, installed = roots
     version(installed, 3)
     (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
@@ -188,7 +193,8 @@ def test_non_develop_checkout_is_never_refused_as_behind(roots, monkeypatch, cap
     assert "behind known origin/develop" not in capsys.readouterr().err
 
 
-def test_higher_version_does_not_override_diverged_build(roots, monkeypatch):
+def test_higher_version_does_not_override_diverged_build_but_still_launches(
+        roots, monkeypatch, capsys):
     source, installed = roots
     (installed / "src" / refresh.install_location.BUILD_MARKER).write_text("b" * 40)
     def git(_root, *args):
@@ -198,8 +204,22 @@ def test_higher_version_does_not_override_diverged_build(roots, monkeypatch):
     monkeypatch.setattr(refresh, "git", git)
     call = Mock()
     monkeypatch.setattr(refresh.subprocess, "call", call)
-    assert refresh.refresh(source, installed, "linux", lambda: []) == 1
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
     call.assert_not_called()
+    message = capsys.readouterr().err
+    assert "cannot prove a forward build update" in message
+    assert "Loading installed version v2.0.2" in message
+
+
+def test_non_linux_newer_checkout_loads_installed_build(roots, monkeypatch, capsys):
+    source, installed = roots
+    call = Mock()
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    assert refresh.refresh(source, installed, "macos", lambda: []) == 0
+    call.assert_not_called()
+    message = capsys.readouterr().err
+    assert "automatic refresh is unavailable" in message
+    assert "Loading installed version v2.0.2" in message
 
 
 @pytest.mark.parametrize("payload, expected", [

@@ -12,14 +12,38 @@ from cast_widgets import Async
 
 
 class PortalHostMixin:
+    def _attach_update_runner(self) -> None:
+        """Give the portal and the front page one shared one-click updater (#711)."""
+        server = self._portal.server
+        if getattr(server, "update_runner", None) is not None:
+            return
+        from pathlib import Path
+        from gi.repository import GLib
+        import update_action
+        cfg = getattr(self, "cfg", {}) or {}
+
+        def busy() -> bool:
+            stream = getattr(self, "stream", None)
+            return bool(getattr(self, "session", None) is not None
+                        or (stream is not None and stream.get_playing()))
+
+        def quit_app() -> None:
+            app = self.get_application()
+            if app is not None:
+                GLib.idle_add(app.quit)
+
+        server.update_runner = self.update_runner = update_action.UpdateRunner(
+            Path(__file__).resolve().parents[1], channel=str(cfg.get("update_channel", "develop")),
+            verify=cfg.get("verify_updates") is True, busy=busy, quit_app=quit_app)
+
     def _portal_timing(self) -> tuple[float | None, float]:
         """Position and total runtime for guests; external media uses the receiver's own length."""
-        position = self.tracker.value()
-        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
-        runtime = getattr(self, "_external_runtime", None) if self.external else None
-        if runtime and not duration:
-            position, duration = (position or runtime[0]), runtime[1]
-        return position, duration
+        if self.external:
+            clock = getattr(self, "_external_display_clock", None)
+            if clock is not None:
+                return clock.value(), clock.duration
+            return getattr(self, "_external_runtime", None) or (None, 0.0)
+        return self.tracker.value(), self.tracker.duration or (self.media.duration if self.media else 0.0)
 
     def _shutdown_plan(self):
         """The one ordered, deadline-bounded shutdown plan for this window (#465)."""
@@ -199,6 +223,7 @@ class PortalHostMixin:
         peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
         if getattr(self, "_portal", None) is not None:
             self._portal.server.nodes_provider = lambda: peer_list
+            self._attach_update_runner()
         mesh = getattr(self, "_mesh_library", None)
         if mesh is not None:
             Async.run(lambda: mesh.observe_peers(peer_list), domain="background")

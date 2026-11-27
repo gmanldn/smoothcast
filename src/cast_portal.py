@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import guest_messages
-import hashlib
 import pathlib
 import threading
 import time
@@ -17,16 +16,16 @@ import portal
 import portal_status
 import portal_commands
 import command_trace
-import portal_join
 import peer_discovery_ui
 import network_activity
 from cast_portal_host import PortalHostMixin
+from cast_portal_room import PortalRoomMixin
 from portal_upload_recovery import PortalUploadRecoveryMixin
 from network_activity_ui import NetworkActivityMixin
 from cast_widgets import save_config
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import GLib
 
-class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMixin):
+class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMixin):
     def _refresh_portal(self) -> bool:
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
@@ -115,47 +114,29 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self._save_room_checkpoint()
         return True
 
-    def _show_portal_qr(self, url: str | None) -> None:
-        picture = self.portal_qr_picture
-        texture = None
-        if url is not None:
-            try:
-                png = portal_join.qr_png(url)
-                texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(png))
-            except (ImportError, ValueError, GLib.Error):
-                self.portal_status_label.set_text("QR unavailable. Use Copy link to join.")
-        picture.set_paintable(texture)
-        self.portal_qr_button.set_sensitive(texture is not None)
-
-    def _copy_portal_link(self, _button: Gtk.Button) -> None:
-        current = self._portal
-        if current is None:
-            return
-        joiner = getattr(current, "join_url", None)
-        self.get_clipboard().set(joiner() if callable(joiner) else current.url)
-        self.toast("Room link copied")
-
-    def _refresh_portal_qr(self) -> None:
-        """Repaint the room QR/link when the stable entry name changes (e.g. mesh primary)."""
-        current = self._portal
-        if current is None:
-            return
-        url = current.join_url()
-        if url == getattr(self, "_portal_qr_url", None):
-            return
-        self._portal_qr_url = url
-        self.portal_url_label.set_text(url)
-        self._set_room_join_link(url)
-        self._show_portal_qr(url)
 
     def _stop_portal(self) -> None:
         import cast_mesh
         cast_mesh.stop(self)
         entry, self._entry_name = getattr(self, "_entry_name", None), None
-        if entry is not None:
-            # Release the stable address synchronously so no stale A record lingers.
-            entry.close()
         current, self._portal = getattr(self, "_portal", None), None
+        goodbye = None
+        deadline = 0.0
+        if entry is not None:
+            if current is not None and getattr(self, "_closing", False):
+                # Separate Zeroconf instances: overlap their goodbye broadcasts
+                # on quit, but never race a new registration on LAN rebind.
+                def close_entry():
+                    try:
+                        entry.close()
+                    except Exception as exc:
+                        print(f"SmoothCast entry-name shutdown failed: {type(exc).__name__}", flush=True)
+
+                deadline = time.monotonic() + 0.3
+                goodbye = threading.Thread(target=close_entry, name="smoothcast-entry-goodbye", daemon=True)
+                goodbye.start()
+            else:
+                entry.close()
         self._portal_ip = None
         self._portal_qr_url = None
         timer = getattr(self, "_portal_activity_timer", None)
@@ -166,8 +147,14 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 pass
             self._portal_activity_timer = None
         self._portal_activity_period = None
-        if current is not None:
-            current.stop()
+        try:
+            if current is not None:
+                current.stop()
+        finally:
+            if goodbye is not None:
+                goodbye.join(max(0.0, deadline - time.monotonic()))
+                if goodbye.is_alive():
+                    print("SmoothCast entry-name shutdown timed out", flush=True)
         if hasattr(self, "portal_url_label"):
             self.portal_status_label.set_text("Portal stopped")
             self.portal_copy_button.set_sensitive(False)
@@ -180,51 +167,6 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         peer_discovery_ui.refresh_peer_links(
             self, [], available=False, status="Peer discovery stopped")
 
-    def reload_house_services(self) -> None:
-        """Restart the room, mesh, library indexer and heartbeat in place.
-
-        A relaunch of ``sc.py`` while SmoothCast runs reaches here so a changed
-        checkout or settings take effect without a full restart. Playback
-        ownership is untouched: the active cast, session and tracker keep
-        running while the room and its helpers come back on the current LAN.
-        """
-        if self._closing:
-            return
-        current = getattr(self, "_portal", None)
-        # Keep the printed PIN valid across the bounce; guests still rejoin the
-        # restarted room and re-authenticate with the same code.
-        self._portal_reuse_pin = current.pin if current is not None else None
-        self._stop_portal()          # room, mesh and heartbeat
-        # Keep the process-wide content key cache: only application exit closes it.
-        self._stop_house_services(keep_fingerprint=True)  # library indexer, mesh-library
-        self._refresh_portal()       # rebuild everything on the current LAN
-
-    def _sync_portal_activity_timer(self) -> None:
-        """Room UI refreshes once per second only when the window is mapped."""
-        if (self._closing or self._portal is None
-                or not getattr(self, "_timers_enabled", False)):
-            return
-        period = 1000 if self.get_mapped() else 15000
-        current = getattr(self, "_portal_activity_timer", None)
-        if current is not None and period == getattr(self, "_portal_activity_period", None):
-            return
-        if current is not None:
-            GLib.source_remove(current)
-        self._portal_activity_period = period
-        self._portal_activity_timer = GLib.timeout_add(period, self._refresh_portal_activity)
-
-    def _portal_apply_music_autogain(self, value: bool) -> str:
-        self.cfg["music_autogain"] = value
-        save_config(self.cfg)
-        return "Music autogain enabled." if value else "Music autogain disabled."
-
-    def _portal_apply_command(self, envelope: portal_commands.MutationEnvelope):
-        """Reject stale commands before GTK dispatch, then run one mutation."""
-        portal_commands.precheck(self, getattr(self, "_portal_fence", None), envelope)
-        try:
-            return self._portal_dispatch("command", {"envelope": envelope})
-        except portal.PortalRequestError as exc:
-            raise portal_commands.CommandError(exc.status, exc.message) from exc
 
     def _portal_dispatch(self, operation: str, payload: dict) -> object:
         """Serve cached reads directly and marshal all GTK-owned work to GTK."""
@@ -271,32 +213,6 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             raise result[0]
         return result[0] if result else {}
 
-    def _publish_portal_status(self) -> None:
-        """Publish GTK-owned status for HTTP threads without dispatch waits."""
-        snapshot = getattr(self, "_portal_status", None)
-        if snapshot is None or self._closing:
-            return
-        try:
-            state = self._portal_handle("status", {})
-        except Exception as exc:
-            console = getattr(self, "_console", None)
-            if console is not None:
-                console(f"Could not publish room status: {exc}")
-            return
-        if isinstance(state, dict):
-            snapshot.publish(state)
-
-    def _portal_upload_target(self) -> dict:
-        """Read GTK-owned selection/status only; never perform network I/O here."""
-        receiver = self._device()
-        host = self._device_host(receiver)
-        if not receiver or not host or not self.device_info or self.device_state == "OFFLINE":
-            raise portal.PortalRequestError(409, "No reachable room receiver. Ask the host to select a TV or speaker.")
-        # Target confirmation is read-only and remains available during
-        # preparation of another stream. Actual cast commands still check busy.
-        identity = "\\0".join((receiver, host, str(self.cfg.get("device_uuid") or "")))
-        return {"receiver": receiver, "target_id": hashlib.sha256(identity.encode()).hexdigest(),
-                "active": bool(self.session is not None or self.external or self.busy)}
 
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:
@@ -346,7 +262,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "rate": (self.tracker.rate
                          if 0.05 <= self.tracker.rate <= 4.0 else 1.0),
                 "volume": volume,
-                "queue": queue, "queue_revision": self._portal_observe_queue(),
+                "queue": queue, "queue_total": len(self.queue),
+                "queue_revision": self._portal_observe_queue(),
                 "library_copies": self._portal_copy_status(),
                 "active": active, "busy": bool(self.busy),
                 "preparing": bool(self.busy and getattr(self, "_dlna_cancel", None) is not None),

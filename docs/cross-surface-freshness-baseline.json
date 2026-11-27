@@ -1,0 +1,20 @@
+{
+  "directions": {
+    "desktop_to_web": {
+      "p50": 2.4,
+      "p95": 7.5,
+      "samples": 15
+    },
+    "web_to_desktop": {
+      "p50": 5.5,
+      "p95": 12.5,
+      "samples": 15
+    }
+  },
+  "profile": {
+    "machine": "x86_64",
+    "python": "3.13.5"
+  },
+  "rounds": 15,
+  "schema": 1
+}

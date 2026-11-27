@@ -18,6 +18,7 @@ import shutil
 import threading
 import time
 
+import guest_messages
 import link_acquisition as links
 import mesh_acquisition_assignment as core
 import mesh_acquisition_rpc as wire
@@ -168,7 +169,7 @@ class RemoteExecutor:
 
         def stage(value: str) -> None:
             if cancelled():
-                raise links.LinkError(409, "Acquisition cancelled.")
+                raise links.LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
             if value in core.STAGES[1:6]:
                 last[0] = self._clock()
                 report(value)
@@ -185,9 +186,9 @@ class RemoteExecutor:
         try:
             source = links.Source(kind, src)
             if core.source_key(kind, src) != key or links.parse_link(source.url) != source:
-                raise links.LinkError(422, "Offered source is not canonical.")
+                raise links.LinkError(422, "That link is not in a supported form.")
             if not self.provider.capabilities().get(kind):
-                raise links.LinkError(503, "This node has not enabled that worker.")
+                raise links.LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
             report("resolving")
             self.root.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             links._reserve_cache_capacity(self.root.parent)
@@ -198,7 +199,7 @@ class RemoteExecutor:
             report("verifying")
             digest = links._sha256(path, cancelled)
             if cancelled():
-                raise links.LinkError(409, "Acquisition cancelled.")
+                raise links.LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
             self.results[job] = (gen, path, digest, path.stat().st_size)
             self.finished_at[job] = self._clock()
             self._notify(sender, wire.build("finished", job=job, gen=gen, content=digest), final=True)

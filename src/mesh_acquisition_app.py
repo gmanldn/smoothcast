@@ -1,6 +1,6 @@
 """Application glue: use trusted mesh workers as a link-acquisition provider (#589).
 
-Both halves are OFF unless the operator opts in (``mesh_remote_acquisition`` to
+Both halves use the operator-configured mesh policy (``mesh_remote_acquisition`` to
 use workers, ``mesh_accept_acquisition`` to be one). The room's existing
 ``LinkJobs`` keeps sole ownership of the queue, journal and guest status: remote
 work is just another *provider*. ``acquire`` assigns the source to a live
@@ -16,11 +16,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import json
 import secrets
 import shutil
 import threading
 import time
 
+import guest_messages
 import link_acquisition as links
 import mesh_acquisition_assignment as core
 import mesh_acquisition_bridge as bridge_mod
@@ -81,6 +83,7 @@ class RemoteAcquisition:
     # -- MeshConfig hooks ---------------------------------------------------------
     def attach(self, bridge: bridge_mod.AcquisitionBridge) -> None:
         self.bridge = bridge
+        bridge.search_provider = self.local_provider
         try:
             self.ledger = self.store.load() or core.AssignmentLedger()
         except core.LedgerError:
@@ -125,10 +128,63 @@ class RemoteAcquisition:
                                                 and bool(self.offers(kind)))
                 for kind in ("youtube", "magnet")}
 
+    def search_offers(self):
+        if self.bridge is None or self.host is None:
+            return []
+        allowed = getattr(self.local_provider, "kinds", None)
+        if allowed is not None and "youtube" not in allowed:
+            return []
+        return [offer for offer in self.offers("youtube")
+                if bridge_mod.SEARCH_HINT in getattr(self.bridge.record(offer.node_id), "capabilities", ())
+                and bridge_mod.SEARCH_CAPABILITY not in self.bridge.disabled(offer.node_id)]
+
+    def search_youtube(self, value, cancelled):
+        query = links._search_text(value)
+        offers = sorted(self.search_offers(), key=lambda offer: offer.node_id)
+        if not offers:
+            raise links.LinkError(503, guest_messages.YOUTUBE_OFF)
+        bridge = self._bridge()
+        request = secrets.token_hex(16)
+        node = offers[0].node_id
+        deadline = self._clock() + links.SEARCH_SECONDS + 10
+        finished = False
+        try:
+            if cancelled():
+                raise links.LinkError(403, "YouTube search cancelled.")
+            reply = bridge.send(node, {"t": "search_start", "id": request, "q": query})
+            while True:
+                if cancelled():
+                    raise links.LinkError(403, "YouTube search cancelled.")
+                verdict = reply.get("verdict")
+                if reply.get("ok") is True and verdict == "ready":
+                    rows = reply.get("results")
+                    if not isinstance(rows, list) or len(rows) > links.SEARCH_LIMIT:
+                        raise links.LinkError(502, "Invalid YouTube search response.")
+                    raw = b"\n".join(json.dumps(row, allow_nan=False).encode("utf-8") for row in rows)
+                    result = links.youtube_results(raw)
+                    finished = True
+                    return result
+                if verdict == "busy":
+                    raise links.LinkError(429, "YouTube search is busy. Try again shortly.")
+                if reply.get("ok") is not True or verdict != "pending":
+                    raise links.LinkError(503, guest_messages.YOUTUBE_OFF)
+                if self._clock() >= deadline:
+                    raise links.LinkError(504, "YouTube search timed out. Try again.")
+                self._sleep(POLL_SECONDS)
+                reply = bridge.send(node, {"t": "search_poll", "id": request})
+        except (ConnectionError, TypeError, ValueError) as exc:
+            raise links.LinkError(502, guest_messages.YOUTUBE_OFF) from exc
+        finally:
+            if not finished:
+                try:
+                    bridge.send(node, {"t": "search_cancel", "id": request})
+                except (ConnectionError, RuntimeError):
+                    pass
+
     def acquire(self, source, directory: Path, stage, progress, cancelled) -> Path:
         host, ledger, collector = self.host, self.ledger, self.collector
         if host is None or ledger is None or collector is None:
-            raise links.LinkError(503, "No trusted worker is available.")
+            raise links.LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
         job_id = secrets.token_hex(12)  # 24 hex: also a valid telemetry row id
         with self._lock:
             _, selection, outcome = host.submit(
@@ -140,8 +196,8 @@ class RemoteAcquisition:
                     ledger.cancel(job_id)
                     self.store.save(ledger)
             if outcome in {"no_executor", "refused", "duplicate"}:
-                raise links.LinkError(503, "No trusted worker is free right now.")
-            raise links.LinkError(502, "The worker did not confirm the assignment.")
+                raise links.LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
+            raise links.LinkError(502, "The download could not be started. Try again.")
         deadline, shown, last = self._clock() + MAX_WAIT_SECONDS, "", None
         room_job = Path(directory).name  # LinkJobs names each job's directory by its id
         self.executors[room_job] = selection.node_id
@@ -149,7 +205,7 @@ class RemoteAcquisition:
             while True:
                 if cancelled():
                     host.cancel(job_id)
-                    raise links.LinkError(409, "Acquisition cancelled.")
+                    raise links.LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 now = self._clock()
                 with self._lock:
                     ledger.tick(now)
@@ -158,9 +214,9 @@ class RemoteAcquisition:
                     counters = (job.received, job.total)
                     self.store.save(ledger)
                 if ambiguous:
-                    raise links.LinkError(502, "The remote worker stopped answering; not retried.")
+                    raise links.LinkError(502, "The computer sharing the media stopped answering. Try again.")
                 if state in {"failed", "cancelled"}:
-                    raise links.LinkError(502, "The remote worker could not finish the download.")
+                    raise links.LinkError(502, "The computer sharing the media could not finish the download.")
                 mapped = _STAGE.get(state)
                 if mapped and mapped != shown:
                     shown = mapped
@@ -176,7 +232,7 @@ class RemoteAcquisition:
                         raise links.LinkError(502, "The file could not be transferred intact.")
                 if now > deadline:
                     host.cancel(job_id)
-                    raise links.LinkError(504, "The remote acquisition took too long.")
+                    raise links.LinkError(504, "The download from the other computer took too long.")
                 self._sleep(POLL_SECONDS)
         finally:
             self.executors.pop(room_job, None)
@@ -239,11 +295,23 @@ class CompositeProvider:
     def __init__(self, local, remote: RemoteAcquisition) -> None:
         self.local, self.remote = local, remote
 
-    def __getattr__(self, name):  # readiness, search, etc. stay local
+    def __getattr__(self, name):  # prerequisite diagnostics stay local
         return getattr(self.local, name)
 
     def capabilities(self) -> dict:
         return self.remote.capabilities()
+
+    def search_available(self) -> bool:
+        local = self.local
+        return bool((local is not None and local.capabilities().get("youtube")
+                     and callable(getattr(local, "search_youtube", None))) or self.remote.search_offers())
+
+    def search_youtube(self, value, cancelled):
+        local = self.local
+        if (local is not None and local.capabilities().get("youtube")
+                and callable(getattr(local, "search_youtube", None))):
+            return local.search_youtube(value, cancelled)
+        return self.remote.search_youtube(value, cancelled)
 
     def acquire(self, source, directory, stage, progress, cancelled):
         if self.local is not None and self.local.capabilities().get(source.kind):

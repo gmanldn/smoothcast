@@ -98,6 +98,15 @@ def timer_expired(deadline: object, now: float) -> bool:
     return math.isfinite(value) and value > 0 and now >= value
 
 
+def reported_title(info: dict) -> str:
+    """Title the receiver reports: catt's ``info -j`` nests it in media_metadata."""
+    title = info.get("title")
+    if not title:
+        metadata = info.get("media_metadata")
+        title = metadata.get("title") if isinstance(metadata, dict) else ""
+    return str(title or "").strip()
+
+
 def direct_session_matches(info: dict | None, saved_title: str) -> bool:
     """Only restore a saved direct cast when the TV still reports playback.
 
@@ -111,7 +120,7 @@ def direct_session_matches(info: dict | None, saved_title: str) -> bool:
         return False
     # Some Chromecast receivers omit titles. Reject a known mismatch rather
     # than attaching our media controls to another app's unrelated stream.
-    current_title = str(info.get("title") or "").strip()
+    current_title = reported_title(info)
     saved_title = str(saved_title or "").strip()
     if current_title and saved_title and current_title.casefold() != saved_title.casefold():
         return False
@@ -130,7 +139,7 @@ def hls_session_matches(info: dict | None, saved_url: str, saved_title: str) -> 
         return False
     if str(info.get("content_id") or "").strip() != saved_url:
         return False
-    current_title = str(info.get("title") or "").strip()
+    current_title = reported_title(info)
     if current_title and saved_title and current_title.casefold() != saved_title.strip().casefold():
         return False
     return True
@@ -187,3 +196,105 @@ def external_runtime(info: dict | None) -> tuple[float, float] | None:
     if not math.isfinite(position) or position < 0:
         position = 0.0
     return min(position, total), total
+
+
+def external_display_clock(info: dict | None, state: str):
+    """Receiver-only display clock; never grants ownership or seek capability.
+
+    Position and duration are independent: live streams may report a position
+    but no length; some receivers report a length before the first position.
+    """
+    from position_tracker import PositionTracker
+
+    def seconds(key):
+        if not isinstance(info, dict) or isinstance(info.get(key), bool):
+            return None
+        try:
+            value = float(info.get(key))
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return value if math.isfinite(value) and 0 <= value <= MAX_EXTERNAL_RUNTIME else None
+
+    tracker = PositionTracker()
+    total = seconds("duration") or 0.0
+    position = seconds("current_time")
+    if position is not None:
+        tracker.start(min(position, total) if total else position, total,
+                      playing=state == "PLAYING")
+    else:
+        tracker.duration = total
+    return tracker
+
+
+def _external_title(fields: dict) -> str:
+    meta = fields.get("media_metadata")
+    meta = meta if isinstance(meta, dict) else {}
+    for value in (fields.get("title"), meta.get("title"), meta.get("subtitle"),
+                  meta.get("artist")):
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:256]
+    return ""
+
+
+_FORMAT_NAMES = {
+    "application/x-mpegurl": "HLS stream", "application/vnd.apple.mpegurl": "HLS stream",
+    "application/dash+xml": "DASH stream", "video/mp4": "MP4 video", "video/webm": "WebM video",
+    "video/x-matroska": "MKV video", "audio/mpeg": "MP3 audio", "audio/mp4": "AAC audio",
+    "audio/flac": "FLAC audio", "audio/ogg": "Ogg audio", "audio/wav": "WAV audio",
+}
+
+
+def external_details(info: dict | None) -> str:
+    """One-line "what is this" for media we did not start: format, kind, length, source.
+
+    Metadata only; the content URL is reduced to a public host name (never a
+    LAN address, path or query) and is never fetched.
+    """
+    if not isinstance(info, dict):
+        return ""
+    parts: list[str] = []
+    ctype = info.get("content_type")
+    if isinstance(ctype, str) and ctype.strip():
+        key = ctype.split(";")[0].strip().lower()
+        parts.append(_FORMAT_NAMES.get(key) or key.replace("x-", "").replace("/", " ").upper()[:40])
+    meta = info.get("media_metadata")
+    meta = meta if isinstance(meta, dict) else {}
+    width, height = meta.get("width"), meta.get("height")
+    if type(width) is int and type(height) is int and width > 0 and height > 0:
+        parts.append(f"{width}×{height}")
+    runtime = external_runtime(info)
+    stream = str(info.get("stream_type") or "").upper()
+    if stream == "LIVE" and runtime is None:
+        parts.append("Live")
+    elif runtime is not None:
+        total = int(runtime[1])
+        h, rest = divmod(total, 3600)
+        parts.append(f"{h}:{rest // 60:02d}:{rest % 60:02d}" if h else f"{rest // 60}:{rest % 60:02d}")
+    else:
+        parts.append("Length unknown")
+    app = info.get("display_name")
+    if isinstance(app, str) and app.strip():
+        parts.append(app.strip()[:40])
+    source = info.get("content_id")
+    if isinstance(source, str) and "://" in source:
+        from urllib.parse import urlsplit
+        host = (urlsplit(source).hostname or "").lower()
+        if host and not host.replace(".", "").isdigit() and ":" not in host:
+            parts.append(host[:60])
+    return " · ".join(parts)
+
+
+def external_media_labels(info: dict | None) -> tuple[str, str]:
+    """Use reported metadata only; never fetch a foreign content URL."""
+    fields = info if isinstance(info, dict) else {}
+    title = _external_title(fields)
+    size = fields.get("size_bytes")
+    if isinstance(size, str) and size.isascii() and size.isdecimal() and len(size) <= 19:
+        size = int(size)
+    if type(size) is not int or not 0 < size < 2**63:
+        return title or "External stream", "Size unavailable"
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB", "EB"):
+        if size < 1000 or unit == "EB":
+            return title or "External stream", f"{size:.2f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1000
+    return title or "External stream", "Size unavailable"

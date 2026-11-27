@@ -135,3 +135,94 @@ def test_incomplete_cached_evidence_cannot_enable_provider(tmp_path, monkeypatch
     assert probe.save(launcher, probe.Qualification(True, checks, ""))
     assert not probe.is_verified(launcher)
 
+
+
+@pytest.mark.parametrize("missing", ["ran", "loopback", "loopback6", "lan",
+                                      "metadata", "home", "child"])
+def test_incomplete_probe_evidence_is_rejected(missing):
+    report = dict(ran=True, loopback=False, loopback6=False, lan=False,
+                  metadata=False, home=None, child=True)
+    assert probe._complete_report(report, ipv6=True, private=True)
+    del report[missing]
+    assert not probe._complete_report(report, ipv6=True, private=True)
+
+
+@pytest.mark.parametrize("key,value", [("loopback", 0), ("metadata", "false"),
+                                      ("child", False), ("home", []), ("lan", None)])
+def test_malformed_probe_evidence_is_rejected(key, value):
+    report = dict(ran=True, loopback=False, loopback6=False, lan=False,
+                  metadata=False, home=None, child=True)
+    report[key] = value
+    assert not probe._complete_report(report, ipv6=True, private=True)
+
+
+def test_incomplete_launcher_report_never_qualifies(tmp_path):
+    launcher = script(tmp_path, """printf '%s\\n' 'QUALIFY {"ran":true}'""")
+    result = probe.qualify(launcher, lan_ip=None)
+    assert not result.verified and set(result.checks.values()) == {"not_run"}
+
+
+def test_nonzero_launcher_exit_never_qualifies(tmp_path):
+    launcher = script(tmp_path, """printf '%s\\n' 'QUALIFY {"ran":true,"loopback":false,"loopback6":null,"lan":null,"metadata":false,"home":null,"child":true}'
+exit 1""")
+    result = probe.qualify(launcher, lan_ip=None)
+    assert not result.verified and set(result.checks.values()) == {"not_run"}
+
+
+def test_old_cache_schema_requires_requalification(tmp_path, monkeypatch):
+    import json
+    target = tmp_path / "verdict.json"
+    monkeypatch.setattr(probe, "cache_path", lambda: target)
+    launcher = script(tmp_path, "exit 0")
+    good = probe.Qualification(True, {n: "pass" for n in probe.CHECKS}, "")
+    assert probe.save(launcher, good) and probe.is_verified(launcher)
+    data = json.loads(target.read_text())
+    del data["schema"]
+    target.write_text(json.dumps(data))
+    assert not probe.is_verified(launcher)
+
+
+def test_listener_closes_socket_when_bind_fails(monkeypatch):
+    from unittest.mock import Mock
+
+    sock = Mock()
+    sock.bind.side_effect = OSError("bind failed")
+    monkeypatch.setattr(probe.socket, "socket", lambda *args: sock)
+    with pytest.raises(OSError):
+        probe._Listener("127.0.0.1")
+    sock.close.assert_called_once_with()
+
+
+def test_failed_private_listener_closes_prepared_listeners(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    loop, loop6 = Mock(), Mock()
+
+    def listener(host, *args):
+        if host == "127.0.0.1":
+            return loop
+        if host == "::1":
+            return loop6
+        raise OSError("private interface disappeared")
+
+    monkeypatch.setattr(probe, "_Listener", listener)
+    result = probe.qualify(script(tmp_path, "exit 0"), lan_ip="192.168.0.2")
+    assert not result.verified
+    assert set(result.checks.values()) == {"not_run"}
+    loop.close.assert_called_once_with()
+    loop6.close.assert_called_once_with()
+
+
+def test_failed_canary_creation_closes_prepared_listeners(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    launcher = script(tmp_path, "exit 0")
+    loop, loop6 = Mock(), Mock()
+    monkeypatch.setattr(probe, "_Listener",
+                        lambda host, *args: loop if host == "127.0.0.1" else loop6)
+    monkeypatch.setattr(probe.Path, "home", lambda: tmp_path / "missing")
+    result = probe.qualify(launcher, lan_ip=None)
+    assert not result.verified
+    assert set(result.checks.values()) == {"not_run"}
+    loop.close.assert_called_once_with()
+    loop6.close.assert_called_once_with()

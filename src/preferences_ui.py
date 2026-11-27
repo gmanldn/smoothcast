@@ -14,10 +14,12 @@ import preference_choices
 import picture_adjustments
 from preferences_picture_ui import PicturePreferencesMixin
 from preferences_tracks_ui import TrackPreferencesMixin
+from preferences_update_ui import UpdatePreferencesMixin
+from preferences_link_ui import LinkSetupMixin
 from cast_widgets import save_config
 
 
-class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.PreferencesWindow):
+class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePreferencesMixin, LinkSetupMixin, Adw.PreferencesWindow):
     def __init__(self, owner) -> None:
         super().__init__(transient_for=owner, modal=True)
         self.owner = owner
@@ -98,6 +100,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
         self._switch(queue, "portal_link_magnet", "Let guests acquire BitTorrent magnets",
                      "Authorised public torrents only. Requires aria2c, FFprobe and an isolated "
                      "host worker with restricted network access. Takes effect after a room restart.")
+        self._build_link_setup_row(queue)
         room_port_row = Adw.ActionRow(
             title="Room remote port",
             subtitle="High-range port used by phone links and QR codes. Change takes effect on the next launch.",
@@ -201,6 +204,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
         self._choice(updates, "update_channel", "Update channel",
                      "Develop (default) receives frequent tested builds; Main follows releases. "
                      "Only read-only checks work so far; installing safely in the background is pending.")
+        self._build_update_row(updates)
         self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
                      "the window appears; a check never changes the running code.")
@@ -227,6 +231,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
             if "portal_link_youtube" in self._switches and "portal_link_magnet" in self._switches:
                 import link_diagnostics
                 link_diagnostics.describe_switches(self.owner, cfg, self._switches)
+            self._sync_update_status(cfg)
             self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
             refresh_search = getattr(self, "_refresh_subtitle_search_rows", None)
             if callable(refresh_search):

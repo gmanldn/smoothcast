@@ -39,6 +39,8 @@ _HELPS: dict[str, frozenset[Kind]] = {
     "cast.settings_unsupported": frozenset({"alternate_target"}),
     "cast.audio_only_unverified": frozenset({"alternate_target"}),
     "ffmpeg.decoder_timeout": frozenset({"retry", "alternate_encoding"}),
+    "discovery.failed": frozenset({"retry"}),
+    "network.port_in_use": frozenset({"retry"}),
     "ffmpeg.decoder_failed": frozenset(),  # a media problem, not a receiver one
     "media.unavailable": frozenset(),
     "media.changed": frozenset({"retry"}),
@@ -49,6 +51,9 @@ _KEYWORDS = (
     ("cast.no_supported_format", ("no supported format", "unsupported format", "unsupported media",
                                   "codec not supported")),
     ("ffmpeg.decoder_timeout", ("probe timed out", "took too long")),
+    ("discovery.failed", ("discovery failed",)),
+    ("network.port_in_use", ("still in use", "address already in use")),
+    ("dlna.command_failed", ("dlna ",)),
 )
 _CONTROL = re.compile(r"[\x00-\x1f\x7f‪-‮⁦-⁩]")
 

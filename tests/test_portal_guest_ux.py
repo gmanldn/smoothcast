@@ -519,8 +519,8 @@ def test_mesh_network_help_defines_target_states_without_cast_permissions():
     assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
 
 
-def test_network_navigation_only_appears_when_mesh_is_available():
-    """Do not send guests from the sticky menu to a hidden mesh section."""
+def test_network_navigation_is_available_even_without_remote_mesh():
+    """Local activity remains accessible while remote target links are gated."""
     import shutil
     import subprocess
     import pytest
@@ -529,7 +529,7 @@ def test_network_navigation_only_appears_when_mesh_is_available():
     page = room_html()
     assert "meshNavLink" in page.ids and "meshPanel" in page.ids
     assert "meshPanel" in page.anchors
-    assert '<a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a>' in portal._HTML
+    assert '<a id="meshNavLink" href="#meshPanel">Mesh</a>' in portal._HTML
     panel = panel_html()
     assert 'panel.hidden=false;showNetworkNavigation(true)' in panel
     assert 'panel.hidden=true;showNetworkNavigation(false)' in panel
@@ -548,7 +548,7 @@ showNetworkNavigation(true);
 assert.equal(navLink.hidden,false);
 assert.equal(queueLink.hidden,false);
 showNetworkNavigation(false);
-assert.equal(navLink.hidden,true);
+assert.equal(navLink.hidden,false);
 assert.equal(queueLink.hidden,true);
 navLink=null;
 assert.doesNotThrow(()=>showNetworkNavigation(true));
@@ -587,8 +587,10 @@ def test_optional_panels_are_dashboard_children_and_not_login_siblings():
     document.feed(portal._page().decode("utf-8"))
     assert document.parents["screensPanel"] == "dashboard"
     assert document.parents["meshPanel"] == "dashboard"
+    assert document.parents["meshDetails"] == "meshPanel"
+    assert document.parents["localLivePanel"] == "meshPanel"
     assert document.parents["shortcutsHelp"] is None
-    assert document.parents["uploadCard"] == "dashboard"
+    assert document.parents["uploadCard"] == "queuePanel"
     assert document.parents["login"] is None  # main has no id; login is outside dashboard
     assert '#dashboard>#screensPanel' in portal._HTML
     assert '#dashboard>#meshPanel' in portal._HTML
@@ -849,7 +851,7 @@ class Node{
   insertBefore(n,b){moves++;if(n.parent)n.remove();n.parent=this;this.children.splice(b?this.children.indexOf(b):this.children.length,0,n)}
   remove(){const p=this.parent;if(p){p.children.splice(p.children.indexOf(this),1);this.parent=null}}
 }
-const nodes=Object.fromEntries(["homeIncomingPanel","homeIncomingRows","queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
+const nodes=Object.fromEntries(["queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
 const $=id=>nodes[id], document={createElement(){made++;return new Node()}};
 const mediaKindLabel=x=>x,fileUnits=x=>String(x);
 """
@@ -857,7 +859,7 @@ const mediaKindLabel=x=>x,fileUnits=x=>String(x);
 const a={id:"a",title:"Film",media_kind:"video",intent:"cast",stage:"receiving",received:0,size:100};
 const b={...a,id:"b",title:"Second",intent:"queue"};
 renderRoomTransfers({room_transfers:[a,b]});
-const list=nodes.homeIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
+const list=nodes.queueIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
 renderRoomTransfers({room_transfers:[{...a,received:60,stage:"buffering"},b]});
 assert.equal(made,count);assert.equal(moves,initialMoves);
 assert.equal(list.children[0],first);assert.equal(first.children[2].value,60);
@@ -866,7 +868,7 @@ renderRoomTransfers({room_transfers:[b]});
 assert.equal(list.children[0],second);assert.equal(list.children.length,1);
 assert.equal(made,count);
 renderRoomTransfers({room_transfers:[]});
-assert.equal(list.children.length,0);assert.equal(nodes.homeIncomingPanel.hidden,true);
+assert.equal(list.children.length,0);assert.equal(nodes.queueIncomingPanel.hidden,true);
 """
     subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
                    text=True, check=True, timeout=10)
@@ -905,3 +907,67 @@ class XMLHttpRequest{
 """
     subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
                    text=True, check=True, timeout=10)
+
+
+def test_home_is_media_first_without_duplicate_receiver_card():
+    """Home combines playback and casting; secondary blades keep their controls."""
+    page = room_html()
+    assert "homeTarget" not in page.ids
+    assert "homeNowPlaying" not in page.ids
+    for name in ("homePanel", "playback", "uploadCastNow", "quickQueueUpload",
+                 "queue", "queueCount", "homePeople", "roomInvite",
+                 "advancedPanel", "localLivePanel", "homeYoutube", "homeMagnet"):
+        assert name in page.ids
+    assert ("details", {"id": "castEntry", "class": "help"}) in page.elements
+    assert any(tag == "details" and attrs.get("class") == "home-card"
+               for tag, attrs in page.elements)
+
+
+def test_home_uses_only_one_queue_and_transfer_projection():
+    source = portal._HTML
+    assert "function renderHomeQueue(" not in source
+    assert 'id="homeQueue"' not in source
+    assert 'id="homeIncomingRows"' not in source
+    assert source.count('id="queue"') == 1
+    assert source.count('id="queueIncomingRows"') == 1
+
+
+def test_web_fine_transport_buttons_use_authoritative_fences():
+    page = room_html()
+    for ident in ("seekBackTen", "seekForwardTen", "toggleMute"):
+        assert any(tag == "button" and attrs.get("id") == ident and "disabled" in attrs
+                   for tag, attrs in page.elements)
+    text = portal._HTML
+    assert "shortcutState=s;renderExtraTransport(s)" in text
+    assert "expected_session_id:state.session_id,expected_revision:state.revision" in text
+    assert "void act(transportAction,undefined,envelope)" in text
+
+
+def test_extra_transport_envelope_bounds_and_capabilities():
+    import shutil
+    import subprocess
+    import pytest
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js unavailable")
+    script = portal._HTML
+    start = script.index("function shortcutCommand(")
+    end = script.index("const extraTransportControls=", start)
+    source = script[start:end]
+    checks = r"""
+const assert=require("node:assert/strict");
+const state={session_id:"a".repeat(32),revision:7,active:true,busy:false,can_seek:true,duration:120,volume:40};
+let command=extraTransportEnvelope("seek_back",state,3,40);
+assert.equal(command.payload.value,0);
+assert.equal(command.expected_revision,7);
+assert.equal(command.expected_session_id,state.session_id);
+assert.equal(extraTransportEnvelope("seek_forward",state,115,40).payload.value,120);
+assert.deepEqual(extraTransportEnvelope("mute",state,0,40).payload,{});
+assert.equal(extraTransportEnvelope("seek_forward",{...state,can_seek:false},10,40),null);
+assert.equal(extraTransportEnvelope("mute",{...state,volume:null},0,0),null);
+assert.equal(extraTransportEnvelope("seek_back",{...state,busy:true},10,40),null);
+assert.equal(extraTransportEnvelope("seek_back",{...state,session_id:"bad"},10,40),null);
+assert.equal(extraTransportEnvelope("seek_back",state,NaN,40),null);
+"""
+    result = subprocess.run(["node", "-e", source + checks], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from gi.repository import GLib, Gtk, Pango
 
+import mesh_diagram
+import update_button
+import node_profile
+
 import mesh_view_model as vm
 
 _COLOURS = {"ready": "#2fa36b", "self": "#2fa36b", "alive": "#2fa36b", "busy": "#c99a00",
@@ -57,22 +61,30 @@ class _Section:
         return item, {"dot": dot, "title": title, "state": state, "sub": sub, "why": why}
 
     def update(self, rows: tuple[vm.Row, ...]) -> None:
-        wanted = {r.key for r in rows}
-        for key in [k for k in self.rows if k not in wanted]:
-            self.list.remove(self.rows.pop(key)[0])
-        for row in rows:
-            if row.key not in self.rows:
-                self.rows[row.key] = self._make(row)
-            item, labels = self.rows[row.key]
-            self._fill(item, labels, row)
-        order = [r.key for r in rows]
-        if order != self.order:
-            for position, key in enumerate(order):
-                item = self.rows[key][0]
-                if item.get_index() != position:
+        # A new Gtk.ListBoxRow has no parent or valid sequence iterator.
+        # Never ask GTK to remove or index an unattached row.
+        by_key = {r.key: r for r in rows}
+        for key in list(self.rows):
+            if key not in by_key:
+                item, _ = self.rows.pop(key)
+                if item.get_parent() is self.list:
                     self.list.remove(item)
-                    self.list.insert(item, position)
-            self.order = order
+        for position, (key, row) in enumerate(by_key.items()):
+            if key not in self.rows:
+                self.rows[key] = self._make(row)
+            item, labels = self.rows[key]
+            parent = item.get_parent()
+            if parent is not None and parent is not self.list:
+                # Do not steal a widget from a different container.
+                item, labels = self.rows[key] = self._make(row)
+                parent = None
+            self._fill(item, labels, row)
+            if parent is None:
+                self.list.insert(item, position)
+            elif item.get_index() != position:
+                self.list.remove(item)
+                self.list.insert(item, position)
+        self.order = list(by_key)
 
     @staticmethod
     def _fill(item: Gtk.ListBoxRow, labels: dict[str, Gtk.Label], row: vm.Row) -> None:
@@ -114,6 +126,17 @@ class NetworkPopover:
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         for section in self.sections.values():
             inner.append(section.box)
+        self.diagram = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, can_shrink=True, height_request=240)
+        self.diagram.update_property([Gtk.AccessibleProperty.LABEL],
+                                     ["Diagram of every device, receiver and client on the network"])
+        self.details = Gtk.Label(xalign=0.0, wrap=True, selectable=True)
+        self.details.add_css_class("caption")
+        expander = Gtk.Expander(label="Network diagram and device detail")
+        holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        holder.append(self.diagram)
+        holder.append(self.details)
+        expander.set_child(holder)
+        inner.append(expander)
         scroller.set_child(inner)
         self.switches: dict[str, Gtk.Switch] = {}
         for widget in (self.summary, self.hint, scroller,
@@ -176,6 +199,29 @@ class NetworkPopover:
         if not cast_mesh.set_acquisition(self._window, name, bool(switch.get_active())):
             self.sync_switches()  # not applied: show the truth, not the click
 
+    def show_profiles(self, profiles) -> None:
+        """Draw the connection diagram and spell out each device (full detail, owner view)."""
+        profiles = list(profiles)
+        try:
+            from gi.repository import Gdk
+            svg = mesh_diagram.render(profiles).encode("utf-8")
+            self.diagram.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(svg)))
+        except Exception:
+            self.diagram.set_paintable(None)
+        self.details.set_text("\n\n".join(self.describe(p) for p in profiles))
+
+    @staticmethod
+    def describe(p: node_profile.NodeProfile) -> str:
+        lines = [f"{p.name} — {p.role} · {p.headline}"]
+        for label, values in (("Address", p.addresses), ("Can", p.capabilities), ("Receivers", p.targets),
+                              ("Clients", p.clients), ("Shares", p.sources)):
+            if values:
+                lines.append(f"  {label}: {', '.join(values)}")
+        if p.ports:
+            lines.append(f"  Ports: {p.ports}")
+        lines += [f"  Link to {link.peer[:8]}: {link.text}" for link in p.links]
+        return "\n".join(lines)
+
     def show(self, model: vm.NetworkModel | None) -> None:
         """Apply a model, or hide the button when there is no running mesh."""
         self.button.set_visible(model is not None)
@@ -200,11 +246,19 @@ def build_button(window: object) -> Gtk.MenuButton:
     """Create the Network button once; refreshed by :func:`refresh`."""
     popover = NetworkPopover(window)
     window._mesh_ui = popover                       # type: ignore[attr-defined]
-    return popover.button
+    updater = update_button.UpdateButton(window)
+    window._update_button = updater                 # type: ignore[attr-defined]
+    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    box.append(updater.button)
+    box.append(popover.button)
+    return box
 
 
 def refresh(window: object) -> None:
     """Rebuild the model from the running mesh (called ~1 Hz on the GTK thread)."""
+    updater = getattr(window, "_update_button", None)
+    if updater is not None:
+        updater.refresh()
     popover = getattr(window, "_mesh_ui", None)
     if popover is None:
         return
@@ -218,6 +272,8 @@ def refresh(window: object) -> None:
         warm = service.warm_start()
         cached = [(p.node_id, p.name, max(0, int(GLib.get_real_time() / 1_000_000) - p.last_seen))
                   for p in (warm.peers if warm else ())]
+        popover.show_profiles(node_profile.profile(r, local_id=view.local_id, primary_id=service.roles.primary)
+                              for r in view.nodes)
         popover.show(vm.build_model(view, primary_id=service.roles.primary, cached_peers=cached,
                                     multicast_hint=diag.get("multicast_hint", "")))
     except Exception:

@@ -72,17 +72,30 @@ def test_disabled_service_opens_nothing(tmp_path):
 
 
 def test_settings_default_on_and_are_validated(tmp_path):
-    # VISION: trusted home LAN — nodes join automatically, so the mesh is on by
-    # default; only an explicit boolean false (or malformed input) turns it off.
+    # VISION: trusted home LAN — nodes join automatically, so the mesh and its
+    # acquisition providers are on by default; only an explicit boolean false
+    # (with the defaults marker) or malformed input turns them off.
     assert svc.load_settings(tmp_path / "missing.json") == {
         "enabled": True, "strict": False, "seeds": (),
-        "remote_acquisition": False, "accept_acquisition": False}
+        "remote_acquisition": True, "accept_acquisition": True}
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"mesh_enabled": True, "mesh_strict": "yes",
                                 "mesh_seeds": ["192.168.1.4", "8.8.8.8", 5]}))
     got = svc.load_settings(path)
     assert got == {"enabled": True, "strict": False, "seeds": ("192.168.1.4",),
-                   "remote_acquisition": False, "accept_acquisition": False}
+                   "remote_acquisition": True, "accept_acquisition": True}
+    # A legacy default-off setting is retired on upgrade; the opt-out is only
+    # honoured once the defaults have been applied.
+    path.write_text(json.dumps({"mesh_remote_acquisition": False,
+                                "mesh_accept_acquisition": False}))
+    retired = svc.load_settings(path)
+    assert retired["remote_acquisition"] is True and retired["accept_acquisition"] is True
+    path.write_text(json.dumps({"acquisition_defaults_applied": True,
+                                "mesh_remote_acquisition": False,
+                                "mesh_accept_acquisition": False}))
+    opted_out = svc.load_settings(path)
+    assert opted_out["remote_acquisition"] is False
+    assert opted_out["accept_acquisition"] is False
     path.write_text("[1,2")
     assert svc.load_settings(path)["enabled"] is True
     path.write_text(json.dumps({"mesh_enabled": False}))

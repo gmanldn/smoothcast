@@ -63,7 +63,7 @@ class SelfTestHygieneTests(unittest.TestCase):
         def quits(nodes):
             return [call for stmt in nodes for call in ast.walk(stmt)
                     if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
-                    and call.func.attr == "quit"]
+                    and call.func.attr in {"quit", "quit_when_released"}]
 
         first = function("_selftest_quit")
         handlers = [h for node in ast.walk(first) if isinstance(node, ast.Try)

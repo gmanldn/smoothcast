@@ -33,6 +33,7 @@ import time
 CHECKS = ("probe_ran", "loopback_denied", "ipv6_denied", "private_lan_denied",
           "metadata_denied", "home_denied", "process_tree_terminated")
 METADATA_ADDRESS = "169.254.169.254"
+CACHE_SCHEMA = 2
 
 _PROBE = r"""
 import json, os, socket, subprocess, sys
@@ -77,14 +78,18 @@ class _Listener:
 
     def __init__(self, host: str, family: int = socket.AF_INET) -> None:
         self.sock = socket.socket(family, socket.SOCK_STREAM)
-        self.sock.bind((host, 0))
-        self.sock.listen(4)
-        self.sock.settimeout(0.2)
-        self.port = self.sock.getsockname()[1]
-        self.count = 0
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        try:
+            self.sock.bind((host, 0))
+            self.sock.listen(4)
+            self.sock.settimeout(0.2)
+            self.port = self.sock.getsockname()[1]
+            self.count = 0
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        except (OSError, RuntimeError):
+            self.sock.close()
+            raise
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -138,6 +143,25 @@ def _tagged(tag: str) -> list[int]:
     return found
 
 
+def _complete_report(report: object, *, ipv6: bool, private: bool) -> bool:
+    """Absence of a probe observation is not evidence of isolation."""
+    if not isinstance(report, dict) or report.get("ran") is not True:
+        return False
+    if report.get("child") is not True or "home" not in report:
+        return False
+    if report["home"] is not None and not isinstance(report["home"], str):
+        return False
+    for key, enabled in (("loopback", True), ("metadata", True),
+                         ("loopback6", ipv6), ("lan", private)):
+        if key not in report:
+            return False
+        if enabled and type(report[key]) is not bool:
+            return False
+        if not enabled and report[key] is not None:
+            return False
+    return True
+
+
 def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0,
             python: str | None = None) -> Qualification:
     """Run the probe through *launcher* (``launcher EXECUTABLE ARGV...``)."""
@@ -145,24 +169,31 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
     if path is None or not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
         return Qualification(False, {name: "not_run" for name in CHECKS}, "launcher missing or not executable")
     python = python or sys.executable
-    lan = lan_address() if lan_ip == "auto" else lan_ip
-    canary = Path.home() / f".smoothcast-qualify-{secrets.token_hex(6)}"
-    secret = secrets.token_hex(16)
-    loop = _Listener("127.0.0.1")
-    try:
-        loop6 = _Listener("::1", socket.AF_INET6)
-    except OSError:
-        loop6 = None  # no host IPv6 loopback: nothing to reach, count as denied
-    private = _Listener(lan) if lan else None
+    loop = loop6 = private = None
+    canary = None
     tag = "smoothcast-qualify-" + secrets.token_hex(6)
+    secret = secrets.token_hex(16)
+    started = False
     try:
-        canary.write_text(secret)
-        canary.chmod(0o600)
+        lan = lan_address() if lan_ip == "auto" else lan_ip
+        loop = _Listener("127.0.0.1")
+        try:
+            loop6 = _Listener("::1", socket.AF_INET6)
+        except OSError:
+            loop6 = None  # no host IPv6 loopback: nothing to reach, count as denied
+        private = _Listener(lan) if lan else None
+        candidate = Path.home() / f".smoothcast-qualify-{secrets.token_hex(6)}"
+        # Reserve a fresh owner-only file; never overwrite a pre-existing path.
+        fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        canary = candidate
+        with os.fdopen(fd, "w") as handle:
+            handle.write(secret)
         spec = {"loopback": loop.port, "loopback6": loop6.port if loop6 else 0,
                 "lan": private.port if private else 0, "metadata": METADATA_ADDRESS,
                 "lan_ip": lan, "canary": str(canary), "tag": tag}
         with tempfile.TemporaryDirectory(prefix="smoothcast-qualify-") as staging:
             try:
+                started = True
                 done = subprocess.run([str(path), python, "-c", _PROBE, json.dumps(spec)],
                                       cwd=staging, stdin=subprocess.DEVNULL, capture_output=True,
                                       text=True, timeout=timeout, env={"PATH": os.environ.get("PATH", "")})
@@ -177,9 +208,11 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
                     report = json.loads(line[8:])
                 except ValueError:
                     report = None
-        if not isinstance(report, dict) or report.get("ran") is not True:
+        if done.returncode != 0 or not _complete_report(
+                report, ipv6=loop6 is not None, private=private is not None):
             return Qualification(False, {n: "not_run" for n in CHECKS},
-                                 f"launcher did not run the probe (exit {done.returncode})")
+                                 f"launcher did not run the probe successfully (exit {done.returncode}); "
+                                 "complete qualification evidence required")
         time.sleep(0.4)  # let a well-behaved launcher finish tearing the tree down
         checks = {"probe_ran": "pass"}
         checks["loopback_denied"] = "pass" if loop.count == 0 and not report.get("loopback") else "FAIL"
@@ -205,21 +238,29 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
                   "NOT isolated: " + ", ".join(failed) if failed else
                   "not fully verified: " + ", ".join(n for n, v in checks.items() if v != "pass"))
         return Qualification(verified, checks, detail)
+    except (OSError, RuntimeError):
+        return Qualification(False, {n: "not_run" for n in CHECKS},
+                             "Could not prepare or inspect local isolation checks.")
     finally:
-        for pid in _tagged(tag):
-            try:
-                os.kill(pid, 9)
-            except OSError:
-                pass
-        loop.close()
-        if loop6 is not None:
-            loop6.close()
-        if private is not None:
-            private.close()
         try:
-            canary.unlink()
+            for pid in _tagged(tag) if started else ():
+                try:
+                    os.kill(pid, 9)
+                except OSError:
+                    pass
         except OSError:
             pass
+        for listener in (loop, loop6, private):
+            if listener is not None:
+                try:
+                    listener.close()
+                except (OSError, RuntimeError):
+                    pass
+        if canary is not None:
+            try:
+                canary.unlink()
+            except OSError:
+                pass
 
 
 # -- cached result, tied to the exact launcher file ---------------------------------------
@@ -261,7 +302,8 @@ def save(launcher: str, result: Qualification) -> bool:
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".tmp")
-        tmp.write_text(json.dumps({"launcher": identity, **result.as_dict()}, sort_keys=True))
+        tmp.write_text(json.dumps({"schema": CACHE_SCHEMA, "launcher": identity, **result.as_dict()},
+                                  sort_keys=True))
         os.replace(tmp, target)
         return True
     except OSError:
@@ -277,7 +319,8 @@ def is_verified(launcher: str) -> bool:
         data = json.loads(cache_path().read_text())
     except (OSError, ValueError):
         return False
-    return (isinstance(data, dict) and data.get("verified") is True
+    return (isinstance(data, dict) and data.get("schema") == CACHE_SCHEMA
+            and data.get("verified") is True
             and data.get("launcher") == identity
             and isinstance(data.get("checks"), dict)
             and all(data["checks"].get(name) == "pass" for name in CHECKS))

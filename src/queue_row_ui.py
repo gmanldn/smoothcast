@@ -69,6 +69,7 @@ class QueueRowMixin:
         row.add_controller(drop)
         display_name = getattr(self, "_portal_queue_display_names", {}).get(path)
         display_title = queue_metadata.display_title(path, self._media_cache, display_name)
+        row.display_title = display_title
         row.set_tooltip_text(display_title)
         title = Gtk.Label(label=display_title, xalign=0.0, hexpand=True, ellipsize=3)
         title.add_css_class("queue-title")
@@ -120,5 +121,6 @@ class QueueRowMixin:
 
     def _queue_row_matches(self, row) -> bool:
         return playlist_control.matches_query(
-            getattr(row, "source_path", "") or "", self.queue_search.get_text()
+            getattr(row, "source_path", "") or "", self.queue_search.get_text(),
+            display_title=getattr(row, "display_title", ""),
         )

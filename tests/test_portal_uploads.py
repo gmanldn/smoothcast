@@ -459,3 +459,176 @@ def test_cancel_cannot_remove_progressive_cast_source(tmp_path, accepted):
     uploads.mark_early_cast(upload_id, accepted=False)
     uploads.cancel("owner", upload_id)
     assert not path.exists()
+
+
+
+def test_missing_acknowledged_prefix_is_never_zero_extended(tmp_path):
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    path = uploads.root / f"{upload_id}.partial"
+    path.write_bytes(b"a")
+    for _ in range(2):
+        with pytest.raises(portal_uploads.UploadError, match="restart it") as err:
+            uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+        assert err.value.status == 409
+        assert path.read_bytes() == b"a"
+        assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.close()
+
+
+def test_oversized_source_read_preserves_acknowledged_prefix(tmp_path):
+    class OversizedRead(BytesIO):
+        def read(self, size=-1):
+            return super().read(size + 1)
+
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    path = uploads.root / f"{upload_id}.partial"
+    with pytest.raises(portal_uploads.UploadError, match="exceeds its declared size"):
+        uploads.append("owner", upload_id, "bytes 3-5/6", 3, OversizedRead(b"defg"))
+    assert path.read_bytes() == b"abc"
+    assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    assert path.read_bytes() == b"abcdef"
+    uploads.close()
+
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_expiry_preserves_progressive_cast_until_declined(tmp_path, accepted):
+    now = [100.0]
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now[0],
+        disk_usage=lambda _: SimpleNamespace(free=10 * 1024**3),
+        early_cast_min_bytes=1)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    receipt = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert receipt["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    path = Path(receipt["cast_path"])
+    now[0] += portal_uploads.PARTIAL_TTL_SECONDS + 1
+    uploads.create("other", "next.mkv", 6, queue_only=True)
+    assert path.read_bytes() == b"abc"
+    assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.mark_early_cast(upload_id, accepted=False)
+    uploads.create("other", "another.mkv", 6, queue_only=True)
+    assert not path.exists()
+    uploads.close()
+
+
+@pytest.mark.parametrize("accepted", [None, True, False])
+def test_close_preserves_only_live_progressive_source(tmp_path, accepted):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    receipt = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert receipt["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    path = Path(receipt["cast_path"])
+    uploads.close()
+    if accepted is False:
+        assert not path.exists()
+    else:
+        assert path.read_bytes() == b"abc"
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_progressive_upload_cannot_switch_to_queue_during_finalize(tmp_path, accepted):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    upload_id = uploads.create("owner", "film.mkv", 6)["id"]
+    first = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert first["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    source = Path(first["cast_path"])
+    with patch("streamer.ffprobe") as probe:
+        with pytest.raises(portal_uploads.UploadError) as error:
+            uploads.finalize("owner", upload_id, queue_only=True)
+        assert error.value.status == 409
+        probe.assert_not_called()
+    assert source.read_bytes() == b"abcdef"
+    assert uploads.status("owner", upload_id)["ready_to_cast"]
+    uploads.mark_early_cast(upload_id, accepted=False)
+    media = SimpleNamespace(has_video=True, audio_streams=[], is_audio_only=False, duration=2.0)
+    with patch("streamer.ffprobe", return_value=media):
+        path, _, dispatch = uploads.finalize("owner", upload_id, queue_only=True)
+    assert path == source and dispatch
+    uploads.close()
+
+
+def test_close_continues_after_inaccessible_partial(tmp_path):
+    uploads = manager(tmp_path)
+    first = uploads.create("owner", "locked.mp4", 1, queue_only=True)
+    second = uploads.create("owner", "other.mp4", 1, queue_only=True)
+    blocked = uploads.root / f"{first['id']}.partial"
+    other = uploads.root / f"{second['id']}.partial"
+    unlink = Path.unlink
+
+    def selective_unlink(path, *args, **kwargs):
+        if path == blocked:
+            raise PermissionError("file locked")
+        return unlink(path, *args, **kwargs)
+
+    with patch.object(Path, "unlink", selective_unlink):
+        uploads.close()
+    assert blocked.exists()
+    assert not other.exists()
+    assert uploads.snapshot() == []
+
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_stale_live_progressive_upload_keeps_cast_lane(tmp_path, accepted):
+    now = [100.0]
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now[0],
+        disk_usage=lambda _: SimpleNamespace(free=10 * 1024**3),
+        early_cast_min_bytes=1)
+    first = uploads.create("first", "film.mkv", 6, cast_target="first-target")
+    receipt = uploads.append("first", first["id"], "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert receipt["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(first["id"], accepted=accepted)
+    now[0] += portal_uploads.PARTIAL_TTL_SECONDS + 1
+    second = uploads.create("second", "next.mkv", 6, cast_target="second-target")
+    assert second["queue_only"] is True
+    assert uploads.cast_target("second", second["id"]) is None
+    assert not uploads.append("second", second["id"], "bytes 0-2/6", 3,
+                              BytesIO(b"abc"))["ready_to_cast"]
+    assert Path(receipt["cast_path"]).read_bytes() == b"abc"
+    uploads.mark_early_cast(first["id"], accepted=False)
+    third = uploads.create("third", "another.mkv", 6, cast_target="third-target")
+    assert third["queue_only"] is False
+    uploads.close()
+
+
+def test_stale_pending_final_dispatch_keeps_cast_lane(tmp_path):
+    now = [100.0]
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now[0],
+        disk_usage=lambda _: SimpleNamespace(free=10 * 1024**3))
+    first = uploads.create("first", "film.mkv", 3)
+    uploads.append("first", first["id"], "bytes 0-2/3", 3, BytesIO(b"abc"))
+    _, _, dispatch = uploads.finalize("first", first["id"])
+    assert dispatch
+    now[0] += portal_uploads.PARTIAL_TTL_SECONDS + 1
+    assert uploads.create("second", "next.mkv", 3)["queue_only"]
+    uploads.finish_dispatch("first", first["id"], accepted=True)
+    assert not uploads.create("third", "another.mkv", 3)["queue_only"]
+    uploads.close()
+
+
+def test_announced_batch_is_visible_then_consumed(tmp_path):
+    manager = portal_uploads.UploadManager(tmp_path)
+    assert manager.announce("tok", [{"name": "a.mp4", "size": 5}, {"name": "b.mp3", "size": 6},
+                                    {"name": "../x", "size": -1}]) == 2
+    rows = manager.room_transfers()
+    assert [(r["title"], r["stage"], r["intent"]) for r in rows] == [
+        ("a.mp4", "waiting", "queue"), ("b.mp3", "waiting", "queue")]
+    manager.create("tok", "a.mp4", 5)
+    stages = {r["title"]: r["stage"] for r in manager.room_transfers()}
+    assert stages == {"a.mp4": "receiving", "b.mp3": "waiting"}
+    assert manager.announce("tok", []) == 0
+    assert [r["title"] for r in manager.room_transfers()] == ["a.mp4"]
+    manager.close()

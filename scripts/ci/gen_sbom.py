@@ -28,9 +28,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# Reviewed permissive (or weak-copyleft, dynamically used) licences compatible
-# with distributing SmoothCast under MIT. Extend only after review; matching is
-# on normalised SPDX-style identifiers.
+# Reviewed dependency licences allowed in the shipped SBOM. Extend only after
+# review; matching is on normalised SPDX-style identifiers.
 ALLOWED_LICENCES = frozenset({
     "MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Apache-2.0",
     "PSF-2.0", "Python-2.0", "Unlicense", "Zlib", "0BSD",
@@ -184,7 +183,8 @@ def build_sbom(app_name: str, app_version: str, packages: dict[str, Package]) ->
         "bomFormat": "CycloneDX", "specVersion": "1.5", "version": 1,
         "metadata": {"component": {
             "type": "application", "bom-ref": root_ref,
-            "name": app_name, "version": app_version, "licenses": [{"license": {"id": "MIT"}}],
+            "name": app_name, "version": app_version,
+            "licenses": [{"license": {"id": "GPL-3.0-or-later"}}],
         }},
         "components": components, "dependencies": dependencies,
     }

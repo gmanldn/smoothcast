@@ -141,9 +141,9 @@ def natural_order(paths: list[str]) -> list[str]:
     return sorted(paths, key=key)
 
 
-def matches_query(path: str, query: str) -> bool:
-    """Filter a queue by case-insensitive filename/folder terms, in any order."""
-    haystack = str(path).casefold()
+def matches_query(path: str, query: str, *, display_title: str = "") -> bool:
+    """Match visible title and legacy source terms, in any order."""
+    haystack = f"{path} {display_title}".casefold()
     return all(term in haystack for term in str(query).casefold().split())
 
 

@@ -99,7 +99,7 @@ def announce(version: tuple[int, int, int], revision: str | None, reason: str) -
 
 
 def refresh(root: Path, installed: Path, target: str, running) -> int:
-    """Return zero only when handoff can proceed; never fall back after failure."""
+    """Return zero when handoff can proceed; a skipped refresh loads the installed build."""
     source_version = read_version(root)
     installed_version = read_version(installed)
     if source_version is None or installed_version is None:
@@ -125,24 +125,9 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
     branch = git(root, "symbolic-ref", "--short", "HEAD")
     on_develop = (branch is not None and branch.returncode == 0
                   and branch.stdout.strip() == "develop")
-    # The local tracking ref is not a live remote check, and it only describes
-    # the develop line. A detached HEAD (agent worktrees) or a checkout on any
-    # other branch must never be refused as "behind develop": only a real
-    # develop checkout can be compared against refs/remotes/origin/develop
-    # without a false staleness verdict that blocks a valid launch.
-    tracked = git(root, "rev-parse", "--verify", "refs/remotes/origin/develop^{commit}")
-    tracked_sha = tracked.stdout.strip() if tracked is not None and tracked.returncode == 0 else None
-    if (on_develop and revision and tracked_sha and tracked_sha != revision
-            and tracked_sha != previous
-            and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", tracked_sha)):
-        behind = git(root, "merge-base", "--is-ancestor", revision, tracked_sha)
-        if behind is not None and behind.returncode == 0:
-            installed_ahead = (git(root, "merge-base", "--is-ancestor", tracked_sha, previous)
-                               if previous else None)
-            if installed_ahead is None or installed_ahead.returncode != 0:
-                print("SmoothCast: local checkout is behind known origin/develop; "
-                      f"pull develop in {root}, then restart.", file=sys.stderr)
-                return 3
+    # A local tracking ref is not a live remote check. A checkout that is
+    # behind it is still usable, so never refuse to start over it; only skip
+    # the automatic refresh and load the installed build.
     if source_version == installed_version and previous and previous == revision:
         announce(installed_version, previous, "Loading latest checked-out version")
         return 0
@@ -154,22 +139,27 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
             return 0
     clean = install_location._clean_source_revision(root)
     if not clean or clean != revision or not on_develop:
-        print("SmoothCast: installed build differs; automatic refresh requires a clean "
-              "develop checkout. Pull develop or run setup explicitly.", file=sys.stderr)
-        return 1
+        print("SmoothCast: local checkout cannot be installed automatically; "
+              "loading the installed build. Commit or stash changes and pull develop, "
+              "then rerun to update.", file=sys.stderr)
+        announce(installed_version, previous, "Loading installed version")
+        return 0
     if previous:
         # A higher version number alone cannot authorise an unrelated build.
         forward = git(root, "merge-base", "--is-ancestor", previous, clean)
         if forward is None or forward.returncode != 0:
-            print("SmoothCast: cannot prove a forward build update; run setup explicitly.",
-                  file=sys.stderr)
-            return 1
+            print("SmoothCast: cannot prove a forward build update; loading the installed "
+                  "build. Run setup explicitly to replace it.", file=sys.stderr)
+            announce(installed_version, previous, "Loading installed version")
+            return 0
     # Linux /proc provides the existing launcher with cross-install GUI discovery.
     # Do not pretend that the same scan proves quiescence on macOS or Windows.
     if target != "linux" or not Path("/proc/self/cmdline").is_file():
-        print("SmoothCast: newer checkout available. Quit the application and run "
-              "the platform setup script to update the installed copy.", file=sys.stderr)
-        return 3
+        print("SmoothCast: newer checkout available, but automatic refresh is unavailable "
+              "on this platform; loading the installed build. Quit and run the platform "
+              "setup script to update the installed copy.", file=sys.stderr)
+        announce(installed_version, previous, "Loading installed version")
+        return 0
     pids = running()
     if pids:
         # A running primary from this exact install can still be activated.

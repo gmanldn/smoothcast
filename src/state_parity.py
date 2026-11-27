@@ -57,6 +57,8 @@ FIELDS: tuple[StateField, ...] = (
                "none", "0 when the receiver volume is unavailable"),
     StateField("queue", "self._portal_queue_status()", "ordered Up Next entry list", "none",
                "empty list when Up Next is empty"),
+    StateField("queue_total", "len(self.queue)", "integer", "none",
+               "full Up Next length; the queue list is capped at 100 entries"),
     StateField("queue_revision", "self._portal_observe_queue()", "monotonic integer", "none",
                "advances on any ordered Up Next change"),
     StateField("library_copies", "self._portal_copy_status()", "library copy status list", "none",

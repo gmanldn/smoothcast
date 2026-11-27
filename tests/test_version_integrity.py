@@ -46,7 +46,13 @@ class CanonicalVersionTests(unittest.TestCase):
     def test_package_metadata_matches_the_canonical_release(self):
         metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('dynamic = ["version"]', metadata)
-        self.assertIn('version = {attr = "version.__version__"}', metadata)
+        self.assertNotIn('version = {attr = "version.__version__"}', metadata)
+        # Setuptools' isolated metadata process cannot assume src is on sys.path.
+        result = subprocess.run(
+            [sys.executable, "-I", str(ROOT / "setup.py"), "--version"],
+            cwd=ROOT, text=True, capture_output=True, timeout=30, check=True,
+        )
+        self.assertEqual(result.stdout.strip(), version.__version__)
         self.assertNotRegex(metadata, r'(?m)^version\s*=\s*"\d+\.\d+\.\d+"')
         self.assertIn('smoothcast = "cli:main"', metadata)
 

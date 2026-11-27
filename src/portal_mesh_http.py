@@ -17,7 +17,8 @@ MAX_STREAM_SECONDS = 8 * 3600
 
 def route(handler, method: str, path: str) -> bool:
     if method != "GET" or path not in {"/api/mesh", "/api/mesh/events",
-                                       "/api/mesh/heartbeat"}:
+                                       "/api/mesh/heartbeat",
+                                       "/api/mesh/profiles", "/api/mesh/diagram.svg"}:
         return False
     if not handler._authenticated():
         handler._error(401, "Enter the PIN shown in SmoothCast")
@@ -28,6 +29,18 @@ def route(handler, method: str, path: str) -> bool:
         return True
     if path == "/api/mesh/heartbeat":
         handler._send(200, {"ok": True, "heartbeat": _heartbeat(handler.server)})
+        return True
+    if path in ("/api/mesh/profiles", "/api/mesh/diagram.svg"):
+        import mesh_diagram
+        import node_profile
+        view = feed._publisher.view
+        found = [node_profile.profile(node_profile.redact(r), local_id=view.local_id,
+                                      primary_id=feed._primary()) for r in view.nodes]
+        if path == "/api/mesh/profiles":
+            handler._send(200, {"ok": True, "nodes": [node_profile.as_dict(p) for p in found]})
+        else:
+            handler._send(200, mesh_diagram.render(found).encode("utf-8"),
+                          content_type="image/svg+xml")
         return True
     if path == "/api/mesh":
         view = feed._publisher.view

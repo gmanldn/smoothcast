@@ -26,24 +26,24 @@ class CodenameTests(unittest.TestCase):
         self.assertEqual(len(set(commit_identity.WEAPON_NAMES)), 64)
 
     def test_pinned_codenames_detect_algorithm_drift(self):
-        self.assertEqual(commit_identity.codename("0" * 40), "Halberd-Flail")
-        self.assertEqual(commit_identity.codename("a" * 40), "Mace-Tomahawk")
-        self.assertEqual(commit_identity.codename("f" * 40), "Dirk-Talwar")
+        self.assertEqual(commit_identity.codename("0" * 40), "Sharp-Flail")
+        self.assertEqual(commit_identity.codename("a" * 40), "Jolly-Tomahawk")
+        self.assertEqual(commit_identity.codename("f" * 40), "Lethal-Talwar")
         self.assertEqual(
             commit_identity.codename("0123456789abcdef0123456789abcdef01234567"),
-            "Kukri-Stiletto",
+            "Eager-Stiletto",
         )
 
-    def test_codename_is_two_distinct_weapons(self):
-        pool = commit_identity.WEAPON_NAMES
+    def test_codename_is_adjective_and_weapon(self):
+        pool_a = commit_identity.ADJECTIVE_NAMES
+        pool_w = commit_identity.WEAPON_NAMES
         for seed in ("0" * 40, "1" * 40, "a" * 40, "f" * 40,
-                     "0123456789abcdef0123456789abcdef01234567"):
+                      "0123456789abcdef0123456789abcdef01234567"):
             with self.subTest(seed=seed):
                 first, separator, second = commit_identity.codename(seed).partition("-")
                 self.assertEqual(separator, "-")
-                self.assertIn(first, pool)
-                self.assertIn(second, pool)
-                self.assertNotEqual(first, second)
+                self.assertIn(first, pool_a)
+                self.assertIn(second, pool_w)
 
     def test_codename_is_case_insensitive_and_stable(self):
         sha = "abcdef0123456789" + "1" * 24
@@ -74,13 +74,23 @@ class CodenameTests(unittest.TestCase):
             commit_identity.display_label(version.label(), None, "2026-11-09"),
             version.label())
 
+    def test_display_label_includes_zero_padded_time_and_rejects_bad_times(self):
+        sha = "a" * 40
+        word = commit_identity.codename(sha)
+        self.assertEqual(commit_identity.display_label("v2.1.5", sha, "2026-11-26 0726"),
+                         f"v2.1.5 - 2026-11-26 0726 - {word}")
+        for bad in ("2026-11-26 2400", "2026-11-26 0760", "2026-11-26 726",
+                    "2026-02-30 0726", "2026-11-26 07:26"):
+            self.assertEqual(commit_identity.display_label("v2.1.5", sha, bad),
+                             f"v2.1.5 - {word}")
+
     def test_running_identity_uses_frozen_revision_and_date(self):
         with mock.patch.object(version, "RUNNING_REVISION", "a" * 40), \
-             mock.patch.object(version, "RUNNING_COMMIT_DATE", "2026-11-09"):
+             mock.patch.object(version, "RUNNING_COMMIT_DATE", "2026-11-09 2330"):
             self.assertEqual(
                 version.identity_label(),
                 commit_identity.display_label(
-                    version.label(), "a" * 40, "2026-11-09"))
+                    version.label(), "a" * 40, "2026-11-09 2330"))
 
 
 @unittest.skipUnless(shutil.which("git"), "requires local Git")
@@ -109,18 +119,18 @@ class CommitDateTests(unittest.TestCase):
         self.assertTrue(
             (self.root / ".git" / "objects" / self.sha[:2] / self.sha[2:]).is_file())
         # 23:30-05:00 is already the next day in UTC; the commit's own date wins.
-        self.assertEqual(version.read_checkout_commit_date(self.root), "2026-11-09")
+        self.assertEqual(version.read_checkout_commit_date(self.root), "2026-11-09 2330")
         self.assertEqual(version.read_checkout_commit_date(self.root, self.sha),
-                         "2026-11-09")
+                         "2026-11-09 2330")
 
     def test_packed_commit_date_survives_repack(self):
         self.git("repack", "-adq")
         self.git("prune-packed")
         self.assertFalse(
             (self.root / ".git" / "objects" / self.sha[:2] / self.sha[2:]).exists())
-        self.assertEqual(version.read_checkout_commit_date(self.root), "2026-11-09")
+        self.assertEqual(version.read_checkout_commit_date(self.root), "2026-11-09 2330")
         self.assertEqual(version.read_checkout_commit_date(self.root, self.sha),
-                         "2026-11-09")
+                         "2026-11-09 2330")
 
     def test_missing_and_malformed_revisions_fail_closed(self):
         self.assertIsNone(version.read_checkout_commit_date(self.root, "0" * 40))
@@ -147,7 +157,7 @@ class IdentityDocumentationTests(unittest.TestCase):
             lowered = text.lower()
             self.assertIn("weapon", lowered)
             self.assertIn("committer date", lowered)
-        self.assertIn("vX.Y.Z - YYYY-MM-DD - Codename", release_flow)
+        self.assertIn("vX.Y.Z - YYYY-MM-DD HHMM - Codename", release_flow)
 
 
 if __name__ == "__main__":

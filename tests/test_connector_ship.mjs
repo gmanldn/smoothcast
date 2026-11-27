@@ -372,3 +372,66 @@ test("PATCH changes only the canonical numeric assignment",()=>{
   assert.throws(()=>validateVersionBump(source,VERSION39+"PATCH += 1\n"),/non-PATCH bytes/);
   assert.throws(()=>validateVersionBump(source,VERSION39+"# changed\n"),/non-PATCH bytes/);
 });
+
+const releasePlan={...p,kind:"release",releaseBlob:newVersionBlob,
+  changes:[{path:"src/version.py",old:baseBlob,content:VERSION39}],
+  message:"chore(version): release 2.0.39",next:"native release qualification"};
+function releaseTransport(){
+  const t=transport(),get=t.api.get,file=t.api.file;
+  t.comments[0]=row(1,598,"<!-- sc-claim v1 agent=test ttl=30 files=src/version.py -->");
+  t.state.message=releasePlan.message+" (Refs #598)";
+  t.api.get=async path=>path==="/git/trees/"+id("d")+"?recursive=1"
+    ?{sha:id("d"),truncated:false,tree:[leaf("src/version.py",newVersionBlob)]}:get(path);
+  t.api.file=async(ref,path)=>ref===t.candidate&&path==="src/version.py"
+    ?{sha:newVersionBlob,content:VERSION39}:file(ref,path);
+  t.api.tree=async(base,changes)=>{
+    assert.equal(base,id("c"));
+    assert.deepEqual(changes,[{path:"src/version.py",mode:"100644",type:"blob",content:VERSION39}]);
+    t.counters.trees++;return id("d");
+  };
+  t.api.commit=async(tree,parent,message)=>{
+    assert.equal(tree,id("d"));assert.equal(parent,p.base);
+    assert.equal(message,t.state.message);t.counters.commits++;return t.candidate;
+  };
+  t.api.close=async()=>{throw Error("release must never close an issue")};
+  return t;
+}
+test("explicit release lane publishes exactly one PATCH and replays without closure",async()=>{
+  const t=releaseTransport(),c=await prepare(t.api,releasePlan);
+  await ship(t.api,releasePlan,c);await ship(t.api,releasePlan,c);
+  assert.equal(t.state.head,c);
+  assert.deepEqual(t.counters,{trees:1,commits:1,updates:1});
+  assert.equal(t.comments.filter(c=>c.body.includes("sc-ship v1")).length,1);
+  await assert.rejects(closeTicket(t.api,releasePlan,c),/close ticket requires a finalise plan/);
+});
+test("release must contain only pinned version bytes and use exact subject",()=>{
+  validate(releasePlan);
+  for(const plan of [
+    {...releasePlan,releaseBlob:baseBlob},
+    {...releasePlan,message:"fix"},
+    {...releasePlan,next:"none"},
+    {...releasePlan,changes:[...releasePlan.changes,...p.changes]},
+    {...releasePlan,changes:[{...releasePlan.changes[0],old:null}]}
+  ])assert.throws(()=>validate(plan));
+});
+test("release rejects skipped patch or unrelated changes before creating objects",async()=>{
+  for(const source of [VERSION39.replace("39","40"),VERSION39+"# changed\n"]){
+    const t=releaseTransport(),v=source.includes("40")?"2.0.40":"2.0.39";
+    const plan={...releasePlan,releaseBlob:blobSha(source),
+      message:"chore(version): release "+v,
+      changes:[{...releasePlan.changes[0],content:source}]};
+    await assert.rejects(createCandidate(t.api,plan));
+    assert.deepEqual(t.counters,{trees:0,commits:0,updates:0});
+  }
+});
+test("release rejects tampered candidate and competing branch movement",async()=>{
+  const t=releaseTransport(),c=await prepare(t.api,releasePlan);
+  await recordPending(t.api,releasePlan,c);
+  const file=t.api.file;
+  t.api.file=async(ref,path)=>ref===c?{sha:newVersionBlob,content:VERSION39+"# tampered\n"}:file(ref,path);
+  await assert.rejects(publishPending(t.api,releasePlan,c));
+  assert.equal(t.counters.updates,0);
+  t.api.file=file;t.state.head=id("9");
+  await assert.rejects(publishPending(t.api,releasePlan,c),/base moved/);
+  assert.equal(t.counters.updates,0);
+});

@@ -11,10 +11,12 @@ import math
 import os
 import subprocess
 import sys
+import threading
+import time
 
 import frozen_runtime
 from dataclasses import dataclass
-from typing import Callable, Protocol, cast, runtime_checkable
+from typing import Any, Callable, Protocol, cast, runtime_checkable
 
 from progress_model import ReceiverInfo
 
@@ -182,22 +184,48 @@ def unique_discovered_host(name: str, devices: list[Device]) -> str | None:
     return matches[0].host if len(matches) == 1 else None
 
 
+_info_failures: dict[str, str] = {}
+# Passive scan (3 s) + identity check (2 s) must fit before an inline retry.
+REDISCOVERY_BUDGET = 5.0
+
+
+def last_info_failure(device: str) -> str:
+    """Why the latest status read for ``device`` returned nothing ('' if it worked)."""
+    return _info_failures.get(device, "")
+
+
+def _info_failed(device: str, reason: str) -> None:
+    # Log only when the reason changes so a 40 s poll cannot flood errors.log.
+    if _info_failures.get(device) != reason:
+        log_backend_failure(f"Receiver status unavailable for {device!r}: {reason}")
+    _info_failures[device] = reason
+
+
 def _catt_info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Full device/media status. None when offline or unreachable."""
     if not device.strip():
         return None
     try:
         result = _run(["-d", device, "info", "-j"], timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired:
+        _info_failed(device, f"status helper timed out after {timeout:g}s")
+        return None
+    except OSError as exc:
+        _info_failed(device, f"status helper could not start: {exc}")
         return None
     if result.returncode != 0:
+        tail = " ".join((result.stderr or result.stdout or "").split())[-160:]
+        _info_failed(device, f"status helper exited {result.returncode}: {tail}")
         return None
     try:
         payload = json.loads(result.stdout or "{}")
     except ValueError:
+        _info_failed(device, "status helper returned unreadable output")
         return None
     if not isinstance(payload, dict) or not payload:
+        _info_failed(device, "status helper returned no data")
         return None
+    _info_failures.pop(device, None)
     return cast(ReceiverInfo, payload)
 
 
@@ -211,18 +239,29 @@ def log_backend_failure(message: str, *, exc_info: bool = False) -> None:
         pass
 
 
+def _record_code(code: str, context: object) -> None:
+    """Tag catt failures with the same catalogue codes as the PyChromecast backend (#207)."""
+    import errors
+
+    errors.record(code, context)
+
+
 def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     if not device.strip():
         return False, NO_DEVICE_MESSAGE
     try:
         result = _run(["-d", device, *args], timeout=timeout)
     except subprocess.TimeoutExpired:
+        _record_code("cast.receiver_offline", {"command": args[:1], "timeout": timeout})
         return False, COMMAND_TIMEOUT_MESSAGE
     except OSError:
         log_backend_failure("Could not start the Cast command helper", exc_info=True)
+        _record_code("cast.command_failed", {"command": args[:1], "helper": "unavailable"})
         return False, "Could not start the Cast helper. Check the SmoothCast installation."
     if result.returncode != 0:
-        log_backend_failure(f"Cast command helper exited with code {result.returncode}")
+        tail = " ".join((result.stderr or result.stdout or "").split())[-160:]
+        log_backend_failure(f"Cast command helper exited with code {result.returncode}: {tail}")
+        _record_code("cast.command_failed", {"command": args[:1], "exit": result.returncode})
         return False, "The receiver command failed. Check the receiver connection and try again."
     return True, (result.stdout or result.stderr or "").strip()
 
@@ -258,6 +297,28 @@ class CattBackend:
 
     def __init__(self) -> None:
         self._advertisements: tuple[Device, ...] = ()
+        self._last_refresh: dict[str, float] = {}
+        self._mirror = _StatusMirror()
+        self._mirror_routes: dict[str, str] = {}
+        self._verified_hosts: dict[str, tuple[str, float]] = {}
+
+    def _direct_host(self, device: str) -> str | None:
+        """A private address safe for the direct connection, without discovery.
+
+        An IP target is used as-is; a name only through the identity-checked
+        route of the latest scan, cached for a minute so polls skip the check.
+        """
+        host = _private_ipv4(device)
+        if host is not None:
+            return host
+        now = time.monotonic()
+        cached = self._verified_hosts.get(device)
+        if cached is not None and now - cached[1] < 60.0:
+            return cached[0]
+        host = _private_ipv4(self.receiver_route(device))
+        if host is not None:
+            self._verified_hosts[device] = (host, now)
+        return host
 
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
@@ -290,8 +351,81 @@ class CattBackend:
         # to send a command to the cached IP.
         return name
 
+    def refreshed_route(self, name: str) -> str:
+        """Re-discover (at most every 15 s per receiver), then return a verified route."""
+        now = time.monotonic()
+        if now - self._last_refresh.get(name, -1e9) < 15.0:
+            return name
+        self._last_refresh[name] = now
+        try:
+            self._advertisements = tuple(_passive_cast_scan(3.0))
+        except Exception:
+            return name
+        return self.receiver_route(name)
+
     def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
-        return _catt_info(device, timeout)
+        # The whole call, retry included, stays within the caller's budget:
+        # pollers such as the 40 s cast confirmation depend on it.
+        deadline = time.monotonic() + timeout
+        # Once a direct connection proved itself for this receiver, answer from
+        # it: its pushed status is current and costs no helper start-up.
+        host = self._mirror_routes.get(device)
+        if host is not None:
+            if self._mirror.connected(host):
+                status = self._mirror.info(host, min(timeout, 2.0))
+                if status:
+                    _info_failures.pop(device, None)
+                    return status
+            self._mirror_routes.pop(device, None)
+            self._mirror.forget(host)
+        # catt's start-up alone can take most of the budget on a loaded host,
+        # leaving the fallback below no time to prove the direct route. Try a
+        # known safe address first with a bounded slice, then catt (#712).
+        host = self._direct_host(device) if device.strip() else None
+        if host is not None:
+            status = self._mirror.info(host, min(4.0, max(0.5, timeout / 2)))
+            if status:
+                _info_failures.pop(device, None)
+                self._mirror_routes[device] = host
+                return status
+        result = _catt_info(device, max(0.5, deadline - time.monotonic()))
+        if result is not None or not device.strip():
+            return result
+        # catt's own name lookup can fail where a verified address works.
+        route = device
+        if deadline - time.monotonic() >= REDISCOVERY_BUDGET:
+            route = self.refreshed_route(device)
+            remaining = deadline - time.monotonic()
+            if route != device and remaining >= 1.0:
+                retried = _catt_info(route, remaining)
+                if retried is not None:
+                    _info_failures.pop(device, None)
+                    return retried
+        elif time.monotonic() - self._last_refresh.get(device, -1e9) >= 15.0:
+            # No room for discovery plus a retry here; learn the route in the
+            # background so the next call (via catt_command) can use it.
+            threading.Thread(target=self.refreshed_route, args=(device,),
+                             name="cast-route-refresh", daemon=True).start()
+        return self._mirror_info(device, route, deadline)
+
+    def _mirror_info(self, device: str, route: str, deadline: float) -> ReceiverInfo | None:
+        """Read status over a persistent read-only connection when catt fails.
+
+        Spawning catt costs seconds of Python start-up on a loaded host; a kept
+        connection answers instantly. Only a private IPv4 address that is the
+        target itself or passed the receiver identity check is used.
+        """
+        host = _private_ipv4(route) or _private_ipv4(device)
+        if host is None and deadline - time.monotonic() >= 2.5:
+            host = _private_ipv4(self.receiver_route(device))
+        remaining = deadline - time.monotonic()
+        if host is None or remaining < 0.5:
+            return None
+        status = self._mirror.info(host, remaining)
+        if status:
+            _info_failures.pop(device, None)
+            self._mirror_routes[device] = host
+        return status
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         return _catt_command(device, *args, timeout=timeout)
@@ -304,6 +438,112 @@ class CattBackend:
 
     def close(self) -> None:
         self._advertisements = ()
+        self._mirror_routes.clear()
+        self._verified_hosts.clear()
+        self._mirror.close()
+
+
+def _private_ipv4(value: str) -> str | None:
+    try:
+        return validate_manual_target(value)
+    except ValueError:
+        return None
+
+
+_CATT_MEDIA_KEYS = (
+    "content_type", "stream_type", "media_metadata", "subtitle_tracks",
+    "current_subtitle_tracks", "supported_media_commands", "playback_rate",
+    "idle_reason", "duration", "media_custom_data",
+)
+
+
+class _StatusMirror:
+    """Kept read-only PyChromecast connections, keyed by verified host.
+
+    Never launches apps or sends media commands; catt keeps media ownership.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._casts: dict[str, object] = {}
+
+    def info(self, host: str, timeout: float) -> ReceiverInfo | None:
+        deadline = time.monotonic() + timeout
+        try:
+            import pychromecast
+            from pychromecast_backend import PyChromecastBackend
+
+            with self._lock:
+                chromecast = self._casts.get(host)
+            if chromecast is None:
+                chromecast = pychromecast.get_chromecast_from_host(
+                    (host, 8009, None, None, None), tries=1,
+                    timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
+                with self._lock:
+                    self._casts[host] = chromecast
+            cc = cast(Any, chromecast)
+            cc.wait(timeout=max(0.1, deadline - time.monotonic()))
+            cast_status = cc.status
+            media = cc.media_controller
+            app_id = getattr(cast_status, "app_id", None)
+            if app_id and getattr(media.status, "media_session_id", None) is None:
+                # A freshly joined app reports its media session shortly after.
+                try:
+                    media.update_status()
+                except Exception:
+                    pass
+                wait_until = min(deadline, time.monotonic() + 1.5)
+                while (time.monotonic() < wait_until
+                       and getattr(media.status, "media_session_id", None) is None):
+                    time.sleep(0.05)
+            status = PyChromecastBackend._status_dict(
+                cast(Any, None), media.status, cast_status)
+            # A kept connection's last report ages; extrapolate like the receiver.
+            adjusted = getattr(media.status, "adjusted_current_time", None)
+            if isinstance(adjusted, (int, float)) and "current_time" in status:
+                status["current_time"] = adjusted
+            for key in ("display_name", "status_text"):
+                value = getattr(cast_status, key, None)
+                if value:
+                    status[key] = value  # type: ignore[literal-required]
+            # Same media keys as `catt info -j`, so every caller sees one shape.
+            for key in _CATT_MEDIA_KEYS:
+                value = getattr(media.status, key, None)
+                if value is not None and key not in status:
+                    status[key] = value  # type: ignore[literal-required]
+            return status
+        except Exception as exc:
+            self._drop(host)
+            _info_failed(host, f"direct status connection failed: {type(exc).__name__}")
+            return None
+
+    def connected(self, host: str) -> bool:
+        """True only while the kept socket is live; stale caches never answer."""
+        with self._lock:
+            chromecast = self._casts.get(host)
+        try:
+            client = getattr(chromecast, "socket_client", None)
+            return bool(client is not None and client.is_connected)
+        except Exception:
+            return False
+
+    def forget(self, host: str) -> None:
+        self._drop(host)
+
+    def _drop(self, host: str) -> None:
+        with self._lock:
+            chromecast = self._casts.pop(host, None)
+        if chromecast is not None:
+            try:
+                cast(Any, chromecast).disconnect(timeout=1)
+            except Exception:
+                pass
+
+    def close(self) -> None:
+        with self._lock:
+            hosts = list(self._casts)
+        for host in hosts:
+            self._drop(host)
 
 
 _backend: CastBackend = CattBackend()

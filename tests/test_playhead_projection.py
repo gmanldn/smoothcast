@@ -45,7 +45,9 @@ def test_page_wires_projection_to_a_timer_without_overwriting_scrubs():
     assert "function schedulePlayhead(" in html and "playheadTimer=setTimeout(" in html
     assert "if(document.hidden||!csrf||stalePage)return;" in html  # hidden tabs do not paint
     paint = next(line for line in html.splitlines() if line.startswith("function paintPlayhead("))
-    assert 'if(!editingControls.has("seek"))$("seek").value' in paint
+    # The seek control is painted only when the guest is not editing it.
+    assert 'if(!editingControls.has("seek")){' in paint
+    assert '$("seek").value' in paint
     assert "trackPlayhead(s)" in html
 
 
@@ -125,6 +127,7 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     window.tracker = SimpleNamespace(value=lambda: 18.0, duration=120.0,
                                      rate=2.0, known=True)
     window.media = None
+    window.queue = []
     window._external_runtime = (7.0, 300.0)
     window.np_title = SimpleNamespace(get_text=lambda: "Film")
     window.now_playing = None

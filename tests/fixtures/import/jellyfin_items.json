@@ -1,0 +1,11 @@
+{"Items": [
+  {"Name": "Arrival", "Type": "Movie", "ProductionYear": 2016, "Path": "/srv/jf/Arrival (2016)/Arrival (2016).mkv",
+   "RunTimeTicks": 69600000000, "UserData": {"Played": false, "PlaybackPositionTicks": 18000000000}},
+  {"Name": "Heat", "Type": "Movie", "ProductionYear": 1995, "Path": "D:\\Films\\Heat.1995.mkv",
+   "RunTimeTicks": 102000000000, "UserData": {"Played": true, "PlaybackPositionTicks": 0}},
+  {"Name": "The Gang Goes Jihad", "Type": "Episode", "SeriesName": "It's Always Sunny in Philadelphia",
+   "ParentIndexNumber": 2, "IndexNumber": 3, "UserData": {"Played": true}},
+  {"Name": "Unwatched Film", "Type": "Movie", "ProductionYear": 2001, "UserData": {"Played": false}},
+  {"Name": "Missing Here", "Type": "Movie", "ProductionYear": 1999, "UserData": {"Played": true}},
+  {"Name": "Folder", "Type": "Folder"}
+]}

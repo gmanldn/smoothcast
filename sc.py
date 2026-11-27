@@ -123,6 +123,9 @@ def _main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
+    fresh = "--fresh" in args  # consumed before every other mode sees the args
+    args = [arg for arg in args if arg != "--fresh"]
+
     # Demo runs the app against loopback-only fake receivers in a throwaway
     # profile. Handle it before any installed-copy redirect, single-instance
     # handoff or runtime install so it can never touch a real running SmoothCast.
@@ -153,12 +156,21 @@ def _main(argv: list[str] | None = None) -> int:
     if "--self-test" in args or os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         return launch.main(args)
 
+    import fresh_start
+
     target = _target()
     installed = None
     try:
         import install_location
 
         install_location.check_install_idle(ROOT)
+        if fresh and not _headless(args):
+            # Explicit full reset after the installer-idle check, so a busy
+            # install never costs the user their window. Stops every window and
+            # helper (even a kept cast) before the refresh, which refuses to run
+            # under a live GUI. A process that cannot be stopped aborts the launch.
+            if not fresh_start.reset(launch.gui_instances(all_installations=True), ROOT / "src"):
+                return 1
         if target is not None and not portable and not os.environ.get("SMOOTHCAST_HANDOFF"):
             installed = _installed_root(target)
     except (OSError, ValueError) as exc:
@@ -202,7 +214,8 @@ def _main(argv: list[str] | None = None) -> int:
                 return _launch_installed(ROOT, args)
     # Activating the already-running primary must not wait for dependency
     # probes, bootstrap, installs or desktop registration (#540).
-    guarded = launch.ensure_single_instance(args)
+    guarded = launch.ensure_single_instance(
+        args, reclaim=lambda pids: fresh_start.reset(pids, ROOT / "src", keep_streaming=True))
     if guarded is not None:
         return guarded
     if not launch.runtime_ready():

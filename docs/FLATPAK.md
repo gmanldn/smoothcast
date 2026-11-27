@@ -17,32 +17,34 @@ remains PyInstaller (see [PACKAGING.md](PACKAGING.md)).
   unrestricted devices are granted. Do not use `flatpak-spawn --host` to
   bypass packaging missing dependencies.
 
-## Local build prerequisites
+## Build inputs (all pinned, all offline inside the sandbox)
 
-On a disposable Linux build machine with matching GNOME runtime and SDK,
-install `flatpak-builder` and the GNOME 51 runtime/SDK. Run from the repo root:
+- **Python dependencies:** `packaging/flatpak/python3-deps.json` lists every
+  runtime wheel (plus the setuptools/wheel build backend) by URL and sha256 for
+  the SDK's CPython 3.14 on x86_64; `requirements.lock.txt` is the same set in
+  readable form. Regenerate both with
+  `python3 packaging/flatpak/lock_python_deps.py` after changing
+  `[project].dependencies` (pip `--dry-run` resolution; nothing executes).
+- **FFmpeg:** GNOME's codec extensions ship libraries, not the `ffmpeg`,
+  `ffprobe` and `ffplay` executables SmoothCast runs, so the manifest builds
+  x264 (pinned `stable` commit) and FFmpeg `n8.1.3` (pinned commit) with
+  `--enable-gpl --enable-libx264 --enable-vaapi`: libx264 is the universal
+  fallback encoder and VAAPI the primary Linux path. The result is GPL.
+- The app module fails the build if GTK/libadwaita/PyGObject or the Python
+  dependencies do not import, or if any FFmpeg tool or encoder is missing.
+
+## Building
+
+CI builds it: `.github/workflows/flatpak.yml` runs on every develop push that
+touches `packaging/flatpak/**` (marked experimental, so a red build does not
+fail the develop head). Locally, on a machine with `flatpak-builder`:
 
 ```sh
 flatpak install --user flathub org.gnome.Platform//51 org.gnome.Sdk//51
-python3 -m pip download --dest packaging/flatpak/wheelhouse .
-flatpak-builder --user --install-deps-from=flathub --force-clean \
-  --repo=flatpak-repo flatpak-build \
+flatpak-builder --user --install --force-clean build \
   packaging/flatpak/io.github.gmanldn.SmoothCast.json
+flatpak run --command=smoothcast io.github.gmanldn.SmoothCast --version
 ```
-
-**Important:** the download is a *preparation* step using the build machine's
-Python; Flatpak itself installs dependencies with `--no-index`, so no build
-step silently fetches the network. The complete Python wheelhouse must match
-the GNOME SDK Python ABI and Linux architecture; transitive dependencies,
-build backend and compiled wheels are required. Prepare this in the matching
-SDK, then lock every resulting wheel and hash for reproducible distribution.
-Do not check unreviewed wheel binaries into the repository.
-
-The manifest deliberately fails if that wheelhouse is absent, if GTK/PyGObject
-imports fail or if `ffmpeg`, `ffprobe`, or `ffplay` cannot be found. **GNOME's
-codec extensions are not proof that these three executables exist.** A real
-release needs a reviewed, licensed, bundled FFmpeg executable set; do not work
-around the check by invoking host binaries.
 
 The launcher and icon are exported as
 `io.github.gmanldn.SmoothCast.desktop` and

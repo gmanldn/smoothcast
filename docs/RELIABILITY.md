@@ -132,6 +132,53 @@ on an SLO breach or a p95 more than 20% over the baseline (never tighter than
 `python3 scripts/control_latency_benchmark.py --check docs/control-latency-baseline.json`;
 refresh the baseline after an intended change with `--write-baseline`.
 
+## Native interaction latency (#627)
+
+How quickly the desktop itself answers: the milliseconds between a synthetic
+interaction in the isolated Xvfb window and the frame that acknowledges it, plus
+the worst main-loop stall the jank detector (#442) saw in the same run. The load
+is the worst realistic case: a 1,000-item queue and a simulated 32-phone poll
+load. SLOs: play/pause, seek and volume p95 under 16 ms; the 1,000-item queue
+rebuild p95 under 150 ms; no main-loop stall over 250 ms.
+
+The budget and its baseline check live in
+`scripts/interaction_latency_benchmark.py`. Check with
+`python3 scripts/interaction_latency_benchmark.py --samples <samples.json> --check docs/interaction-latency-baseline.json`,
+and refresh the baseline after an intended change with `--write-baseline`. A p95
+more than 20% over the baseline (never tighter than +1 ms, which is timer noise)
+fails. Samples come **only** from the authorised isolated-Xvfb job under
+`scripts/test_gui_isolated.py`'s environment; never measure against the real
+desktop or a real receiver.
+
+Status: the budget script, the SLOs and their tests are in place (#678). The
+Xvfb harness that drives the interactions and writes the samples, the committed
+baseline and the results table land with the rest of #627.
+
+## Cross-surface freshness (#629)
+
+How quickly an action on one surface shows on the other, measured against the
+real portal with a fake receiver and the desktop as the authoritative owner (no
+GTK, no TV). **desktop_to_web** is a desktop state change until a web
+`GET /api/status` reflects it with a newer `snapshot_version`; **web_to_desktop**
+is a web `POST /api/action` until the desktop's authoritative state *and* the
+served snapshot reflect it, with no stale read afterwards. Bound: either
+direction within 500 ms.
+
+| Direction | p50 (ms) | p95 (ms) |
+| --- | --- | --- |
+| desktop_to_web | 2.4 | 7.5 |
+| web_to_desktop | 5.5 | 12.5 |
+
+Baseline: `docs/cross-surface-freshness-baseline.json` (15 rounds, Python
+3.13.5). The gate (`tests/perf/test_cross_surface_freshness.py`, CI job
+*Search performance gates* in the full lane, slack 3 for shared runners) fails on
+a bound breach or a p95 more than 20% over the baseline (never tighter than
++50 ms). Run it with
+`python3 scripts/freshness_benchmark.py --check docs/cross-surface-freshness-baseline.json`;
+refresh the baseline after an intended change with `--write-baseline`. The
+deterministic mechanism is covered headless by
+`tests/test_cross_surface_freshness.py`.
+
 ## Soak (#464)
 
 `scripts/soak.py` runs the real portal on loopback with a fake receiver, 31

@@ -1,4 +1,16 @@
 {
-  "schema_version": 1,
-  "releases": {}
+  "releases": {
+    "2.2.0": {
+      "checks": {},
+      "commit": "6ff7318357734302f82db0885c7999bf67e1ab2a",
+      "known_failures": [
+        {
+          "issue": "https://github.com/gmanldn/smoothcast/issues/264",
+          "status": "open",
+          "summary": "macOS packaging fails on a HarfBuzz dylib symbol conflict (missing _hb_glib_script_to_script); the macOS bundle, artifact and real-Mac gates stay unqualified"
+        }
+      ]
+    }
+  },
+  "schema_version": 1
 }

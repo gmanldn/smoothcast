@@ -29,6 +29,8 @@ MAX_AUDIO_DURATION_SECONDS = 24 * 60 * 60
 MAX_ACTIVE_UPLOADS = 3
 MIN_FREE_BYTES = 512 * 1024 * 1024
 PARTIAL_TTL_SECONDS = 24 * 60 * 60
+ANNOUNCE_TTL_SECONDS = 15 * 60
+ANNOUNCE_MAX = 100
 VIDEO_SUFFIXES = frozenset({
     ".mp4", ".m4v", ".mkv", ".mov", ".avi", ".webm", ".ts", ".mpeg", ".mpg", ".wmv",
 })
@@ -196,6 +198,8 @@ class _Upload:
     queue_only: bool = False
     audio_only: bool = False
     cast_target: str | None = None
+    batch_index: int = 0
+    batch_total: int = 0
     media_validated: bool = False
     # A successful rename and directory fsync are separate steps. If fsync
     # fails, retain the final path and retry durability without re-uploading.
@@ -219,6 +223,9 @@ class UploadManager:
         self._clock = clock
         self._early_cast_min_bytes = max(0, int(early_cast_min_bytes))
         self._uploads: dict[str, _Upload] = {}
+        # owner key -> (expires_at, [{name,size,audio,queue}]) for files a guest
+        # has chosen but not yet reserved, so the whole batch is visible.
+        self._announced: dict[str, tuple[float, list[dict]]] = {}
         self._lock = threading.RLock()
         self._remove_expired_partials()
 
@@ -244,7 +251,10 @@ class UploadManager:
                     # dead records consume one of the three active slots.
                     self._uploads.pop(upload_id, None)
                     continue
-                if upload.complete_path is None and upload.last_at <= cutoff:
+                # A pending/active progressive cast still owns this path.
+                # Reclaim it only after the receiver outcome is reconciled.
+                if (upload.complete_path is None and upload.last_at <= cutoff
+                        and upload.early_cast not in {"requested", "active"}):
                     try:
                         upload.partial_path.unlink(missing_ok=True)
                     except OSError:
@@ -256,7 +266,7 @@ class UploadManager:
 
     def create(self, owner: str, name_value: object, size_value: object,
                client: str = "", *, queue_only: bool = False,
-               cast_target: str | None = None) -> dict:
+               cast_target: str | None = None, batch: tuple[int, int] | None = None) -> dict:
         name, suffix, audio_only = _safe_name(name_value)
         if type(size_value) is not int or not 0 < size_value <= MAX_UPLOAD_BYTES:
             raise UploadError(413, "The selected file size is invalid or too large")
@@ -273,7 +283,9 @@ class UploadManager:
             cast_reserved = any(
                 not row.cancelled and not row.queue_only
                 and not (row.cast_submitted and row.directory_synced)
-                and now - row.last_at <= PARTIAL_TTL_SECONDS
+                and (row.early_cast in {"requested", "active"}
+                     or row.dispatch_pending
+                     or now - row.last_at <= PARTIAL_TTL_SECONDS)
                 for row in self._uploads.values()
             )
             queue_only = bool(queue_only or audio_only or cast_reserved)
@@ -303,7 +315,19 @@ class UploadManager:
                              client=str(client or "")[:64], created_at=now, last_at=now,
                              queue_only=bool(queue_only or audio_only),
                              audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
+            if batch and 1 <= batch[0] <= batch[1] <= 500:
+                upload.batch_index, upload.batch_total = batch
             self._uploads[upload_id] = upload
+            held = self._announced.get(owner_key)
+            if held:
+                for index, row in enumerate(held[1]):
+                    if row["name"] == name and row["size"] == size_value:
+                        del held[1][index]
+                        break
+                if not held[1]:
+                    self._announced.pop(owner_key, None)
+                else:
+                    self._announced[owner_key] = (now + ANNOUNCE_TTL_SECONDS, held[1])
         return {"id": upload_id, "name": name, "size": size_value,
                 "received": 0, "chunk_size": CHUNK_SIZE, "queue_only": upload.queue_only}
 
@@ -416,10 +440,55 @@ class UploadManager:
                     "size": upload.size,
                     "intent": "queue" if upload.queue_only else "cast",
                     "stage": stage,
+                    **({"batch_index": upload.batch_index, "batch_total": upload.batch_total}
+                       if upload.batch_total > 1 else {}),
                 })
                 if len(rows) >= 24:
                     break
-        return list(reversed(rows))
+            rows = list(reversed(rows))
+            for owner_key, (expires, held) in list(self._announced.items()):
+                if expires < now:
+                    self._announced.pop(owner_key, None)
+                    continue
+                for index, row in enumerate(held):
+                    if len(rows) >= 24:
+                        break
+                    rows.append({
+                        "id": hashlib.sha256(f"room-wait:{owner_key}:{index}:{row['name']}".encode()).hexdigest()[:24],
+                        "title": row["name"],
+                        "media_kind": "audio" if row["audio"] else "video",
+                        "received": 0,
+                        "size": row["size"],
+                        "intent": "queue" if (row["queue"] or row["audio"]) else "cast",
+                        "stage": "waiting",
+                    })
+            return rows
+
+    def announce(self, owner: str, items: object) -> int:
+        """Record a guest's not-yet-started batch files (names and sizes only)."""
+        if not isinstance(owner, str) or not owner:
+            raise UploadError(401, "Sign in to upload a file")
+        key = hashlib.sha256(owner.encode("utf-8")).hexdigest()
+        rows: list[dict] = []
+        if isinstance(items, list):
+            for item in items[:ANNOUNCE_MAX]:
+                if not isinstance(item, dict):
+                    continue
+                size = item.get("size")
+                if type(size) is not int or not 0 < size <= MAX_UPLOAD_BYTES:
+                    continue
+                try:
+                    name, _suffix, audio = _safe_name(item.get("name"))
+                except UploadError:
+                    continue
+                rows.append({"name": name, "size": size, "audio": audio,
+                             "queue": bool(item.get("queue", True))})
+        with self._lock:
+            if rows:
+                self._announced[key] = (self._clock() + ANNOUNCE_TTL_SECONDS, rows)
+            else:
+                self._announced.pop(key, None)
+        return len(rows)
 
     def mark_early_cast(self, upload_id: str, *, accepted: bool) -> None:
         """Record whether the GUI accepted an early-cast request for an upload."""
@@ -454,15 +523,21 @@ class UploadManager:
             flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
             fd = os.open(upload.partial_path, flags)
             written = 0
+            rollback_safe = False
             try:
                 info = os.fstat(fd)
                 if not stat.S_ISREG(info.st_mode) or info.st_size < start:
                     raise UploadError(409, "The partial upload is unavailable; restart it")
+                # Never extend a missing acknowledged prefix during rollback.
+                rollback_safe = True
                 if info.st_size != start:
                     os.ftruncate(fd, start)
                 os.lseek(fd, start, os.SEEK_SET)
                 while written < chunk_length:
-                    block = source.read(min(READ_SIZE, chunk_length - written))
+                    limit = min(READ_SIZE, chunk_length - written)
+                    block = source.read(limit)
+                    if len(block) > limit:
+                        raise UploadError(400, "Upload chunk exceeds its declared size")
                     if not block:
                         raise UploadError(400, "Upload chunk ended early; retry from the current offset")
                     view = memoryview(block)
@@ -474,11 +549,14 @@ class UploadManager:
                     written += len(block)
                 os.fsync(fd)
             except BaseException:
-                try:
-                    os.ftruncate(fd, start)
-                    os.fsync(fd)
-                except OSError:
-                    pass
+                if rollback_safe:
+                    try:
+                        # External truncation must not turn lost bytes into zeros.
+                        if os.fstat(fd).st_size >= start:
+                            os.ftruncate(fd, start)
+                            os.fsync(fd)
+                    except OSError:
+                        pass
                 raise
             finally:
                 os.close(fd)
@@ -525,6 +603,10 @@ class UploadManager:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             intent = upload.queue_only or bool(queue_only)
+            if intent and upload.early_cast in {"requested", "active"}:
+                # A progressive cast owns this source. Queue validation can
+                # discard unreadable media, so never change the action here.
+                raise UploadError(409, "Casting has already been requested for this upload")
             if upload.dispatch_pending:
                 raise UploadError(409, "The host is still processing this upload. Retry shortly.")
             if upload.cast_submitted and upload.dispatch_queue_only != intent:
@@ -637,6 +719,8 @@ class UploadManager:
         crash/expiry sweep rather than deleting a file still being written.
         """
         with self._lock:
+            for key in owner_keys:
+                self._announced.pop(key, None)
             targets = []
             for upload_id, upload in list(self._uploads.items()):
                 if upload.owner in owner_keys:
@@ -658,15 +742,19 @@ class UploadManager:
         return len(targets)
 
     def close(self) -> None:
-        """Discard unfinished transfers; keep completed files used by sessions."""
+        """Discard unfinished transfers not owned by a progressive cast."""
         with self._lock:
             uploads = list(self._uploads.values())
             self._uploads.clear()
         for upload in uploads:
             with upload.lock:
                 upload.cancelled = True
-                if upload.complete_path is None:
+                if (upload.complete_path is None
+                        and upload.early_cast not in {"requested", "active"}):
                     try:
                         upload.partial_path.unlink()
-                    except FileNotFoundError:
-                        pass
+                    except OSError:
+                        # A locked or inaccessible partial must not prevent
+                        # cleanup of the remaining transfers. Startup expiry
+                        # can reclaim it once the filesystem permits removal.
+                        continue

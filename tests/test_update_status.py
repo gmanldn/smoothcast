@@ -8,6 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import update_facts as uf
 import update_status as us
 
 A, B, C = "a" * 40, "b" * 40, "c" * 40
@@ -214,3 +215,52 @@ def test_updated_build_does_not_offer_rollback_during_playback():
     assert playing.running_new_version and playing.actions == ("check_now",)
     assert "unavailable during playback" in playing.detail
 
+
+
+def test_preferences_facts_are_offline_and_never_claim_a_phase(tmp_path):
+    facts = uf.facts_for_preferences({"update_channel": "main", "check_release_updates": True}, root=tmp_path)
+    assert facts.channel == "main" and facts.checks_enabled and facts.phase == "idle"
+    assert facts.running_commit is None and facts.require_signature is True
+    status = us.describe(facts)
+    assert "main" in status.running_line and not status.running_new_version
+    assert facts.playing is False
+
+
+def test_managed_install_facts_show_staged_reference_and_corrupt_records_fail_quiet(tmp_path):
+    old, new = "a" * 40, "b" * 40
+    install = tmp_path / "inst"
+    app = install / "releases" / old
+    app.mkdir(parents=True)
+    (install / "active.json").write_text(
+        '{"current": "%s", "previous": "%s", "seq": 2}' % (new, old))
+    facts = uf.facts_for_preferences({"check_release_updates": True}, root=app)
+    assert (facts.active_commit, facts.previous_commit) == (new, old)
+    (install / "active.json").write_text("{not json")
+    facts = uf.facts_for_preferences({}, root=app)
+    assert facts.active_commit is None and facts.journal_state is None
+    assert uf.facts_for_preferences({}, root=tmp_path).active_commit is None  # checkout: not managed
+
+
+def test_check_now_reports_notice_or_honest_not_found(tmp_path, monkeypatch):
+    import update_control as uc
+    seen = {}
+    def fake(root, **kw):
+        seen.update(kw)
+        return None
+    monkeypatch.setattr(uc, "find_candidate", fake)
+    assert uf.check_now({"update_channel": "bogus"}, tmp_path) == uf.NOT_FOUND
+    assert seen["enabled"] is True and seen["channel"] == "develop" and seen["verify"] is True
+    new = "d" * 40
+    monkeypatch.setattr(uf, "facts_for_preferences", lambda cfg, root, **k: us.UpdateFacts(
+        running_version="2.2.8", running_commit="a" * 40, channel="develop"))
+    monkeypatch.setattr(uc, "find_candidate", lambda *a, **k: (new, "9.9.9", True))
+    text = uf.check_now({}, tmp_path)
+    assert text.startswith("Update available.") and "9.9.9" in text and "ddddddd" in text
+    monkeypatch.setattr(uc, "find_candidate", lambda *a, **k: (new, "9.9.9", False))
+    assert uf.check_now({}, tmp_path).startswith("Update not trusted.")
+    monkeypatch.setattr(uc, "find_candidate", lambda *a, **k: ("a" * 40, "2.2.8", True))
+    assert "up to date" in uf.check_now({}, tmp_path)
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(uc, "find_candidate", boom)
+    assert "failed" in uf.check_now({}, tmp_path)

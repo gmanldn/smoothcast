@@ -191,6 +191,33 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], "owner/diag")
 
+    def test_new_observation_time_does_not_republish_identical_tail(self):
+        calls = []
+        target = error_tail.resolve_target({"SMOOTHCAST_ERRTAIL_REPO": "owner/diag"},
+                                           transport=lambda *args: calls.append(args))
+        old = self._snapshot()
+        new = dict(old, observed_at=2)
+
+        def fetch(target):
+            return error_tail.render_envelope(old)
+
+        self.assertEqual(error_tail.publish(new, target, fetch_current=fetch), "unchanged")
+        self.assertFalse(calls)
+        for change in (dict(new, tail="different"), dict(new, build_sha="b" * 40),
+                       dict(new, platform_family="Windows")):
+            self.assertEqual(error_tail.publish(change, target, fetch_current=fetch), "published")
+        self.assertEqual(len(calls), 3)
+
+    def test_destination_rejects_ref_aliases_and_query_injection(self):
+        for branch in ("refs/heads/main", "MAIN", "HEAD", "snap?ref=main", "snap//x", "snap.lock"):
+            with self.subTest(branch=branch), self.assertRaises(error_tail.PublishDisabled):
+                error_tail.resolve_target({"SMOOTHCAST_ERRTAIL_REPO": "owner/diag",
+                                           "SMOOTHCAST_ERRTAIL_BRANCH": branch})
+        for path in ("latest/x?ref=main", "latest/../x", "latest//x", "/latest/x"):
+            with self.subTest(path=path), self.assertRaises(error_tail.PublishDisabled):
+                error_tail.resolve_target({"SMOOTHCAST_ERRTAIL_REPO": "owner/diag",
+                                           "SMOOTHCAST_ERRTAIL_PATH": path})
+
     def test_transport_failure_propagates(self):
         def boom(repo, branch, path, content):
             raise error_tail.PublishDisabled("auth failed")
@@ -228,6 +255,85 @@ class MainTests(unittest.TestCase):
             log.write_text("2026-11-26T04:00:00 cast.command_failed\n", encoding="utf-8")
             code = error_tail.main(["--publish", "--log", str(log)], env={})
             self.assertEqual(code, 1)
+
+
+class RateLimitTests(unittest.TestCase):
+    """Cross-process rate limiting and writer serialisation (#620)."""
+
+    def _env(self, directory):
+        return {
+            "SMOOTHCAST_ERRTAIL_REPO": "owner/diag",
+            "SMOOTHCAST_ERRTAIL_STATE": str(Path(directory) / "state.json"),
+            "SMOOTHCAST_ERRTAIL_MIN_INTERVAL": "900",
+        }
+
+    def _log(self, directory):
+        log = Path(directory) / "errors.log"
+        log.write_text("2026-11-26T04:00:00 cast.command_failed\n", encoding="utf-8")
+        return log
+
+    def test_no_state_means_no_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            self.assertIsNone(error_tail.rate_limit_reason(state, now=1000.0, interval=900))
+
+    def test_recent_publish_is_rate_limited_and_old_publish_is_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            error_tail.record_publish(state, {"build": "a" * 40, "observed_at": "t"}, now=1000.0)
+            reason = error_tail.rate_limit_reason(state, now=1100.0, interval=900)
+            self.assertIsInstance(reason, str)
+            self.assertIn("rate limited", reason)
+            self.assertIsNone(error_tail.rate_limit_reason(state, now=2000.0, interval=900))
+
+    def test_interval_zero_disables_rate_limiting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            error_tail.record_publish(state, {}, now=1000.0)
+            self.assertIsNone(error_tail.rate_limit_reason(state, now=1000.0, interval=0))
+
+    def test_corrupt_state_never_blocks_publishing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            state.write_text("{not json", encoding="utf-8")
+            self.assertIsNone(error_tail.rate_limit_reason(state, now=1000.0, interval=900))
+
+    def test_publisher_lock_serialises_writers_and_expires_when_abandoned(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "state.lock"
+            self.assertTrue(error_tail.acquire_publisher_lock(lock, now=1000.0, stale_after=60))
+            self.assertFalse(error_tail.acquire_publisher_lock(lock, now=1010.0, stale_after=60))
+            error_tail.release_publisher_lock(lock)
+            self.assertTrue(error_tail.acquire_publisher_lock(lock, now=1020.0, stale_after=60))
+            error_tail.release_publisher_lock(lock)
+            lock.write_text("stale", encoding="utf-8")
+            os.utime(lock, (900.0, 900.0))
+            self.assertTrue(error_tail.acquire_publisher_lock(lock, now=1000.0, stale_after=60))
+            error_tail.release_publisher_lock(lock)
+
+    def test_publish_skips_when_rate_limited_without_touching_transport(self):
+        from unittest import mock
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            env = self._env(directory)
+            log = self._log(directory)
+            error_tail.record_publish(Path(env["SMOOTHCAST_ERRTAIL_STATE"]), {}, now=time.time())
+            with mock.patch.object(error_tail, "publish") as publisher:
+                code = error_tail.main(["--publish", "--log", str(log)], env=env)
+            self.assertEqual(code, 0)
+            publisher.assert_not_called()
+
+    def test_publish_records_state_after_success(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            env = self._env(directory)
+            log = self._log(directory)
+            with mock.patch.object(error_tail, "publish", return_value="published"):
+                code = error_tail.main(["--publish", "--log", str(log)], env=env)
+            self.assertEqual(code, 0)
+            state = json.loads(Path(env["SMOOTHCAST_ERRTAIL_STATE"]).read_text(encoding="utf-8"))
+            self.assertIn("published_at", state)
 
 
 if __name__ == "__main__":

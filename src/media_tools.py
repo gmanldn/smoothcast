@@ -67,9 +67,9 @@ def _bundled(name: str) -> Path:
     candidate = root / SIDECAR_DIR / f"{name}.exe"
     try:
         resolved = candidate.resolve(strict=True)
-    except OSError:
+    except (OSError, RuntimeError):
         raise MediaToolMissing(name, f"Expected {candidate.name} in the {SIDECAR_DIR} folder.") from None
-    if resolved.parent != (root / SIDECAR_DIR).resolve() or not resolved.is_file():
+    if resolved != candidate or not resolved.is_file():
         raise MediaToolMissing(name, "The file is not where SmoothCast installed it.")
     return resolved
 

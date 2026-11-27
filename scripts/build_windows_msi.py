@@ -255,14 +255,16 @@ def verify_msi(msi: Path, *, version: str, commit: str, expected_files: int) -> 
     if package.get("Version") != wix_payload.msi_version(version):
         raise BuildError(f"MSI ProductVersion {package.get('Version')} does not match {version}")
     expected_upgrade = _normalise_guid(product_upgrade_code())
-    declared = _normalise_guid(package.get("UpgradeCode"))
-    if declared:
-        if declared != expected_upgrade:
-            raise BuildError(f"MSI UpgradeCode {declared} is not the permanent "
-                             f"{expected_upgrade}; Windows would treat it as a new product")
-    elif expected_upgrade not in _normalise_guid(text):
-        raise BuildError("the built MSI does not carry the permanent UpgradeCode; "
-                         "Windows would treat it as a new product")
+    # Only Product identity counts. A GUID appearing in an Upgrade table row,
+    # comment or unrelated property does not establish this package's UpgradeCode.
+    declared = [package.get("UpgradeCode")]
+    declared.extend(element.get("Value") for element in
+                    root.iter(f"{{{WIX_NS}}}Property")
+                    if element.get("Id") == "UpgradeCode")
+    codes = [_normalise_guid(value) for value in declared if value]
+    if not codes or any(code != expected_upgrade for code in codes):
+        raise BuildError("MSI UpgradeCode is missing or differs from the permanent "
+                         f"{expected_upgrade}; Windows would treat it as a new product")
     if package.get("Scope") not in (None, "perUser"):
         raise BuildError(f"MSI scope is {package.get('Scope')}, expected perUser")
     files = list(root.iter(f"{{{WIX_NS}}}File"))

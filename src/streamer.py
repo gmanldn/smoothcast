@@ -29,6 +29,7 @@ import cache_privacy
 import ffmpeg_compat
 import font_attachments
 import castctl
+import errors
 import frozen_runtime
 import hw_encoder_state
 import hdr_tonemap
@@ -129,6 +130,11 @@ def _hls_output(generation: str) -> tuple[str, str, str, list[str]]:
 
 
 VAAPI_PATH = "/dev/dri/renderD128"
+# 10-bit 4:2:0 is decoded on the GPU, converted to nv12 on the CPU, then
+# encoded on the GPU: software x264 on a weak CPU cannot hold 1080p HEVC10 at
+# real time. A GPU that cannot decode it stalls and takes the software retry.
+VAAPI_PIX_FMTS = frozenset({"yuv420p", "nv12", "yuvj420p", "yuv420p10le", "p010le"})
+VAAPI_TEN_BIT = frozenset({"yuv420p10le", "p010le"})
 
 VIDEO_EXTS = {
     ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts",
@@ -1514,7 +1520,7 @@ class Session:
                     "address and could not be verified for replacement; stop it and retry")
             _terminate_pid(pid, "server")
             if _port_open(port):
-                raise StreamError(f"Port {port} is still in use by the previous streaming server")
+                raise errors.coded(StreamError(f"Port {port} is still in use by the previous streaming server"), "network.port_in_use")
             break
         else:
             # Pass 2: the first port nobody is listening on.
@@ -1630,7 +1636,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0, picture_config: dict | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0, picture_config: dict | None = None, ten_bit: bool = False) -> list[str]:
         chain: list[str] = []
         # H.264 High@4.1 is the conservative 1080p30 Cast baseline. Scale
         # alone does not make 1080p60/4K60 compatible with older receivers.
@@ -1727,9 +1733,12 @@ class Session:
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
                                 or embedded_subtitle_index is not None)
-        force_software = not software and (rotation != 0 or bool(plan_filters) or bool(aspect_filters))
+        force_software = not software and (
+            ten_bit or rotation != 0 or bool(plan_filters) or bool(aspect_filters))
         if (not software and need_subtitle_filter) or force_software:
-            return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
+            # p010 surfaces must be converted before h264_vaapi sees them.
+            head = "hwdownload,format=p010le,format=nv12" if ten_bit else "hwdownload,format=nv12"
+            return ["-vf", ",".join([head, *chain, "hwupload"])]
         if chain:
             return ["-vf", ",".join(chain)]
         return []
@@ -1834,7 +1843,7 @@ class Session:
                 video_stream=media.video_stream_index)
             out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
             if (out_w > 1920 or out_h > 1080 or hdr_tonemap.filter_for(media)
-                    or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
+                    or (media.pix_fmt and media.pix_fmt not in VAAPI_PIX_FMTS)):
                 self.used_software_fallback = True
         if bitmap_track is not None or picture_adjustments.active(picture_config):
             self.used_software_fallback = True
@@ -1876,6 +1885,7 @@ class Session:
             video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
             source_fps=media.fps,
+            ten_bit=media.pix_fmt in VAAPI_TEN_BIT,
             quality=quality,
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
@@ -1957,6 +1967,11 @@ class Session:
         # that its VAAPI encoder is producing media. Retry once on software
         # after a bounded startup window, terminating the old encoder first.
         timeout = 15 if not software else 30
+        if burn_subs or embedded_subtitle_index is not None:
+            # libass must scan the whole source for fonts and cues before the
+            # first frame; a large or cold MKV can exceed the plain window while
+            # ffmpeg is healthy and silent (empty log).
+            timeout *= 3
         if not self._wait_for_segments(timeout):
             tail = self.log_tail()
             if not software:
@@ -1981,7 +1996,8 @@ class Session:
                     music_autogain=music_autogain,
                 )
                 return
-            raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
+            raise StreamError("the encoder failed to produce a stream within "
+                              f"{timeout}s" + (f" — {tail}" if tail else " — ffmpeg was silent (large source or subtitle burn-in?)"))
         if self._vaapi_stalled:
             self._vaapi_stalled = False
             hw_encoder_state.record_failure(
@@ -2027,9 +2043,24 @@ class Session:
         )
         _save_session(self.state)
 
-    def _wait_for_segments(self, timeout: float) -> bool:
-        deadline = time.monotonic() + timeout
+    def _wait_for_segments(self, timeout: float, *, max_wait: float = 120.0) -> bool:
+        # A busy CPU or subtitle burn-in can make a healthy encoder slower than
+        # the initial window. While FFmpeg visibly advances, extend the wait
+        # (bounded); a stalled encoder writes no progress and still times out.
+        start = time.monotonic()
+        deadline = start + timeout
+        hard_cap = start + max(timeout, max_wait)
+        last_progress: tuple[float, int | None] | None = None
         while time.monotonic() < deadline:
+            try:
+                current = self._read_progress()
+                marker = (current.out_time, current.frame)
+            except Exception:
+                marker = None
+            if marker is not None and marker != (0.0, None):
+                if last_progress is not None and marker != last_progress:
+                    deadline = max(deadline, min(hard_cap, time.monotonic() + 10.0))
+                last_progress = marker
             playlist = ROOT / getattr(self, "_playlist_name", HLS_NAME)
             pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
             if playlist.exists() and len(list(ROOT.glob(pattern))) >= 2:
@@ -2083,6 +2114,7 @@ class Session:
         if not observed:
             raise StreamPreparationError(
                 "Receiver did not return status. Check its power, network and Cast connection.",
+                detail=castctl.last_info_failure(device) or None,
                 code="cast.receiver_offline")
         if not known_state:
             raise StreamPreparationError(

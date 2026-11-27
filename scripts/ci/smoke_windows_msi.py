@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import re
 import subprocess
 import sys
@@ -61,8 +62,23 @@ def cli_check(cli: Path, args: list[str], expected: str, env: dict[str, str],
     result = subprocess.run([str(cli), *args], cwd=cwd, env=env,
                             stdin=subprocess.DEVNULL, capture_output=True,
                             text=True, errors="replace", timeout=60, check=False)
-    if result.returncode or expected not in result.stdout:
+    if result.returncode or (expected and result.stdout.strip() != expected):
         raise InstallerError(f"installed CLI {args[0]} failed ({result.returncode})")
+
+
+def _keep_logs(source: Path, destination: Path) -> None:
+    """Keep msiexec logs and print the lines that explain a failure (UTF-16 or ANSI)."""
+    for log in source.glob("*.log"):
+        try:
+            shutil.copy2(log, destination / log.name)
+            raw = log.read_bytes()
+            text = raw.decode("utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8", "replace")
+            lines = text.splitlines()
+            hits = [i for i, line in enumerate(lines) if "Return value 3" in line or "Error " in line]
+            for i in hits[:6]:
+                print(f"--- {log.name} ---\n" + "\n".join(lines[max(0, i - 6):i + 2]), file=sys.stderr)
+        except OSError:
+            pass
 
 
 def smoke(directory: Path, report: Path) -> None:
@@ -90,26 +106,30 @@ def smoke(directory: Path, report: Path) -> None:
             root = Path(temp)
             cli = install / "SmoothCastCLI.exe"
             gui = install / "SmoothCast.exe"
-            for operation in ("install", "repair", "uninstall"):
-                # Reverify bytes immediately before every operation.
-                verify_candidate(msi, digest)
-                run_installer(installer_command(executable, operation, msi,
-                                                root / (operation + ".log")), timeout=300)
-                if operation == "uninstall":
-                    if install.exists() or shortcut.exists():
-                        raise InstallerError("MSI uninstall left app-owned installation or shortcut")
-                else:
-                    if not all(p.is_file() for p in (cli, gui, shortcut)):
-                        raise InstallerError("installed executable or Start Menu shortcut missing")
-                    cli_check(cli, ["--version"], "SmoothCast v" + version, env, root)
-                    cli_check(cli, ["--_smoothcast-package-check"], "", env, root)
-                    current = hashlib.sha256(cli.read_bytes()).hexdigest()
-                    if operation == "install":
-                        original = current
-                        cli.unlink()
-                    elif current != original:
-                        raise InstallerError("repair did not restore original CLI bytes")
-                steps[operation] = "pass"
+            try:
+                for operation in ("install", "repair", "uninstall"):
+                    # Reverify bytes immediately before every operation.
+                    verify_candidate(msi, digest)
+                    run_installer(installer_command(executable, operation, msi,
+                                                    root / (operation + ".log")), timeout=300)
+                    if operation == "uninstall":
+                        if install.exists() or shortcut.exists():
+                            raise InstallerError("MSI uninstall left app-owned installation or shortcut")
+                    else:
+                        if not all(p.is_file() for p in (cli, gui, shortcut)):
+                            raise InstallerError("installed executable or Start Menu shortcut missing")
+                        cli_check(cli, ["--version"], "SmoothCast v" + version, env, root)
+                        cli_check(cli, ["--_smoothcast-package-check"], "", env, root)
+                        current = hashlib.sha256(cli.read_bytes()).hexdigest()
+                        if operation == "install":
+                            original = current
+                            cli.unlink()
+                        elif current != original:
+                            raise InstallerError("repair did not restore original CLI bytes")
+                    steps[operation] = "pass"
+            except (InstallerError, OSError, subprocess.SubprocessError):
+                _keep_logs(root, report.parent)
+                raise
     except (InstallerError, OSError, subprocess.SubprocessError):
         evidence["result"] = "fail"
         raise

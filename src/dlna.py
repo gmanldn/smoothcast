@@ -29,6 +29,7 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 import command_trace
+import errors
 import audio_delay
 import audio_downmix
 import cache_policy
@@ -263,7 +264,7 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
                     continue
                 locations.setdefault(location, sender)
     except OSError as exc:
-        raise DlnaError(f"SSDP multicast discovery failed: {exc}") from exc
+        raise errors.coded(DlnaError(f"SSDP multicast discovery failed: {exc}"), "discovery.failed") from exc
 
     if not locations or time.monotonic() >= deadline:
         return []
@@ -373,11 +374,11 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
             if response.status != 200:
                 fault = _upnp_fault(data)
                 suffix = f"; {fault}" if fault else ""
-                raise DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})")
+                raise errors.coded(DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})"), "dlna.command_failed")
             root = ET.fromstring(data)
             fault = _upnp_fault(data)
             if fault:
-                raise DlnaError(f"DLNA {action} failed ({fault})")
+                raise errors.coded(DlnaError(f"DLNA {action} failed ({fault})"), "dlna.command_failed")
             return root
         except ET.ParseError as exc:
             raise DlnaError(f"DLNA {action} returned invalid XML") from exc

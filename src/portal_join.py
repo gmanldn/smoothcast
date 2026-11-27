@@ -1,5 +1,6 @@
 """Encode a LAN room link locally for phone pairing."""
 from io import BytesIO
+from ipaddress import IPv4Address
 import re
 
 import lan_guard
@@ -13,7 +14,14 @@ _ENTRY_URL = re.compile(r"http://([a-z0-9][a-z0-9.-]*:[0-9]{1,5})/", re.IGNORECA
 
 def is_room_url(url: object) -> bool:
     """True for the plain numeric LAN room URL that may appear in a join QR."""
-    return bool(isinstance(url, str) and _ROOM_URL.fullmatch(url))
+    if not isinstance(url, str) or not _ROOM_URL.fullmatch(url):
+        return False
+    host, port = url[len("http://"):-1].rsplit(":", 1)
+    try:
+        IPv4Address(host)
+    except ValueError:
+        return False
+    return 1 <= int(port) <= 65535
 
 
 def is_join_url(url: object) -> bool:
@@ -21,7 +29,8 @@ def is_join_url(url: object) -> bool:
     if is_room_url(url):
         return True
     match = _ENTRY_URL.fullmatch(url) if isinstance(url, str) else None
-    return bool(match) and lan_guard.is_entry_host(match.group(1))
+    return bool(match and lan_guard.is_entry_host(match.group(1))
+                and 1 <= int(match.group(1).rsplit(":", 1)[1]) <= 65535)
 
 
 def qr_png(url: str) -> bytes:

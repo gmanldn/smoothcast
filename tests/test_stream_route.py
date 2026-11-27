@@ -1,6 +1,7 @@
 """Pure streaming-route planner contract (#571); no GUI, network or devices."""
 from __future__ import annotations
 
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -202,7 +203,17 @@ def test_planner_is_fast_and_gtk_free():
     for _ in range(2000):
         choose_stream_route(*arguments)
     assert (time.perf_counter() - start) / 2000 < 0.002
-    assert "gi" not in sys.modules
+    # Suite order must not matter: an earlier test may already have imported GTK,
+    # so prove the planner's own import graph is GUI- and network-free in a clean
+    # interpreter instead of inspecting this process's sys.modules.
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, %r); import stream_route; "
+         "assert 'gi' not in sys.modules, sorted(sys.modules); "
+         "assert 'requests' not in sys.modules, sorted(sys.modules)"
+         % str(Path(__file__).resolve().parents[1] / "src")],
+        capture_output=True, text=True, timeout=30)
+    assert probe.returncode == 0, probe.stderr
 
 
 def test_every_route_is_reachable_in_a_small_decision_space():
