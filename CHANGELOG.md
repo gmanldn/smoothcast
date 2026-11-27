@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: da24af847baa55028c659748a05fc2dc32f2bb7b -->
+<!-- sc-changelog-through: ba193b66647225bcec66e231dd97d42e54aa2df3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:17:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:21:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:21:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ba193b666472`](https://github.com/gmanldn/smoothcast/commit/ba193b66647225bcec66e231dd97d42e54aa2df3)
+
+- 🟪 **16:21:31 · Tests** — test(errors): broad-except ratchet, 233 untagged frozen across 89 files (Refs #694) · [`9c61b1972227`](https://github.com/gmanldn/smoothcast/commit/9c61b19722275193fad967d50c51399c31a94055)
+
+- 🟩 **16:18:57 · Feature** — feat(release): GPLv3 source-offer gate: licence/notice text, tag+SHA pin, About link, FFmpeg disclosure with negative fixtures (Refs #538) · [`36fb164eae52`](https://github.com/gmanldn/smoothcast/commit/36fb164eae5290850fbab0c5b1eb0e3ae36f9a1b)
+
+- ⬜ **16:17:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`503726f17510`](https://github.com/gmanldn/smoothcast/commit/503726f1751053da532a2a8c974e78c083342eae)
 
 - ⬜ **16:17:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`da24af847baa`](https://github.com/gmanldn/smoothcast/commit/da24af847baa55028c659748a05fc2dc32f2bb7b)
 
