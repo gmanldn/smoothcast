@@ -288,6 +288,7 @@ py-modules = [
     "startup_timeline",
     "state_labels",
     "state_parity",
+    "stream_health",
     "stream_route",
     "stream_watchdog",
     "streamer",
