@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 00bd571e459631487b7c91df4fb50f9eef8e7873 -->
+<!-- sc-changelog-through: 28f6f57cff330499674edf18f4024d5105e35045 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:47:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:48:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:48:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`28f6f57cff33`](https://github.com/gmanldn/smoothcast/commit/28f6f57cff330499674edf18f4024d5105e35045)
+
+- 🟥 **07:48:20 · Fix** — fix(cast): a receiver that keeps timing out is logged once per kind of failure, not once per timeout value, so a status poll can no longer write 68 near-identical lines an hour to errors.log (Refs #686) · [`908d0ab63a47`](https://github.com/gmanldn/smoothcast/commit/908d0ab63a4705342248cae760efe8b3f6a8b745)
 
 - ⬜ **07:47:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`00bd571e4596`](https://github.com/gmanldn/smoothcast/commit/00bd571e459631487b7c91df4fb50f9eef8e7873)
+
+- ⬜ **07:47:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`db804506182e`](https://github.com/gmanldn/smoothcast/commit/db804506182e80f3118ca4a028f8ef56a5b6e2d7)
 
 - 🟦 **07:47:42 · Refactor** — refactor(runtime): link setup runs on the bounded disk pool; raw-thread ratchet shrinks (Refs #696) · [`22dbe8f37892`](https://github.com/gmanldn/smoothcast/commit/22dbe8f37892fbdc4a54a332110a4ca5860e66a4)
 
