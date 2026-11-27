@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 201031415e4773a5f4e7bdfc49f3551438b53888 -->
+<!-- sc-changelog-through: 2a6f2ea268e27174bdcc53875dff9650bb3a71fe -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:42:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:47:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:47:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2a6f2ea268e2`](https://github.com/gmanldn/smoothcast/commit/2a6f2ea268e27174bdcc53875dff9650bb3a71fe)
+
+- 🟦 **18:43:13 · Refactor** — refactor: use typed settings in cast restart paths (Refs #693) · [`eb959cac72a1`](https://github.com/gmanldn/smoothcast/commit/eb959cac72a1fd19b00c7386d4db4a9001a29e73)
+
+- 🟦 **18:42:48 · Refactor** — refactor: use typed settings in cast restart paths (Refs #693) · [`92cc27cf8abb`](https://github.com/gmanldn/smoothcast/commit/92cc27cf8abb87b4291b487421a5613ddda3ff44)
 
 - ⬜ **18:42:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`201031415e47`](https://github.com/gmanldn/smoothcast/commit/201031415e4773a5f4e7bdfc49f3551438b53888)
+
+- ⬜ **18:42:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b033372cde54`](https://github.com/gmanldn/smoothcast/commit/b033372cde5472a14a291e8452d280a956132e72)
 
 - 🟪 **18:42:00 · CI** — ci: archive scheduled mesh transfer benchmark reports (Refs #573) · [`665c6ad8b06b`](https://github.com/gmanldn/smoothcast/commit/665c6ad8b06b4c0f38fa9ac47045e39d54497147)
 
