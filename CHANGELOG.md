@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1b1bb66257a3203fa02e30dfaa1026987428becf -->
+<!-- sc-changelog-through: 1323f00931c2ce197e916939646511cdbc547955 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:33:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:37:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:37:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1323f00931c2`](https://github.com/gmanldn/smoothcast/commit/1323f00931c2ce197e916939646511cdbc547955)
+
+- 🟩 **18:37:16 · Feature** — feat: add deterministic mesh transfer benchmark scenarios (Refs #573) · [`2f4577df3fb5`](https://github.com/gmanldn/smoothcast/commit/2f4577df3fb539b4a968c42a6a8863458abadd4b)
 
 - ⬜ **18:33:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1b1bb66257a3`](https://github.com/gmanldn/smoothcast/commit/1b1bb66257a3203fa02e30dfaa1026987428becf)
+
+- ⬜ **18:33:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d183b42e58a7`](https://github.com/gmanldn/smoothcast/commit/d183b42e58a70352e041e0c3c2e841cc9a750eb0)
 
 - 🟪 **18:33:25 · Tests** — test: remove converted shortcut tests from text baseline (Refs #695) · [`2c5e9fa79ed4`](https://github.com/gmanldn/smoothcast/commit/2c5e9fa79ed429179efe2e50d6ee25e337a2fafa)
 
