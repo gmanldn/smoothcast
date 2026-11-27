@@ -28,9 +28,13 @@ class Store:
         try:
             with self.path.open("r", encoding="utf-8") as handle:
                 raw = json.load(handle)
-        except (OSError, ValueError):
+        except OSError:
+            return fallback
+        except ValueError:
+            self._quarantine()  # unparseable: keep it for the owner, start clean
             return fallback
         if not isinstance(raw, dict):
+            self._quarantine()
             return fallback
         found = raw.get("_schema", 1)
         data = {k: v for k, v in raw.items() if k != "_schema"}
@@ -43,6 +47,13 @@ class Store:
                 return fallback
             return migrated if isinstance(migrated, dict) else fallback
         return fallback  # written by a newer or unknown schema: do not guess
+
+    def _quarantine(self) -> None:
+        """Move a corrupt file aside (never delete user data) so it is not re-read."""
+        try:
+            os.replace(self.path, self.path.with_name(self.path.name + ".corrupt"))
+        except OSError:
+            pass
 
     def write(self, data: dict[str, Any]) -> bool:
         """Atomically replace the file. Returns False (never raises) on I/O failure."""
