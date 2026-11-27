@@ -87,7 +87,6 @@
   "test_stale_runtime_notice.py",
   "test_start_confirmation.py",
   "test_startup_cleanup.py",
-  "test_state_labels.py",
   "test_stop_acknowledgement.py",
   "test_stream_watchdog.py",
   "test_streamer_startup_window.py",
