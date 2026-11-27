@@ -30,9 +30,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
             return False
-        # The portal serves phones and other LAN clients. Its reachable
-        # interface is independent of the selected Cast receiver's route:
-        # on a multi-NIC/VPN host that route can point at a different network.
         address = lan_interfaces.select_private_lan_ip()
         if address == self._portal_ip and self._portal is not None:
             return True
@@ -54,7 +51,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                     generation=lambda: (self.now_playing, id(self.session)),
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
-            # A service bounce keeps the printed PIN valid (guests still rejoin).
             pin, self._portal_reuse_pin = getattr(self, "_portal_reuse_pin", None), None
             self._portal = portal.Portal(address, self._portal_dispatch, pin=pin,
                                          status_snapshot=snapshot.read,
@@ -75,8 +71,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             self._set_room_join_link(None, "Room unavailable — check network settings")
             return True
         print(f"SmoothCast web GUI: {self._portal.url}", flush=True)
-        # Claim the stable address so a printed QR survives DHCP changes; the
-        # mesh reuses this entry and only releases it when another node is primary.
         entry = entry_name.EntryName(address, self._portal.port)
         entry.apply(True)
         self._entry_name = entry
@@ -86,7 +80,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             print(f"SmoothCast room link: {join_url}", flush=True)
         self._portal_qr_url = join_url
         self._portal_ip = address
-        # Reuse the same port across launches; never store a failed preferred bind.
         old_port = self.cfg.get("portal_port", 0)
         if old_port != self._portal.port:
             self.cfg["portal_port"] = self._portal.port
@@ -124,8 +117,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
         deadline = 0.0
         if entry is not None:
             if current is not None and getattr(self, "_closing", False):
-                # Separate Zeroconf instances: overlap their goodbye broadcasts
-                # on quit, but never race a new registration on LAN rebind.
                 def close_entry():
                     try:
                         entry.close()
@@ -190,8 +181,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             except Exception as exc:
                 result.append(exc)
             finally:
-                # A status-refresh fault must never hide the completed
-                # command's receipt or cause the guest to replay it.
                 completed.set()
                 try:
                     self._publish_portal_status()
@@ -199,7 +188,6 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                     pass
             return False
 
-        # A GLib idle callback runs on a different context than the portal thread.
         run = command_trace.propagate(run) or run
         source_id = GLib.idle_add(run)
         if not completed.wait(4):
