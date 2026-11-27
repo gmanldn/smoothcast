@@ -5,6 +5,7 @@ from gi.repository import Adw, Gtk
 
 import error_log
 import library_folders
+import settings
 import shutdown_plan
 import peer_discovery_ui
 import portal_uploads
@@ -33,7 +34,7 @@ class PortalHostMixin:
                 GLib.idle_add(app.quit)
 
         server.update_runner = self.update_runner = update_action.UpdateRunner(
-            Path(__file__).resolve().parents[1], channel=str(cfg.get("update_channel", "develop")),
+            Path(__file__).resolve().parents[1], channel=settings.UpdateSettings.from_config(cfg).channel,
             verify=cfg.get("verify_updates") is True, busy=busy, quit_app=quit_app)
 
     def _portal_timing(self) -> tuple[float | None, float]:
