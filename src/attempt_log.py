@@ -31,6 +31,14 @@ def redact(text: str) -> str:
     return _PATH.sub("<path>", text)
 
 
+def _active_trace_id() -> str | None:
+    try:
+        import command_trace
+        return command_trace.current_id()
+    except Exception:  # noqa: BLE001 - tracing must never break an attempt
+        return None
+
+
 def new_correlation_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -56,7 +64,9 @@ class Attempt:
 def begin(root: Path, *, argv: list[str] | None = None, plan_reason: str = "",
           correlation_id: str | None = None, keep: int = KEEP) -> Attempt:
     """Create a fresh attempt folder and prune old ones."""
-    cid = correlation_id or new_correlation_id()
+    # Default to the active command trace so an attempt folder matches its trace (#698).
+    cid = correlation_id or _active_trace_id() or new_correlation_id()
+    cid = re.sub(r"[^A-Za-z0-9_-]", "", str(cid))[:32] or new_correlation_id()
     base = Path(root) / "attempts"
     stamp = f"{int(time.time() * 1000):013d}-{cid}"
     folder = base / stamp
