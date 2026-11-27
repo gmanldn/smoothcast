@@ -39,3 +39,18 @@ def test_success_clears_reason(monkeypatch):
     monkeypatch.setattr(castctl, "_run", lambda a, timeout=10: subprocess.CompletedProcess([], 0, '{"player_state":"IDLE"}', ""))
     assert castctl._catt_info("TV")
     assert castctl.last_info_failure("TV") == ""
+
+
+def test_receiver_offline_error_carries_reason(monkeypatch):
+    import streamer
+    castctl._info_failures.clear()
+    castctl._info_failures["TV"] = "status helper timed out after 8s"
+    monkeypatch.setattr(castctl, "info", lambda d, timeout=8: None)
+    s = streamer.Session.__new__(streamer.Session)
+    s.caster = None
+    try:
+        s._await_receiver("TV", lambda i: False, timeout=0.3, interval=0.05)
+    except streamer.StreamPreparationError as exc:
+        assert "timed out" in str(getattr(exc, "detail", "")) + str(exc)
+    else:
+        raise AssertionError("expected failure")

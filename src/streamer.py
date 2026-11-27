@@ -2084,6 +2084,7 @@ class Session:
         if not observed:
             raise StreamPreparationError(
                 "Receiver did not return status. Check its power, network and Cast connection.",
+                detail=castctl.last_info_failure(device) or None,
                 code="cast.receiver_offline")
         if not known_state:
             raise StreamPreparationError(
