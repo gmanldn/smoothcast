@@ -1,4 +1,4 @@
-// Connector-only, develop-only progress and explicit owner release transport (#598, #631).
+// Connector-only, develop-only progress and independently authorised PATCH release transport (#598, #631).
 // Per-ticket PATCH allocation is retired (owner policy, 25 Nov 2026).
 // versionBlob MUST come from offline
 // canonical AST validation of exact pinned bytes; the connector re-derives
