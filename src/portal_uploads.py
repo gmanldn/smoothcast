@@ -1,6 +1,7 @@
 """Private, bounded-buffer staging for files uploaded through the LAN portal."""
 from __future__ import annotations
 
+import paths
 from dataclasses import dataclass, field
 import guest_messages
 import hashlib
@@ -169,7 +170,7 @@ class UploadError(ValueError):
 
 def default_upload_root() -> Path:
     cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    return Path(cache) / "cast-control" / "portal-uploads"
+    return Path(cache) / paths.APP_DIR / "portal-uploads"
 
 
 def _safe_name(value: object) -> tuple[str, str, bool]:
