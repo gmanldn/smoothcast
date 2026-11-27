@@ -8,13 +8,25 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 21a1755c2d36e40b741a69da8c5cae6232a7a5ec -->
+<!-- sc-changelog-through: 6b15ed0a46cc2d30fc87923f4beee5d66e84c4b6 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:58:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:01:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:01:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6b15ed0a46cc`](https://github.com/gmanldn/smoothcast/commit/6b15ed0a46cc2d30fc87923f4beee5d66e84c4b6)
+
+- 🟦 **07:01:16 · Refactor** — refactor(arch): link qualification cache persists through the atomic Store (Refs #701) · [`6dbfbb68db77`](https://github.com/gmanldn/smoothcast/commit/6dbfbb68db778f4fe3526cd875641c09c2357fd9)
+
+- 🟩 **07:01:09 · Feature** — feat(residents): atomic versioned resident store with scrypt PINs and lockout (Refs #363) · [`aa9c97899908`](https://github.com/gmanldn/smoothcast/commit/aa9c978999085266256b6df000eb7f8b87e0fa86)
+
+- 🟩 **07:00:05 · Feature** — feat(mesh): pure receiver-side copy state with consent, quota, resume and digest verification (Refs #357) · [`fe6e0fc208a4`](https://github.com/gmanldn/smoothcast/commit/fe6e0fc208a42ea5cfd2c8f2cd411bd83297d26c)
+
+- 🟩 **06:58:54 · Feature** — feat(mesh): pure node playback-target readiness and session fencing (Refs #356) · [`939d04e3d239`](https://github.com/gmanldn/smoothcast/commit/939d04e3d239729f877dfe3c5b76aa3509c41775)
 
 - ⬜ **06:58:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`21a1755c2d36`](https://github.com/gmanldn/smoothcast/commit/21a1755c2d36e40b741a69da8c5cae6232a7a5ec)
+
+- ⬜ **06:58:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7808f217dab1`](https://github.com/gmanldn/smoothcast/commit/7808f217dab1f9f9177b0ed8ed5dc6f2e0fe479b)
 
 - 🟦 **06:58:18 · Refactor** — refactor(arch): shutdown ledger persists through the atomic Store (Refs #701) · [`cc5923b41949`](https://github.com/gmanldn/smoothcast/commit/cc5923b4194953313912773b8f5998838117460b)
 
