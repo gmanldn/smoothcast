@@ -92,6 +92,7 @@ def _stub_ffmpeg_version_probe(request):
 
 def pytest_collection_modifyitems(config, items):
     """Skip documented per-platform gaps (tests/platform_gaps.py), by exact id."""
+    _apply_quarantine(items)
     import sys
 
     import pytest
@@ -106,7 +107,7 @@ def pytest_collection_modifyitems(config, items):
                 reason=f"known {sys.platform} gap (#258): {reason}"))
 
 
-def pytest_collection_modifyitems(config, items):
+def _apply_quarantine(items):
     """Excuse only dated, owned quarantine entries (#700); any other failure stays red."""
     import datetime
     import json
