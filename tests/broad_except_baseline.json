@@ -9,7 +9,6 @@
   "cast_portal_room.py": 1,
   "cast_session.py": 4,
   "cast_ui.py": 3,
-  "castctl.py": 8,
   "control_api.py": 1,
   "dlna.py": 4,
   "error_log.py": 2,

@@ -329,7 +329,7 @@ class CattBackend:
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
             devices = _passive_cast_scan(timeout)
-        except Exception:
+        except Exception:  # noqa: BLE001 - fall back to the compatibility scan on any discovery failure
             # Older/broken discovery environments retain the compatibility
             # path. Its JSON keys collapse duplicate names, so do not use
             # that result as evidence for an automatic IP route.
@@ -349,7 +349,7 @@ class CattBackend:
         try:
             host = validate_manual_target(selected.host)
             identity = _receiver_identity_at(host)
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unverifiable identity keeps the name route
             return name
         if identity and identity.replace("-", "").casefold() == selected.uuid.replace("-", "").casefold():
             return host
@@ -365,7 +365,7 @@ class CattBackend:
         self._last_refresh[name] = now
         try:
             self._advertisements = tuple(_passive_cast_scan(3.0))
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed refresh keeps the name route
             return name
         return self.receiver_route(name)
 
@@ -514,7 +514,7 @@ class _StatusMirror:
                 # A freshly joined app reports its media session shortly after.
                 try:
                     media.update_status()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - a failed media status refresh is logged; polling continues
                     log_backend_failure(f"media status refresh failed: {exc}")
                 wait_until = min(deadline, time.monotonic() + 1.5)
                 while (time.monotonic() < wait_until
@@ -536,7 +536,7 @@ class _StatusMirror:
                 if value is not None and key not in status:
                     status[key] = value  # type: ignore[literal-required]
             return status
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any connection failure drops the cast and reports no status
             self._drop(host)
             _info_failed(host, f"direct status connection failed: {type(exc).__name__}")
             return None
@@ -548,7 +548,7 @@ class _StatusMirror:
         try:
             client = getattr(chromecast, "socket_client", None)
             return bool(client is not None and client.is_connected)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a broken socket client means not connected
             return False
 
     def forget(self, host: str) -> None:
@@ -560,7 +560,7 @@ class _StatusMirror:
         if chromecast is not None:
             try:
                 cast(Any, chromecast).disconnect(timeout=1)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failed disconnect is logged
                 log_backend_failure(f"receiver disconnect failed: {exc}")
 
     def close(self) -> None:
@@ -708,7 +708,7 @@ def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     command_trace.stage("receiver_call")
     try:
         accepted, response = _backend.command(device, *args, timeout=timeout)
-    except Exception:
+    except Exception:  # noqa: BLE001 - record the failed stage then re-raise
         command_trace.stage("receiver_failed", code=502)
         raise
     command_trace.stage("receiver_ack" if accepted else "receiver_failed",
