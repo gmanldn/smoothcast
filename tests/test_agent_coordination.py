@@ -500,6 +500,32 @@ def test_scope_expansion_does_not_claim_merge_friendly_tests_or_docs(monkeypatch
     )
 
 
+def test_scope_narrows_remote_claim_and_private_journal(monkeypatch):
+    task = {"issue": 584, "files": ["src/keep.py", "src/release.py"]}
+    renewed = []
+    persisted = []
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "git", lambda *args: "")
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: renewed.append(args) or 0)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: persisted.append(task) or True)
+    args = agent.build_parser().parse_args(["scope", "--files", "src/keep.py"])
+    assert agent.cmd_scope(args) == 0
+    assert [(claim.number, claim.files) for claim in renewed] == [(584, "src/keep.py")]
+    assert persisted == [task]
+    assert task["files"] == ["src/keep.py"]
+
+
+def test_scope_keeps_path_with_unpublished_edits(monkeypatch):
+    task = {"issue": 584, "files": ["src/keep.py", "src/dirty.py"]}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "git", lambda *args: "src/dirty.py" if args[-1] == "HEAD" else "")
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: sys.exit("must not release a dirty path"))
+    args = agent.build_parser().parse_args(["scope", "--files", "src/keep.py"])
+    assert agent.cmd_scope(args) == 3
+    assert task["files"] == ["src/keep.py", "src/dirty.py"]
+
+
 def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):
     monkeypatch.setattr(agent, "mypy_gated", lambda: {"src/gated.py"})
     (agent.ROOT / "src").mkdir(exist_ok=True)
