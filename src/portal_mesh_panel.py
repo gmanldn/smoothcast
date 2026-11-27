@@ -64,6 +64,7 @@ _PANEL = r"""
 <div class="mesh-metric"><strong id="meshBusyCount">—</strong><span>Reported in use</span></div>
 <div class="mesh-metric"><strong id="meshUnavailableCount">—</strong><span>Stale / unreachable</span></div>
 </div>
+<section id="meshDiagramBox" aria-labelledby="meshDiagramHeading"><h3 id="meshDiagramHeading">Network diagram</h3><img id="meshDiagram" src="/api/mesh/diagram.svg" alt="Diagram of every device on the network, its receivers and connected clients" style="width:100%;max-width:640px;height:auto;background:var(--input);border:1px solid var(--line);border-radius:12px"><ul id="meshProfiles" aria-label="Detail for each device"></ul></section>
 <section id="meshReceiverInventory" aria-labelledby="meshTargetsHeading"><h3 id="meshTargetsHeading">Casting targets across the mesh</h3><p class="field-hint">Receiver observations, not a cast command. A ready report does not reserve a receiver.</p><ul id="meshTargets" aria-label="Playback targets"></ul><p id="meshNoTargets" class="muted" hidden>No receivers reported yet. Check whether your TV or speaker is awake.</p></section>
 <div class="mesh-room" aria-labelledby="meshRoomHeading"><h3 id="meshRoomHeading">This host · room control</h3>
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
@@ -357,10 +358,35 @@ _PANEL = r"""
       if(!current())return;
       nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
       panel.hidden=false;showNetworkNavigation(true);put("meshAvailability","Mesh service available · see network diagnostics below.");started=true;backoff=3000;lastMeshAt=Date.now();render();open();
-      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));startHeartbeat();
+      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));startHeartbeat();profiles();
     }catch(_){if(current()){put("meshAvailability","Mesh status unavailable · retrying.");schedule()}}
     finally{if(bootRequest===request)bootRequest=null}
   }
+  async function profiles(){
+    const list=document.getElementById("meshProfiles"),img=document.getElementById("meshDiagram");
+    if(!list)return;
+    try{
+      const r=await fetch("/api/mesh/profiles",{credentials:"same-origin",cache:"no-store"});
+      if(!r.ok)return;
+      const d=await r.json(),keep=new Set();
+      for(const n of d.nodes||[]){
+        keep.add(n.node_id);
+        let li=list.querySelector('[data-node="'+n.node_id+'"]');
+        if(!li){li=document.createElement("li");li.dataset.node=n.node_id;list.append(li)}
+        const rows=[n.role+" · "+n.headline,n.ports?"Ports: "+n.ports:"",
+          n.capabilities.length?"Can: "+n.capabilities.join(", "):"",
+          n.targets.length?"Receivers: "+n.targets.join(", "):"No receivers seen",
+          n.clients.length?"Clients: "+n.clients.length:"No clients"].filter(Boolean);
+        const text=n.name+"\n"+rows.join("\n");
+        if(li.dataset.sig!==text){li.dataset.sig=text;li.replaceChildren();
+          const t=document.createElement("strong");t.textContent=n.name;li.append(t);
+          for(const row of rows){const p=document.createElement("div");p.className="s";p.textContent=row;li.append(p)}}
+      }
+      for(const li of [...list.children])if(!keep.has(li.dataset.node))li.remove();
+      if(img)img.src="/api/mesh/diagram.svg?t="+Date.now();
+    }catch(_){}
+  }
+  setInterval(()=>{if(!document.hidden&&started&&panel&&!panel.hidden)profiles()},10000);
   document.addEventListener("visibilitychange",()=>{
     if(document.hidden){cancelMeshBoot();cancelMeshRetry();stopHeartbeat();hiddenTimer=setTimeout(()=>{close()},30000)}
     else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
