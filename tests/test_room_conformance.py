@@ -273,6 +273,75 @@ def test_guest_upload_is_queued_once_and_converges_across_room_clients(
         uploads.close()
 
 
+def test_three_authenticated_guests_upload_concurrently_and_retry_once(tmp_path, monkeypatch):
+    """Three phones can contribute together without approval or queue loss."""
+    import streamer
+
+    monkeypatch.setattr(
+        streamer, "ffprobe",
+        lambda _path: SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        ),
+    )
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    room = RoomHarness(count=0, uploads=uploads)
+    try:
+        clients = [room.login(f"Concurrent phone {index}") for index in range(3)]
+
+        def contribute(index: int):
+            client = clients[index]
+            name = f"guest-{index}.mkv"
+            data = f"valid media {index}".encode()
+            status, created, _headers = room.request(
+                "POST", "/api/uploads", {"name": name, "size": len(data), "queue": True},
+                cookie=client.cookie, csrf=client.csrf,
+            )
+            assert status == 201
+            upload_id = created["id"]
+            status, _progress, _headers = room.request(
+                "PUT", f"/api/uploads/{upload_id}", data,
+                cookie=client.cookie, csrf=client.csrf,
+                content_type="application/octet-stream",
+                extra_headers={"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"},
+            )
+            assert status == 200
+            complete = f"/api/uploads/{upload_id}/complete"
+            status, result, _headers = room.request(
+                "POST", complete, {"queue": True},
+                cookie=client.cookie, csrf=client.csrf,
+            )
+            assert status == 202 and result["message"] == "Added to the shared queue."
+            retry_status, _retry, _headers = room.request(
+                "POST", complete, {"queue": True},
+                cookie=client.cookie, csrf=client.csrf,
+            )
+            assert retry_status == 202
+            return name
+
+        threads = [threading.Thread(target=contribute, args=(index,)) for index in range(3)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(10)
+        assert all(not thread.is_alive() for thread in threads)
+
+        snapshots = [client.status() for client in clients]
+        assert all(status == 200 for status, _state, _headers in snapshots)
+        queues = [state["state"]["queue"] for _status, state, _headers in snapshots]
+        assert queues[0] == queues[1] == queues[2]
+        assert {item["title"] for item in queues[0]} == {
+            "guest-0.mkv", "guest-1.mkv", "guest-2.mkv",
+        }
+        assert all(state["state"]["title"] == "Current film"
+                   for _status, state, _headers in snapshots)
+        assert snapshots[0][1]["state"]["queue_revision"] == 3
+        assert sum(action == "queue_add" for action, _payload in room.calls) == 3
+        assert not any(action in {"cast_upload", "stop"} for action, _payload in room.calls)
+    finally:
+        room.close()
+        uploads.close()
+
+
 def test_concurrent_queue_removes_return_one_commit_and_one_stale_conflict(room):
     first, second = room.login("Phone 1"), room.login("Phone 2")
     first_state = first.status()[1]["state"]
