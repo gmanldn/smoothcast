@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a32a77297f580ce98ebbfb6abbfeff407a847795 -->
+<!-- sc-changelog-through: 89d6ba2be641c222bf0f63052d498ef5e93021d6 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **21:18:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:18:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:18:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`89d6ba2be641`](https://github.com/gmanldn/smoothcast/commit/89d6ba2be641c222bf0f63052d498ef5e93021d6)
+
+- 🟦 **21:18:06 · Refactor** — refactor(errors): justify boundary catches in fifteen freed modules (Refs #694) · [`5a1bab5dda9d`](https://github.com/gmanldn/smoothcast/commit/5a1bab5dda9dcbbb8438e676911ad69b3328f6b1)
 
 - ⬜ **21:18:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a32a77297f58`](https://github.com/gmanldn/smoothcast/commit/a32a77297f580ce98ebbfb6abbfeff407a847795)
 
 - 🟪 **21:18:01 · Tests** — test(link): real-process worker crash, quota, deadline, cancel and no-residual-child coverage (Refs #588) · [`0687dca1152d`](https://github.com/gmanldn/smoothcast/commit/0687dca1152deed0125b2be3fb2ebf07cd9057cc)
+
+- ⬜ **21:18:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`af265caf986b`](https://github.com/gmanldn/smoothcast/commit/af265caf986b35d676a946a7f0964e7af88c34b9)
 
 - ⬜ **21:17:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55bf2c6ed0a8`](https://github.com/gmanldn/smoothcast/commit/55bf2c6ed0a86411fbd4a792526ad2eddbe0ce50)
 
