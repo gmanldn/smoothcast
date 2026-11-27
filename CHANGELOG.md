@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bfe40c70605dd285a45119adde4093d45246ace0 -->
+<!-- sc-changelog-through: 08bff2e33299181dc64cfbb0fc8bc7f584a1cbe1 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:00:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:02:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:02:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08bff2e33299`](https://github.com/gmanldn/smoothcast/commit/08bff2e33299181dc64cfbb0fc8bc7f584a1cbe1)
+
+- 🟦 **16:02:50 · Refactor** — refactor(paths): CONFIG\_DIR uses paths.APP\_DIR (Refs #701) (Refs #325) · [`7117382857fa`](https://github.com/gmanldn/smoothcast/commit/7117382857fa1b9749d5b89854ac6671c7ddbb9b)
+
+- 🟩 **16:02:29 · Feature** — feat(portal): pure cross-node target picker rows, stable selection and validation (Refs #575) · [`804b5624979e`](https://github.com/gmanldn/smoothcast/commit/804b5624979e5fcd3aa46aa78730e758e6c9d877)
 
 - ⬜ **16:00:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bfe40c70605d`](https://github.com/gmanldn/smoothcast/commit/bfe40c70605dd285a45119adde4093d45246ace0)
 
 - 🟥 **16:00:41 · Fix** — fix: clear develop mypy errors in queue\_crdt, server, cli\_control (Refs #698) · [`c66c73a05baa`](https://github.com/gmanldn/smoothcast/commit/c66c73a05baadd7c6f1d77a551d2ddcf39f6e979)
+
+- ⬜ **16:00:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a0baa2e4f8cc`](https://github.com/gmanldn/smoothcast/commit/a0baa2e4f8cc782366e83ae887e81a8d85c16a37)
 
 - 🟥 **16:00:16 · Fix** — fix(upload): early-cast wording says 'not started yet' since a busy host now retries (Refs #686) · [`9ca5264348be`](https://github.com/gmanldn/smoothcast/commit/9ca5264348be16a63c091ba5c39f48f187a421bd)
 
