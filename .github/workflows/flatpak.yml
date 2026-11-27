@@ -1,0 +1,55 @@
+name: Flatpak build (experimental)
+
+# #263: prove the Flatpak manifest builds offline and the bundled CLI runs.
+# Runs only when Flatpak inputs change. continue-on-error keeps an experimental
+# red build from marking the whole develop head failed for other agents; read
+# the job's step results (or the uploaded log) for the real outcome.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "packaging/flatpak/**"
+      - ".github/workflows/flatpak.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install flatpak-builder and the GNOME 51 SDK
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.gnome.Platform//51 org.gnome.Sdk//51
+      - name: Diagnose the SDK (Python ABI, FFmpeg, SDL2, libva)
+        run: |
+          flatpak run --command=sh org.gnome.Sdk//51 -c '
+            python3 --version
+            for tool in ffmpeg ffprobe ffplay nasm; do printf "%s: " "$tool"; command -v "$tool" || echo missing; done
+            for pc in sdl2 libva libva-drm; do printf "%s: " "$pc"; pkg-config --modversion "$pc" || echo missing; done'
+      - name: Build offline
+        run: |
+          flatpak-builder --user --force-clean --disable-rofiles-fuse --install \
+            build packaging/flatpak/io.github.gmanldn.SmoothCast.json 2>&1 | tee flatpak-build.log
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: Run the bundled CLI without a display
+        run: |
+          flatpak run --command=smoothcast io.github.gmanldn.SmoothCast --version
+          flatpak run --command=ffmpeg io.github.gmanldn.SmoothCast -hide_banner -version | head -1
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-build-log
+          path: flatpak-build.log
+          if-no-files-found: ignore
