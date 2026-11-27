@@ -390,7 +390,7 @@ class LibraryIndexer:
     def _upsert(self, entry: dict, old_key: str | None) -> None:
         try:
             self._upsert_locked(entry, old_key)
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - roll back then re-raise
             self._conn.rollback()  # entry and changelog row commit together or not at all
             raise
 
@@ -424,7 +424,7 @@ class LibraryIndexer:
         while not self._stop.is_set() and not scope.cancelled:
             try:
                 self.scan_all()
-            except Exception:  # Never let indexing take the app down.
+            except Exception:  # Never let indexing take the app down.  # noqa: BLE001 - indexing must never take the app down
                 pass
             waited = 0.0
             while (waited < self.rescan_seconds and not self._wake.is_set()

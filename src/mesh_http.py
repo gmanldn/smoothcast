@@ -105,7 +105,7 @@ class HttpRpc:
             try:
                 handler = self._handler
                 box.append(handler(source, payload) if handler is not None else None)
-            except Exception:
+            except Exception:  # noqa: BLE001 - handler failure becomes an empty reply
                 box.append(None)
             finally:
                 done.set()
@@ -144,7 +144,7 @@ class HttpRpc:
         def deliver(future: object) -> None:
             try:
                 reply, error = future.result()          # type: ignore[attr-defined]
-            except Exception:
+            except Exception:  # noqa: BLE001 - future failure becomes a failed reply
                 reply, error = None, "failed"
             self._loop.call_soon_threadsafe(lambda: callback(reply, error))
 

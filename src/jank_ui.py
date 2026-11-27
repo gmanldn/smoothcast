@@ -62,7 +62,7 @@ class JankMonitor:
         if self._beat_source is not None:
             try:
                 self._source_remove(self._beat_source)
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort source removal
                 pass
             self._beat_source = None
         if jank_watchdog.current() is self.watchdog:
@@ -94,7 +94,7 @@ class JankMonitorMixin:
         try:
             self.jank_monitor = JankMonitor()
             self.jank_monitor.start()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - monitoring must never keep the desktop from starting
             # Monitoring must never keep the desktop from starting.
             self.jank_monitor = None
             print(f"SmoothCast jank monitor unavailable: {exc}", file=sys.stderr)

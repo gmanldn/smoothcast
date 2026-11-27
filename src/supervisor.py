@@ -49,7 +49,7 @@ class Supervisor:
         try:
             entry.service.start()
             entry.state, entry.last_error = RUNNING, ""
-        except Exception as exc:  # a service failing to start must not take the app down
+        except Exception as exc:  # a service failing to start must not take the app down  # noqa: BLE001 - a service failing to start is recorded and must not take the app down
             self._fail(entry, exc)
         return entry.state
 
@@ -63,7 +63,7 @@ class Supervisor:
             if entry.state == RUNNING:
                 try:
                     ok = entry.service.healthy()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - a failing health probe means unhealthy
                     ok = False
                     entry.last_error = str(exc)[:200]
                 if not ok:
@@ -82,7 +82,7 @@ class Supervisor:
         def run() -> None:
             try:
                 entry.service.stop()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failing stop is recorded; shutdown continues
                 entry.last_error = str(exc)[:200]
             finally:
                 done.set()

@@ -92,7 +92,7 @@ class JankWatchdog:
         if self._on_stall is not None:
             try:
                 self._on_stall(stall)
-            except Exception:
+            except Exception:  # noqa: BLE001 - a counter hook must never break the loop
                 # A counter hook must never break the loop either.
                 pass
         return stall
@@ -134,7 +134,7 @@ class JankWatchdog:
                 return self._scrub(frames, home=self._home)
             except TypeError:
                 return tuple(self._scrub(frames))
-        except Exception:
+        except Exception:  # noqa: BLE001 - a detector must never break the loop it watches
             # A detector must never break the loop it is watching.
             return ()
 

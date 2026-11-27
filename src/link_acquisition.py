@@ -584,7 +584,7 @@ class CommandProvider:
             try:
                 import link_provision
                 raw = link_provision.default_launcher()
-            except Exception:
+            except Exception:  # noqa: BLE001 - no provisioned launcher means no sandbox
                 raw = ""
         self.launcher = (str(raw) if raw and Path(raw).is_absolute()
                          and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
@@ -599,7 +599,7 @@ class CommandProvider:
         try:
             import link_sandbox_probe
             return bool(self.launcher) and link_sandbox_probe.is_verified(self.launcher)
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unverifiable sandbox counts as not verified
             return False
 
     def readiness(self) -> dict:
@@ -842,7 +842,7 @@ class _JobJournal:
                     raise ValueError("Acquisition lock belongs to another user")
                 os.fchmod(fd, 0o600)
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - close the descriptor then re-raise
             os.close(fd)
             raise
         self.fd = fd
@@ -1210,7 +1210,7 @@ class LinkJobs:
             except LinkError as exc:
                 outcome = dict(stage="cancelled" if cancelled() and not delivered else
                                "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
-            except Exception:
+            except Exception:  # noqa: BLE001 - unknown failure resolves to a delivery-aware outcome
                 outcome = dict(stage="delivery_uncertain" if delivered else
                                "cancelled" if cancelled() else "failed",
                                error="Queue delivery not confirmed; check Up Next." if delivered else
