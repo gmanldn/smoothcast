@@ -20,6 +20,7 @@ import time
 from urllib.parse import urlsplit
 
 import error_log
+from stream_health import StreamHealth
 
 ROOT = Path.home() / ".cache" / "cast-control"
 PORT = 8767
@@ -202,6 +203,28 @@ def load_policy(root: Path) -> AccessPolicy:
 
 _LOGS: dict[str, error_log.ErrorLog] = {}
 _LOGS_LOCK = threading.Lock()
+# Measured segment outcomes for this server process (#49); never inferred.
+STREAM_HEALTH = StreamHealth()
+_HEALTH_LOCK = threading.Lock()
+_SEGMENT = re.compile(r"\.(?:ts|m4s|mp4|aac)$", re.IGNORECASE)
+
+
+def record_segment(path: str, code: object) -> None:
+    """Count one served/failed media segment; ignore playlists and other paths."""
+    name = _url_path(path)
+    if not _SEGMENT.search(name):
+        return
+    try:
+        ok = int(code) < 400
+    except (TypeError, ValueError):
+        ok = False
+    with _HEALTH_LOCK:
+        STREAM_HEALTH.segment(ok, name.rsplit("/", 1)[-1])
+
+
+def stream_health_snapshot() -> dict:
+    with _HEALTH_LOCK:
+        return STREAM_HEALTH.snapshot()
 
 
 def server_log() -> error_log.ErrorLog:
@@ -258,6 +281,7 @@ class H(SimpleHTTPRequestHandler):
 
     def log_request(self, code="-", size="-") -> None:
         # A film is thousands of 200 responses; log only failed requests.
+        record_segment(getattr(self, "path", ""), code)
         try:
             failed = int(code) >= 400
         except (TypeError, ValueError):
