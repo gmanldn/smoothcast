@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -29,6 +30,23 @@ class QueueHost(PortalQueueMixin):
 
     def _rebuild_queue(self):
         pass
+
+
+def test_upload_path_rejects_parent_traversal_outside_upload_root(tmp_path):
+    root = tmp_path / "uploads"
+    root.mkdir()
+    outside = tmp_path / "private.mp4"
+    outside.write_bytes(b"not a guest upload")
+    host = QueueHost()
+    host._portal = SimpleNamespace(server=SimpleNamespace(
+        uploads=SimpleNamespace(root=root),
+    ))
+
+    with pytest.raises(portal.PortalRequestError) as error:
+        host._portal_upload_path({"path": str(root / ".." / outside.name)})
+
+    assert error.value.status == 400
+    assert "unavailable" in str(error.value).lower()
 
 
 def test_stale_revision_rejects_queue_edits_before_mutation():

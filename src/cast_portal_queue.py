@@ -119,9 +119,11 @@ class PortalQueueMixin:
             raise portal.PortalRequestError(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         path = pathlib.Path(payload.get("path", ""))
         try:
-            info = path.lstat()
+            root = pathlib.Path(root).resolve(strict=True)
+            path = path.resolve(strict=True)
             path.relative_to(root)
-        except (OSError, ValueError):
+            info = path.stat()
+        except (OSError, RuntimeError, ValueError):
             raise portal.PortalRequestError(400, "Uploaded media is unavailable") from None
         if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
             raise portal.PortalRequestError(400, "Uploaded media is unavailable")
