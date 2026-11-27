@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f3220e3822ac46351e73dac6922eb6778a1f3a34 -->
+<!-- sc-changelog-through: 399b729ae092cc59d8bd12b7a30baddfc212a717 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:52:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:53:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:53:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`399b729ae092`](https://github.com/gmanldn/smoothcast/commit/399b729ae092cc59d8bd12b7a30baddfc212a717)
+
+- 🟩 **18:53:47 · Feature** — feat: show complete mesh node details in web panel (Refs #710) · [`8ca8d693c851`](https://github.com/gmanldn/smoothcast/commit/8ca8d693c851b28e0dcc5e75dd47eb941b01b2f8)
 
 - ⬜ **18:52:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f3220e3822ac`](https://github.com/gmanldn/smoothcast/commit/f3220e3822ac46351e73dac6922eb6778a1f3a34)
 
 - 🟪 **18:52:23 · Tests** — test: assert shared queue order in browser sync (Refs #324) · [`0664c5244c8e`](https://github.com/gmanldn/smoothcast/commit/0664c5244c8e90c3119d3c67933aba422a65d2b7)
+
+- ⬜ **18:52:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`faac3947d537`](https://github.com/gmanldn/smoothcast/commit/faac3947d537e3fe2050a4bcf2fcb83317fe869b)
 
 - ⬜ **18:48:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3132d2016be0`](https://github.com/gmanldn/smoothcast/commit/3132d2016be0cbbeeb3e7b61ca66995277981f8c)
 
