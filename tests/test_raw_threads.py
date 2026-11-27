@@ -40,7 +40,6 @@ ALLOWED = {
     "streamer.py": 1,
     "supervisor.py": 1,
     "update_button.py": 3,
-    "update_facts.py": 1,
 }
 
 

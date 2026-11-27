@@ -57,7 +57,8 @@ def check_now(cfg: dict, root) -> str:
 
 
 def start_check(cfg: dict, root, on_done) -> None:
-    """Run ``check_now`` on a daemon thread; ``on_done(text)`` is called from it."""
-    import threading
-    threading.Thread(target=lambda: on_done(check_now(cfg, root)),
-                     daemon=True, name="update-check").start()
+    """Run ``check_now`` on the bounded network pool; ``on_done(text)`` is called from a worker."""
+    import task_runtime
+    rt = task_runtime.shared()
+    rt.submit("network", rt.scope(deadline=60.0), lambda _s: check_now(cfg, root),
+              lambda result, error: on_done(result if error is None else f"Update check failed: {error}"))

@@ -105,3 +105,25 @@ def _wait(future: Future, timeout: float) -> bool:
     except BaseException:  # noqa: BLE001 - task errors are already delivered
         return True
     return True
+
+
+_SHARED: Runtime | None = None
+_SHARED_LOCK = threading.Lock()
+
+
+def shared() -> Runtime:
+    """Process-wide runtime; the app may call ``configure(deliver)`` first to route results to GTK."""
+    global _SHARED
+    with _SHARED_LOCK:
+        if _SHARED is None:
+            _SHARED = Runtime()
+        return _SHARED
+
+
+def configure(deliver: Callable[[Callable[[], None]], None]) -> Runtime:
+    """Install the shared runtime with a UI dispatcher (idempotent: replaces only an unused default)."""
+    global _SHARED
+    with _SHARED_LOCK:
+        if _SHARED is None:
+            _SHARED = Runtime(deliver)
+        return _SHARED
