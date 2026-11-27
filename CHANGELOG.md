@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a97e6feb27ff2f6027cb3884a7d1d99034130a7a -->
+<!-- sc-changelog-through: 45e9c8f0178d75b952ecc355b4108076017f21fb -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:03:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:06:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:06:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`45e9c8f0178d`](https://github.com/gmanldn/smoothcast/commit/45e9c8f0178d75b952ecc355b4108076017f21fb)
+
+- 🟦 **17:06:09 · Refactor** — refactor(errors): justify boundary catches in desktop\_failure\_notice and peer\_discovery (Refs #694) · [`aef743601af5`](https://github.com/gmanldn/smoothcast/commit/aef743601af586be02ae29cb8aea137743f75e65)
+
+- 🟩 **17:05:45 · Feature** — feat(runtime): spawn\_daemon owns long-lived loops (named, counted, cancelled and joined at shutdown, errors recorded), unblocking migration of accept loops and heartbeats (Refs #696) · [`bdd45e8d4338`](https://github.com/gmanldn/smoothcast/commit/bdd45e8d4338aef07b92910c86efb731cf6b444a)
+
+- ⬜ **17:03:56 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`99e349a4ee76`](https://github.com/gmanldn/smoothcast/commit/99e349a4ee760f3d2b85bb8bb567ed694c15188b)
 
 - ⬜ **17:03:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a97e6feb27ff`](https://github.com/gmanldn/smoothcast/commit/a97e6feb27ff2f6027cb3884a7d1d99034130a7a)
 
