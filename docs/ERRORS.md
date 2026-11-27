@@ -15,6 +15,16 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   2. Check that it is on the same network as this computer.
   3. Choose the receiver again from the list.
 
+<a id="errors-app-save-failed"></a>
+## `app.save_failed`
+
+- Severity: error; retryable: yes
+- Message: SmoothCast could not save a settings file. Free disk space or check folder permissions.
+- Try:
+  1. Free some disk space.
+  2. Check that your user can write to the SmoothCast config folder.
+  3. Retry the change.
+
 <a id="errors-cast-command-in-progress"></a>
 ## `cast.command_in_progress`
 
