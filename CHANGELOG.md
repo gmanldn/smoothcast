@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 81ef38363e98d7411f65c7d3348bfb6a0cb34e57 -->
+<!-- sc-changelog-through: 55762ff9e79d0045330ecfb0120d71a18982b533 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:47:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:55:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:55:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55762ff9e79d`](https://github.com/gmanldn/smoothcast/commit/55762ff9e79d0045330ecfb0120d71a18982b533)
+
+- 🟪 **17:55:38 · Tests** — test(agents): verify scope narrowing and changelog shipment recovery (Refs #715) · [`f44aafb27e8a`](https://github.com/gmanldn/smoothcast/commit/f44aafb27e8a1403505592ff37952c3eccb183b5)
 
 - ⬜ **17:47:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`81ef38363e98`](https://github.com/gmanldn/smoothcast/commit/81ef38363e98d7411f65c7d3348bfb6a0cb34e57)
+
+- ⬜ **17:47:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2b9b67563a1d`](https://github.com/gmanldn/smoothcast/commit/2b9b67563a1d559975a9b371ffb28496ffa008d2)
 
 - 🟥 **17:47:05 · Fix** — fix(stream): the live cast encoder runs at normal priority so a busy host no longer starves it below real time (0.52x observed at nice 10); background conversions stay low (Refs #686) (Refs #247) · [`00c82e3c414e`](https://github.com/gmanldn/smoothcast/commit/00c82e3c414e90d378ba1db970419d29cc8f1b84)
 
