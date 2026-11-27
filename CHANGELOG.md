@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c085e95f033d1b8d53cd1ea5c885007c0508e46f -->
+<!-- sc-changelog-through: eb35cff3297c46be59625a51e266c53dea510179 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:08:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:09:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- 🟩 **07:09:27 · Feature** — feat(arch): typed Settings groups (update, portal); update\_facts reads through them (Refs #693) · [`eb35cff3297c`](https://github.com/gmanldn/smoothcast/commit/eb35cff3297c46be59625a51e266c53dea510179)
+
+- 🟩 **07:09:04 · Feature** — feat(rooms): pure speaker preset save/prune/recall planning with ceilings and guest gate (Refs #371) · [`01041af8d15c`](https://github.com/gmanldn/smoothcast/commit/01041af8d15c94dc752c69c08f08418a78ac4eff)
 
 - ⬜ **07:08:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c085e95f033d`](https://github.com/gmanldn/smoothcast/commit/c085e95f033d1b8d53cd1ea5c885007c0508e46f)
 
 - 🟥 **07:08:35 · Fix** — fix(stream): HLS server serves legacy segment-NNNNN.ts again; the stream-health suffix regex shadowed the module allow-list \_SEGMENT, so every tokenless segment request returned 404 since 7c712970 (Refs #686) · [`b251fe76e8a1`](https://github.com/gmanldn/smoothcast/commit/b251fe76e8a1e9e309fe6869dd4d15b1e4da9f88)
+
+- ⬜ **07:08:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f9baef748ee2`](https://github.com/gmanldn/smoothcast/commit/f9baef748ee2957368819b0e1b59faaabd20e6fc)
 
 - 🟩 **07:08:01 · Feature** — feat(rooms): pure named-room store with newest-wins merge, tombstones and picker view (Refs #370) · [`b274e7743f01`](https://github.com/gmanldn/smoothcast/commit/b274e7743f016f83b26a6bb2a584d14ab2a7ddf3)
 
