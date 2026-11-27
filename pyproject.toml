@@ -160,6 +160,7 @@ py-modules = [
     "house_cli",
     "house_fetch",
     "house_health",
+    "house_history",
     "house_library",
     "house_rules",
     "hw_encoder_state",
