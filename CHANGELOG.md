@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4b96ee7e320808b709477ea9681c556150a57336 -->
+<!-- sc-changelog-through: 8495488617729b1a8ac2e35d67ba5bc06487844a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:34:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:37:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:37:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`849548861772`](https://github.com/gmanldn/smoothcast/commit/8495488617729b1a8ac2e35d67ba5bc06487844a)
+
+- 🟦 **17:37:29 · Refactor** — refactor(errors): justify boundary catches across eighteen more modules (Refs #694) · [`4a8a9c32de39`](https://github.com/gmanldn/smoothcast/commit/4a8a9c32de39b6daf2fde65617fbc4a66593ac89)
+
+- 🟪 **17:35:54 · Tests** — test(gui): frame-step test drives the real mixin methods and installed shortcuts via a new gui\_shortcuts helper; baseline shrinks (Refs #699) · [`ba8b6d36a67d`](https://github.com/gmanldn/smoothcast/commit/ba8b6d36a67debdc88f57f56ab0c438f4deda463)
+
+- ⬜ **17:34:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2edf2a4667ef`](https://github.com/gmanldn/smoothcast/commit/2edf2a4667efcfd9939e994a6c1608cef6b540b5)
 
 - ⬜ **17:34:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4b96ee7e3208`](https://github.com/gmanldn/smoothcast/commit/4b96ee7e320808b709477ea9681c556150a57336)
 
