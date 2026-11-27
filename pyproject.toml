@@ -107,6 +107,7 @@ py-modules = [
     "config_persistence",
     "control_api",
     "control_lease",
+    "crossfade_plan",
     "demo_launch",
     "demo_mode",
     "demo_runtime",
