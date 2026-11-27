@@ -55,7 +55,7 @@ class DesktopFailureBridge:
                     return False
             self._schedule(lambda: self._deliver(failure))
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 - a broken UI/scheduler must not raise another error
             # A broken UI/scheduler must not generate another uncaught error.
             return False
 
@@ -63,7 +63,7 @@ class DesktopFailureBridge:
         try:
             if self._alive():
                 self._present(failure)
-        except Exception:
+        except Exception:  # noqa: BLE001 - never recursively report a broken toast
             # Do not recursively report a broken toast or shutting-down app.
             pass
         return False  # GLib.idle_add is strictly one-shot.
@@ -73,10 +73,10 @@ class DesktopFailureBridge:
         def guarded(*args: Any, **kwargs: Any) -> Any:
             try:
                 return callback(*args, **kwargs)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - last-resort guard for a GLib callback; reported below
                 try:
                     self._log_glib("uncaught GLib callback exception", exc_info=True)
-                except Exception:
+                except Exception:  # noqa: BLE001 - logging must not mask the original error
                     pass
                 self.report(exc)
                 return False  # remove failing source instead of a busy loop
@@ -113,7 +113,7 @@ class DesktopFailureBridge:
                     try:
                         self._log_glib("unraisable GTK/GLib callback exception",
                                        exc_info=(type(exc), exc, getattr(args, "exc_traceback", None)))
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - logging must not mask the original error
                         pass
                     self.report(exc)
 

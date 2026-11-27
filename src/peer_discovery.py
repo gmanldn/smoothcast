@@ -146,7 +146,7 @@ class PeerDirectory:  # a duck-typed zeroconf ServiceListener
             )
             self._zc.register_service(self._service)
             self._browser = ServiceBrowser(self._zc, SERVICE_TYPE, listener=cast(Any, self))
-        except Exception:
+        except Exception:  # noqa: BLE001 - cleanup then re-raise
             self.close()
             raise
 
@@ -179,7 +179,7 @@ class PeerDirectory:  # a duck-typed zeroconf ServiceListener
                 self._text(properties, "capabilities"), info.parsed_addresses(),
                 info.port, now=self._clock(), own_id=self.instance_id,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - a malformed advertisement is ignored
             return
         if peer is None:
             return
@@ -213,18 +213,18 @@ class PeerDirectory:  # a duck-typed zeroconf ServiceListener
         if browser is not None:
             try:
                 browser.cancel()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort browser cancel on close
                 pass
         zeroconf = self._zc
         if zeroconf is not None:
             try:
                 if self._service is not None:
                     zeroconf.unregister_service(self._service)
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort unregister on close
                 pass
             self._zc = None
             if self._owns_zeroconf:
                 try:
                     zeroconf.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort close
                     pass
