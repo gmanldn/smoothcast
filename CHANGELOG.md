@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d0dde6ba175d9329edcae882f98e344521ba9424 -->
+<!-- sc-changelog-through: 0d262ead6fa96f981129e13833d0a8a566b64c76 -->
 
 ## 2026-11-27 · UTC
 
-- 🟪 **15:30:00 · CI** — ci(msi): build isolated fixtures and run native upgrade matrix (Refs #535) <!-- sc-changelog-pending -->
+- 🟪 **15:33:54 · Tests** — test(msi): verify installed licence and icon and repair licence (Refs #535) <!-- sc-changelog-pending -->
+
+- 🟪 **15:31:35 · CI** — ci(msi): build isolated fixtures and run native upgrade matrix (Refs #535) · [`0d262ead6fa9`](https://github.com/gmanldn/smoothcast/commit/0d262ead6fa96f981129e13833d0a8a566b64c76)
 
 - 🟥 **15:19:19 · Fix** — fix(web): recover network diagrams after failed image loads (Refs #710) · [`d0dde6ba175d`](https://github.com/gmanldn/smoothcast/commit/d0dde6ba175d9329edcae882f98e344521ba9424)
 

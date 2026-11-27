@@ -20,6 +20,7 @@ import tempfile
 from msi_install_contract import (
     InstallerError, installer_command, run_installer, verify_candidate,
 )
+from verify_frozen_artifact import ROOT, check_project_legal
 
 
 def candidate_from(directory: Path) -> tuple[Path, str, str]:
@@ -64,6 +65,19 @@ def cli_check(cli: Path, args: list[str], expected: str, env: dict[str, str],
                             text=True, errors="replace", timeout=60, check=False)
     if result.returncode or (expected and result.stdout.strip() != expected):
         raise InstallerError(f"installed CLI {args[0]} failed ({result.returncode})")
+
+
+def check_installed_package(cli: Path, version: str, env: dict[str, str],
+                            cwd: Path, source_root: Path = ROOT) -> None:
+    """Verify the installed product against the checked-out source, not itself."""
+    try:
+        check_project_legal(cli, source_root)
+        icon = source_root / "src" / "smoothcast_assets" / "local.cast-control.png"
+        expected = hashlib.sha256(icon.read_bytes()).hexdigest()
+    except (RuntimeError, OSError) as exc:
+        raise InstallerError(f"installed legal files or source artwork invalid: {exc}") from exc
+    cli_check(cli, ["--version"], "SmoothCast v" + version, env, cwd)
+    cli_check(cli, ["--_smoothcast-package-check"], expected, env, cwd)
 
 
 def _keep_logs(source: Path, destination: Path) -> None:
@@ -118,12 +132,12 @@ def smoke(directory: Path, report: Path) -> None:
                     else:
                         if not all(p.is_file() for p in (cli, gui, shortcut)):
                             raise InstallerError("installed executable or Start Menu shortcut missing")
-                        cli_check(cli, ["--version"], "SmoothCast v" + version, env, root)
-                        cli_check(cli, ["--_smoothcast-package-check"], "", env, root)
+                        check_installed_package(cli, version, env, root)
                         current = hashlib.sha256(cli.read_bytes()).hexdigest()
                         if operation == "install":
                             original = current
                             cli.unlink()
+                            (install / "_internal" / "legal" / "LICENSE").unlink()
                         elif current != original:
                             raise InstallerError("repair did not restore original CLI bytes")
                     steps[operation] = "pass"
