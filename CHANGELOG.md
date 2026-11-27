@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3227c9b2a3a6a558f23f50eff57f242fa0c6c761 -->
+<!-- sc-changelog-through: 9e30dfe83aef3cb14faa58e1abb6fc2aaca42887 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:36:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:39:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:39:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9e30dfe83aef`](https://github.com/gmanldn/smoothcast/commit/9e30dfe83aef3cb14faa58e1abb6fc2aaca42887)
+
+- 🟩 **16:39:26 · Feature** — feat(hw): QSV and VideoToolbox backends behind the HardwareEncoder port (Refs #703) · [`1c7ebc316378`](https://github.com/gmanldn/smoothcast/commit/1c7ebc316378578d4ff1d3f77aaee9386bdf32c5)
 
 - ⬜ **16:36:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3227c9b2a3a6`](https://github.com/gmanldn/smoothcast/commit/3227c9b2a3a6a558f23f50eff57f242fa0c6c761)
 
 - 🟩 **16:36:37 · Feature** — feat(attempts): attempt folders default to the active command-trace id; ids sanitised (Refs #698) · [`8b7b70d8fa31`](https://github.com/gmanldn/smoothcast/commit/8b7b70d8fa31b7c5b9ffb9eca8fa03582a0cd70d)
+
+- ⬜ **16:36:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8389ea277a36`](https://github.com/gmanldn/smoothcast/commit/8389ea277a36bcea24e87fbdf9dd68843cb6d3d8)
 
 - ⬜ **16:36:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`58614346f12e`](https://github.com/gmanldn/smoothcast/commit/58614346f12e36921b40b17b477fbeea8aee7e58)
 
