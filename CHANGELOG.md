@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ce183aaea1468eacdbc7adc90b0b98cfef4d9ba2 -->
+<!-- sc-changelog-through: 1aafd5b4b79822300c3a586aa1bd066fa9999e99 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:18:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:21:32 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:21:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1aafd5b4b798`](https://github.com/gmanldn/smoothcast/commit/1aafd5b4b79822300c3a586aa1bd066fa9999e99)
+
+- 🟥 **07:21:24 · Fix** — fix(test): restore quarantine list dropped by a stale ship; openapi test removed as green (Refs #700) · [`eaed2fbc74f5`](https://github.com/gmanldn/smoothcast/commit/eaed2fbc74f5d3832669c7615a02133c9198da8e)
+
+- 🟩 **07:20:18 · Feature** — feat(music): pure LRC and enhanced-LRC parser, line/word lookup and per-track offsets (Refs #378) · [`cd2650954224`](https://github.com/gmanldn/smoothcast/commit/cd265095422492d390844b841cb7675c9ab1e7a1)
 
 - ⬜ **07:18:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ce183aaea146`](https://github.com/gmanldn/smoothcast/commit/ce183aaea1468eacdbc7adc90b0b98cfef4d9ba2)
 
 - 🟦 **07:18:53 · Refactor** — refactor(paths): error log, link sandbox and loudness cache use paths; ratchet shrinks (Refs #701) (Refs #325) · [`a068ca992fbc`](https://github.com/gmanldn/smoothcast/commit/a068ca992fbcbfdbd327c19a286494ee09885d9e)
+
+- ⬜ **07:18:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`9d156ed9699f`](https://github.com/gmanldn/smoothcast/commit/9d156ed9699f18b421bb98f45fb0895ae1a450ce)
 
 - 🟩 **07:18:36 · Feature** — feat(playback): pure skip intro/recap/credits markers from chapters and audio-hash matching (Refs #377) · [`94b9e560868a`](https://github.com/gmanldn/smoothcast/commit/94b9e560868add3d573fa0052ab30dc9a36bf749)
 
