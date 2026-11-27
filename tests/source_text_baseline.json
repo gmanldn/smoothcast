@@ -32,7 +32,6 @@
   "test_error_banner.py",
   "test_ffmpeg_version_guard.py",
   "test_film_screenshot_selection.py",
-  "test_frame_step.py",
   "test_gui_a11y_walk.py",
   "test_gui_checks_script.py",
   "test_gui_test_safety.py",
