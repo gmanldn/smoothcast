@@ -303,6 +303,7 @@ py-modules = [
     "room_checkpoint_ui",
     "room_event_replay",
     "room_layout",
+    "rooms_zones",
     "sc_core",
     "screenshot",
     "search_engine",
