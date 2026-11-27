@@ -29,7 +29,8 @@ def direct_allowed(media: object, container: str, model: object) -> tuple[bool, 
             hdr=str(getattr(media, "color_transfer", "") or "").lower() in HDR_TRANSFERS,
             audio_only=bool(getattr(media, "audio_only", False)))
         plan = plan_session(caps, facts, Request())
-        if plan.mode == "transcode" and not plan.conservative:
+        strips_video = plan.video == "none" and not facts.audio_only
+        if (plan.mode == "transcode" or strips_video) and not plan.conservative:
             return False, f"{label}: {plan.notes[0] if plan.notes else 'needs conversion'}"
         return True, ""
     except Exception:  # noqa: BLE001 - a gate bug must never block casting

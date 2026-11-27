@@ -42,7 +42,8 @@ def test_plain_chromecast_never_plays_hevc_directly_but_ultra_does():
 
 def test_speakers_cannot_take_video_but_play_audio_directly():
     _, speaker = rp.profile_for_cast_model("Nest Mini")
-    assert plan_session(speaker, H264).mode == "transcode"
+    video_plan = plan_session(speaker, H264)
+    assert video_plan.mode != "direct" and video_plan.video == "none"
     music = MediaFacts("mp3", "", "mp3", 0, audio_only=True)
     assert plan_session(speaker, music).mode == "direct"
 
