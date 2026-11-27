@@ -104,3 +104,46 @@ class EventSource{
         capture_output=True, text=True, timeout=12, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="requires Node.js")
+def test_network_profiles_are_visible_only_singleflight_and_session_fenced():
+    script = panel_html().split("<script>", 1)[1].split("</script>", 1)[0]
+    methods = script[script.index("  function profilesVisible(){"):script.index("  setInterval(profiles,10000);")]
+    harness = r"""
+const assert=require("node:assert/strict");
+let csrf="one",blade="homePanel",started=true;
+const document={hidden:false},panel={hidden:false};
+const dash={hidden:false,getAttribute:()=>blade};
+let profileRequest=null,profileSession=null,profileSignature=null,profileVisible=false;
+const list={children:[],replaceChildren(){this.children=[]}};
+let paints=0;
+const img={hidden:true,set src(v){paints++;this.url=v},removeAttribute(){delete this.url}};
+const $=id=>id==="meshProfiles"?list:img;
+document.getElementById=$;
+const pending=[];
+const fetch=(url,opt)=>new Promise(resolve=>pending.push({resolve,signal:opt.signal}));
+const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve()};
+const response=()=>({ok:true,json:async()=>({nodes:[]})});
+"""
+    scenario = r"""(async()=>{
+  syncProfiles();await profiles();assert.equal(pending.length,0);
+  blade="meshPanel";syncProfiles();syncProfiles();await profiles();
+  assert.equal(pending.length,1);
+  pending[0].resolve(response());await flush();assert.equal(paints,1);
+  const again=profiles();pending[1].resolve(response());await again;assert.equal(paints,1);
+  const stale=profiles();blade="homePanel";syncProfiles();
+  assert.equal(pending[2].signal.aborted,true);
+  pending[2].resolve(response());await stale;assert.equal(paints,1);
+  blade="meshPanel";syncProfiles();const old=pending[3];
+  csrf="two";syncProfiles();assert.equal(old.signal.aborted,true);
+  assert.equal(img.hidden,true);
+  old.resolve(response());await flush();assert.equal(paints,1);
+  pending[4].resolve(response());await flush();assert.equal(paints,2);
+  dash.hidden=true;syncProfiles();assert.equal(img.hidden,true);
+  assert.equal(list.children.length,0);
+})().catch(err=>{console.error(err);process.exitCode=1});
+"""
+    result = subprocess.run(["node", "-"], input=harness + methods + scenario,
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
