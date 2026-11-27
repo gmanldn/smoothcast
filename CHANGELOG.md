@@ -8,13 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 412d9ae974a99c025d1e45acfcf91502fe500277 -->
+<!-- sc-changelog-through: ef3fc30e58050b9b5172a34b1bfde4a6ccf48dff -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:29:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:33:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:33:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ef3fc30e5805`](https://github.com/gmanldn/smoothcast/commit/ef3fc30e58050b9b5172a34b1bfde4a6ccf48dff)
+
+- 🟥 **06:33:52 · Fix** — fix(errors): ffmpeg\_compat no longer silently swallows an unreadable binary stat (Refs #694) · [`e29b56a56ca0`](https://github.com/gmanldn/smoothcast/commit/e29b56a56ca01456e4abfddc327d65f4dced8588)
+
+- 🟩 **06:33:23 · Feature** — feat(portal): pure seek/skip control lease with scope binding and host takeover (Refs #331) · [`e305b400754a`](https://github.com/gmanldn/smoothcast/commit/e305b400754aab96f7def6b85967c909bc7f3c82)
+
+- 🟩 **06:30:11 · Feature** — feat(volume): pure per-receiver guest ceiling, step clamp and rate limiter (Refs #330) · [`05157474dcf7`](https://github.com/gmanldn/smoothcast/commit/05157474dcf78aec2c47601e0cb73f5b64e28972)
 
 - ⬜ **06:29:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`412d9ae974a9`](https://github.com/gmanldn/smoothcast/commit/412d9ae974a99c025d1e45acfcf91502fe500277)
+
+- ⬜ **06:29:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4a9618133b3f`](https://github.com/gmanldn/smoothcast/commit/4a9618133b3f8a7b568aa846434e03988d97d3c3)
 
 - 🟨 **06:29:21 · Documentation** — docs(setup): document sc.py --fresh and stale-instance reclaim (Refs #325) · [`4ac39ee0321d`](https://github.com/gmanldn/smoothcast/commit/4ac39ee0321d83f50554eeb617a98ffadb5953aa)
 
