@@ -43,6 +43,7 @@ import room_event_replay
 import portal_screen_page
 import portal_media
 import portal_mesh_http
+import portal_update_http
 import portal_mesh_panel
 import portal_screens_http
 import portal_uploads
@@ -224,6 +225,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._sessions: OrderedDict[str, _Session] = OrderedDict()
         self.queue_ids: set[str] = set()
         portal_screens_http.attach(self)
+        self.update_runner = None   # UpdateRunner, attached by the app (#711)
+        self.update_allow_remote = False
         self.mesh_feed = None       # set by the app when the mesh runs (#402/#405)
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
@@ -1068,6 +1071,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
+        if portal_update_http.route(self, "GET", path):
+            return
         if portal_mesh_http.route(self, "GET", path):
             return
         if path == "/api/libraries" or path.startswith("/api/libraries/"):
@@ -1139,6 +1144,8 @@ class _Handler(BaseHTTPRequestHandler):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
                 return
+        if portal_update_http.route(self, "POST", path):
+            return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads/target":
@@ -1746,6 +1753,7 @@ _NODES_HTML = r"""<!doctype html>
 <style>/*TOKENS*/
 :root{font:16px ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+.update-btn{margin-left:auto;min-height:44px;padding:0 16px;border-radius:999px;border:2px solid var(--accent);background:var(--bg);color:var(--accent);font-weight:750;cursor:pointer}.update-btn:disabled{opacity:.7;cursor:progress}
 .app-bar{position:sticky;top:0;display:flex;align-items:center;gap:12px;height:64px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
 .home-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none}
 .home-btn svg{width:22px;height:22px;fill:currentColor}
@@ -2086,7 +2094,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #castEntry{padding:0;margin-top:0;background:transparent;border:0}
 body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePanel"])) #roomInvite{display:none}
 @media(min-width:720px){#homePanel .home-actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
-</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
+</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><button type="button" class="update-btn" id="updateBtn" hidden></button><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
@@ -2996,7 +3004,7 @@ async function refresh(){
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
 let lastRoom=null,participantRenderKey=null;
-function renderRoom(room){lastRoom=room;renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+function renderRoom(room){lastRoom=room;if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
 if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
@@ -4317,6 +4325,34 @@ function syncMediaSession(s){
   img.addEventListener("load",()=>{img.hidden=false;fallback.hidden=true});
   img.addEventListener("error",()=>{img.hidden=true;img.removeAttribute("src");fallback.hidden=false});
   img.src="/join-qr.png";
+})();
+
+(function(){
+  const btn=document.getElementById("updateBtn");if(!btn)return;
+  let busy=false;
+  function show(d){
+    if(!d||!d.ok){btn.hidden=true;return}
+    btn.title=d.message||"";
+    if(d.state==="available"&&d.can_start){btn.hidden=false;btn.disabled=busy;btn.textContent="Update and restart"}
+    else if(d.state==="updating"||d.state==="restarting"){btn.hidden=false;btn.disabled=true;btn.textContent=d.state==="updating"?"Updating…":"Restarting…"}
+    else btn.hidden=true;
+  }
+  async function load(){
+    if(document.hidden||typeof csrf==="undefined"||!csrf)return;
+    try{const r=await fetch("/api/update",{credentials:"same-origin",cache:"no-store"});show(r.ok?await r.json():null)}catch(_){}
+  }
+  btn.addEventListener("click",async()=>{
+    busy=true;btn.disabled=true;
+    try{
+      let d=await post("/api/update",{});
+      if(d.needs_confirmation){if(!confirm(d.message+" Update anyway?")){busy=false;return load()}d=await post("/api/update",{confirmed:true})}
+      btn.textContent="Restarting…";
+      showError("errorDash",d.message||"Restarting SmoothCast…");
+      setTimeout(()=>location.reload(),15000);
+    }catch(e){showError("errorDash",e.message);busy=false;load()}
+  });
+  let last=0;
+  window.updateTick=function(){const n=Date.now();if(n-last<60000)return;last=n;load()};
 })();
 </script></body></html>"""
 _HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())
