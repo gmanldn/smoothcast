@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 45e9c8f0178d75b952ecc355b4108076017f21fb -->
+<!-- sc-changelog-through: d466985106c2f20757847cd759819b7889712287 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:06:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:09:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:09:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d466985106c2`](https://github.com/gmanldn/smoothcast/commit/d466985106c2f20757847cd759819b7889712287)
+
+- 🟦 **17:09:39 · Refactor** — refactor(errors): justify boundary catches in sc\_core and cast\_mesh (Refs #694) · [`bfe21937f4ee`](https://github.com/gmanldn/smoothcast/commit/bfe21937f4ee24287c7ac1414cccb831a7918388)
+
+- 🟦 **17:07:38 · Refactor** — refactor(runtime): replica\_manager loop runs under task\_runtime.spawn\_daemon; Scope.wait wakes on cancel; raw-thread allowance lowered (Refs #696) · [`1070bda004fe`](https://github.com/gmanldn/smoothcast/commit/1070bda004fe69caeea826e8e47408a1f5540a1e)
 
 - ⬜ **17:06:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`45e9c8f0178d`](https://github.com/gmanldn/smoothcast/commit/45e9c8f0178d75b952ecc355b4108076017f21fb)
+
+- ⬜ **17:06:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`04cd4cc9cda8`](https://github.com/gmanldn/smoothcast/commit/04cd4cc9cda82512300e58f182d067e34830e57b)
 
 - 🟦 **17:06:09 · Refactor** — refactor(errors): justify boundary catches in desktop\_failure\_notice and peer\_discovery (Refs #694) · [`aef743601af5`](https://github.com/gmanldn/smoothcast/commit/aef743601af586be02ae29cb8aea137743f75e65)
 
