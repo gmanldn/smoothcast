@@ -302,6 +302,7 @@ class CattBackend:
         self._advertisements: tuple[Device, ...] = ()
         self._last_refresh: dict[str, float] = {}
         self._mirror = _StatusMirror()
+        self._mirror_routes: dict[str, str] = {}
 
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
@@ -350,7 +351,18 @@ class CattBackend:
         # The whole call, retry included, stays within the caller's budget:
         # pollers such as the 40 s cast confirmation depend on it.
         deadline = time.monotonic() + timeout
-        result = _catt_info(device, timeout)
+        # Once a direct connection proved itself for this receiver, answer from
+        # it: its pushed status is current and costs no helper start-up.
+        host = self._mirror_routes.get(device)
+        if host is not None:
+            if self._mirror.connected(host):
+                status = self._mirror.info(host, min(timeout, 2.0))
+                if status:
+                    _info_failures.pop(device, None)
+                    return status
+            self._mirror_routes.pop(device, None)
+            self._mirror.forget(host)
+        result = _catt_info(device, max(0.5, deadline - time.monotonic()))
         if result is not None or not device.strip():
             return result
         # catt's own name lookup can fail where a verified address works.
@@ -386,6 +398,7 @@ class CattBackend:
         status = self._mirror.info(host, remaining)
         if status:
             _info_failures.pop(device, None)
+            self._mirror_routes[device] = host
         return status
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
@@ -399,6 +412,7 @@ class CattBackend:
 
     def close(self) -> None:
         self._advertisements = ()
+        self._mirror_routes.clear()
         self._mirror.close()
 
 
@@ -475,6 +489,19 @@ class _StatusMirror:
             self._drop(host)
             _info_failed(host, f"direct status connection failed: {type(exc).__name__}")
             return None
+
+    def connected(self, host: str) -> bool:
+        """True only while the kept socket is live; stale caches never answer."""
+        with self._lock:
+            chromecast = self._casts.get(host)
+        try:
+            client = getattr(chromecast, "socket_client", None)
+            return bool(client is not None and client.is_connected)
+        except Exception:
+            return False
+
+    def forget(self, host: str) -> None:
+        self._drop(host)
 
     def _drop(self, host: str) -> None:
         with self._lock:

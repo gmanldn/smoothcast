@@ -97,3 +97,46 @@ def test_mirror_never_used_without_a_verified_private_address(monkeypatch):
     monkeypatch.setattr(castctl, "_catt_info", lambda d, timeout=8: None)
     monkeypatch.setattr(backend, "refreshed_route", lambda name: name)
     assert backend.info("TV") is None
+
+
+class LiveMirror(NoMirror):
+    def __init__(self, live=True):
+        self.live = live
+        self.forgotten = []
+
+    def connected(self, host):
+        return self.live
+
+    def info(self, host, timeout):
+        return OK if self.live else None
+
+    def forget(self, host):
+        self.forgotten.append(host)
+
+
+def test_proven_direct_connection_answers_before_spawning_catt(monkeypatch):
+    backend = _backend(monkeypatch)
+    backend._mirror = LiveMirror()
+    backend._mirror_routes["TV"] = "192.168.1.20"
+    monkeypatch.setattr(castctl, "_catt_info",
+                        lambda d, timeout=8: (_ for _ in ()).throw(AssertionError("no catt")))
+    assert backend.info("TV") == OK
+
+
+def test_dropped_direct_connection_falls_back_to_catt_and_is_forgotten(monkeypatch):
+    backend = _backend(monkeypatch)
+    mirror = backend._mirror = LiveMirror(live=False)
+    backend._mirror_routes["TV"] = "192.168.1.20"
+    monkeypatch.setattr(castctl, "_catt_info", lambda d, timeout=8: OK)
+    assert backend.info("TV") == OK
+    assert "TV" not in backend._mirror_routes
+    assert mirror.forgotten == ["192.168.1.20"]
+
+
+def test_successful_fallback_remembers_the_direct_route(monkeypatch):
+    backend = _backend(monkeypatch)
+    backend._mirror = LiveMirror()
+    monkeypatch.setattr(castctl, "_catt_info", lambda d, timeout=8: None)
+    monkeypatch.setattr(backend, "refreshed_route", lambda name: "192.168.1.20")
+    assert backend.info("TV") == OK
+    assert backend._mirror_routes == {"TV": "192.168.1.20"}
