@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b8f1432c083f1ef6cc28cb6a41010078e8cd41e7 -->
+<!-- sc-changelog-through: 3160ac3dc39a4f0a0937a6b3e65e0b8316a70785 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:34:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:35:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:35:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3160ac3dc39a`](https://github.com/gmanldn/smoothcast/commit/3160ac3dc39a4f0a0937a6b3e65e0b8316a70785)
+
+- 🟪 **07:34:59 · Tests** — test(arch): core purity ratchet for 15 pure modules (Refs #690) · [`b5b503fedf15`](https://github.com/gmanldn/smoothcast/commit/b5b503fedf1566c70f0e227c324284e7be16ff8e)
+
+- 🟩 **07:34:51 · Feature** — feat(audio): pure night-mode filter chain, ordering, restart plan and per-room levels (Refs #390) · [`d614f6ebab77`](https://github.com/gmanldn/smoothcast/commit/d614f6ebab7710cef7ff60fb93c6784627eaa954)
 
 - ⬜ **07:34:17 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b8f1432c083f`](https://github.com/gmanldn/smoothcast/commit/b8f1432c083f1ef6cc28cb6a41010078e8cd41e7)
+
+- ⬜ **07:34:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`05289cb3be04`](https://github.com/gmanldn/smoothcast/commit/05289cb3be04ce50f4f27e4c0111d0891a7ec1d1)
 
 - 🟥 **07:34:11 · Fix** — fix(arch): add src/settings.py that update\_facts imports; it was left untracked by the previous ship (Refs #693) · [`93f6b2d30611`](https://github.com/gmanldn/smoothcast/commit/93f6b2d30611fa0c9afab4551e47dac3058576c9)
 
