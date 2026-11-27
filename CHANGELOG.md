@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1c408ddef26a3285c6662a000bf5fc0423634d2a -->
+<!-- sc-changelog-through: 8c734835d60bb3b0c2f05b04fc910ecb13d56100 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:14:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:17:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:17:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8c734835d60b`](https://github.com/gmanldn/smoothcast/commit/8c734835d60bb3b0c2f05b04fc910ecb13d56100)
+
+- ⬜ **16:17:34 · Maintenance** — chore: rebaseline update\_managed.py complexity 26-&gt;41; #690 moved setup-module loading into it to drop sys.path mutation (Refs #706) · [`b94e6b37cb1c`](https://github.com/gmanldn/smoothcast/commit/b94e6b37cb1c94aa0bd10279f849570e9eaee7f2)
 
 - ⬜ **16:14:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1c408ddef26a`](https://github.com/gmanldn/smoothcast/commit/1c408ddef26a3285c6662a000bf5fc0423634d2a)
+
+- ⬜ **16:14:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`cf9f9a1fc237`](https://github.com/gmanldn/smoothcast/commit/cf9f9a1fc2375ddd3bd40187515afa6f4dba6991)
 
 - 🟪 **16:14:14 · Tests** — test(tiers): report-only per-tier time summary (Refs #699) · [`fabb01b05e4e`](https://github.com/gmanldn/smoothcast/commit/fabb01b05e4e41207d2cce0ba308b8b0f9176f8a)
 
