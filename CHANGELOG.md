@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8205924d5d0e2cdedfc6a8f8591f9a5452ec4d2a -->
+<!-- sc-changelog-through: a079fc05688fd70c2d5d028861e4ddd88ea49477 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:27:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:28:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:28:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a079fc05688f`](https://github.com/gmanldn/smoothcast/commit/a079fc05688fd70c2d5d028861e4ddd88ea49477)
+
+- 🟪 **07:28:20 · Tests** — test(arch): quarantine a11y inventory red with owner; name owner for design-token red (Refs #700) · [`54bb90508b68`](https://github.com/gmanldn/smoothcast/commit/54bb90508b6829f9dd36297c51bf67bea2c959e1)
 
 - ⬜ **07:27:54 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8205924d5d0e`](https://github.com/gmanldn/smoothcast/commit/8205924d5d0e2cdedfc6a8f8591f9a5452ec4d2a)
+
+- ⬜ **07:27:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8a6e81f13ab4`](https://github.com/gmanldn/smoothcast/commit/8a6e81f13ab4a37823b9ccb0b9f340f2fa7d9d72)
 
 - 🟦 **07:27:41 · Refactor** — refactor(paths): receiver memory locates its state through paths (Refs #701) (Refs #325) · [`809e2e41aded`](https://github.com/gmanldn/smoothcast/commit/809e2e41aded889beb1b5e609be35fe642a0352f)
 
