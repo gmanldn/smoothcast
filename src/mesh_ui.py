@@ -57,22 +57,30 @@ class _Section:
         return item, {"dot": dot, "title": title, "state": state, "sub": sub, "why": why}
 
     def update(self, rows: tuple[vm.Row, ...]) -> None:
-        wanted = {r.key for r in rows}
-        for key in [k for k in self.rows if k not in wanted]:
-            self.list.remove(self.rows.pop(key)[0])
-        for row in rows:
-            if row.key not in self.rows:
-                self.rows[row.key] = self._make(row)
-            item, labels = self.rows[row.key]
-            self._fill(item, labels, row)
-        order = [r.key for r in rows]
-        if order != self.order:
-            for position, key in enumerate(order):
-                item = self.rows[key][0]
-                if item.get_index() != position:
+        # A new Gtk.ListBoxRow has no parent or valid sequence iterator.
+        # Never ask GTK to remove or index an unattached row.
+        by_key = {r.key: r for r in rows}
+        for key in list(self.rows):
+            if key not in by_key:
+                item, _ = self.rows.pop(key)
+                if item.get_parent() is self.list:
                     self.list.remove(item)
-                    self.list.insert(item, position)
-            self.order = order
+        for position, (key, row) in enumerate(by_key.items()):
+            if key not in self.rows:
+                self.rows[key] = self._make(row)
+            item, labels = self.rows[key]
+            parent = item.get_parent()
+            if parent is not None and parent is not self.list:
+                # Do not steal a widget from a different container.
+                item, labels = self.rows[key] = self._make(row)
+                parent = None
+            self._fill(item, labels, row)
+            if parent is None:
+                self.list.insert(item, position)
+            elif item.get_index() != position:
+                self.list.remove(item)
+                self.list.insert(item, position)
+        self.order = list(by_key)
 
     @staticmethod
     def _fill(item: Gtk.ListBoxRow, labels: dict[str, Gtk.Label], row: vm.Row) -> None:
