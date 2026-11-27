@@ -33,6 +33,7 @@ import screenshot
 import picture_adjustments
 
 import subtitle_search
+from video_settings import VideoSettings
 
 from cast_widgets import save_config, Async, fmt_time
 
@@ -384,7 +385,7 @@ class AvMixin:
             return
         mapping = {0: 0, 1: 90, 2: 180, 3: 270}
         value = mapping.get(dropdown.get_selected(), 0)
-        if value != self.cfg.get("rotation"):
+        if value != VideoSettings.from_config(self.cfg).rotation:
             self.cfg["rotation"] = value
             save_config(self.cfg)
             self.toast(f"Video rotation {value}° (restart to apply)")
@@ -475,7 +476,7 @@ class AvMixin:
 
         media = self.media if self.media is not None and str(self.media.path) == path else None
         if media is not None and media.is_audio_only:
-            if self.cfg.get("show_cover_art", True):
+            if VideoSettings.from_config(self.cfg).show_cover_art:
                 Async.run(
                     lambda: screenshot.cover_art(pathlib.Path(path)),
                     done=finish, failed=lambda _error: finish(), domain="media",
@@ -484,7 +485,7 @@ class AvMixin:
                 finish()
             return False
         video_index = media.video_stream_index if media is not None else 0
-        aspect_mode = self.cfg.get("aspect_override", "original")
+        aspect_mode = VideoSettings.from_config(self.cfg).aspect_override
         aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
         # Snapshot settings for asynchronous decodes; do not read a changing GTK config
         # from the worker after a user moves a colour control. Per-film presets win.

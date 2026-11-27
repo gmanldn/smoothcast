@@ -403,6 +403,7 @@ py-modules = [
     "utils",
     "version",
     "video_policy",
+    "video_settings",
     "visual_diff",
     "volume_ceiling",
     "wake_on_lan",
