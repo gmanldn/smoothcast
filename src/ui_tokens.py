@@ -1,16 +1,37 @@
-"""Shared geometry tokens for the GTK app and the web room (#708 slice 1).
+"""Shared visual scales consumed by the GTK app and browser room (#708).
 
-One scale for corner radii; colours live in `design_tokens` (web) and
-libadwaita (GTK). GTK-free. The web page declares ``--r-sm/md/lg`` and the GTK
-stylesheet is snapped to the same scale, so a card has the same corners on both
-surfaces. `tests/test_ui_tokens.py` fails when either surface drifts.
+Semantic colours remain platform-owned: libadwaita on GTK and the accessible,
+user-accent-aware palette in ``design_tokens`` on the web. Geometry and type
+scales are emitted as browser custom properties and concrete GTK CSS values.
 """
 from __future__ import annotations
 
 import re
 
 RADIUS = {"sm": 10, "md": 14, "lg": 22, "pill": 999}
+SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 22}
+TYPE = {"body": "16px", "caption": ".9em", "eyebrow": ".8em", "hero": "1.65rem"}
+FONT_FAMILY = 'ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif'
 _STEPS = sorted(v for k, v in RADIUS.items() if k != "pill")
+
+
+def web_css() -> str:
+    """Return root custom properties for shared geometry and type scales."""
+    values = [*( (f"--sc-radius-{name}", f"{value}px") for name, value in RADIUS.items()),
+              *( (f"--sc-space-{name}", f"{value}px") for name, value in SPACING.items()),
+              *( (f"--sc-type-{name}", value) for name, value in TYPE.items()),
+              ("--sc-font-family", FONT_FAMILY)]
+    return ":root{" + "".join(f"{name}:{value};" for name, value in values) + "}"
+
+
+def apply_gtk(css: bytes) -> bytes:
+    """Apply shared scales to matching GTK component rules."""
+    # Keep the shared hero/card vocabulary identical on GTK and in browser CSS.
+    css = css.replace(b".card {\n    padding: 18px;\n    border-radius: 16px;",
+                      f".card {{\n    padding: {SPACING['xl']}px;\n    border-radius: {RADIUS['md']}px;".encode())
+    css = css.replace(b"font-size: 1.65em;", f"font-size: {TYPE['hero'].replace('rem', 'em')};".encode())
+    css = css.replace(b"font-size: 0.8em;", f"font-size: {TYPE['eyebrow']};".encode())
+    return snap_gtk_radii(css)
 
 
 def snap(px: int) -> int:

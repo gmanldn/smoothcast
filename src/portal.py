@@ -34,6 +34,7 @@ import portal_commands
 import command_trace
 import demo_mode
 import design_tokens
+import ui_tokens
 import error_log
 import failure_boundary
 import peer_discovery
@@ -783,7 +784,7 @@ class _Handler(BaseHTTPRequestHandler):
             f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
             for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
         mine = html.escape(self.server.hostname_label or "This computer")
-        body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
+        body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())
                 .replace("__MINE__", mine).replace("__ROWS__", rows)
                 .replace("__SC_VERSION__", version.identity_label())
                 .replace("<!--SC_DEMO-->", _demo_badge()))
@@ -2071,8 +2072,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 /* Ticket 591 refresh: sticky app bar with a permanent Home control, rounded system
    type, a clear surface hierarchy and Now Playing as the room's focal "screen".
    Colours come only from the tested tokens above. */
-:root{--font:ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
-  --bar-h:64px;--r-lg:22px;--r-md:14px;--r-sm:10px;font-family:var(--font)}
+:root{--font:var(--sc-font-family);--bar-h:64px;--r-lg:var(--sc-radius-lg);--r-md:var(--sc-radius-md);--r-sm:var(--sc-radius-sm);font-family:var(--font)}
 body{font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   background:var(--bg);background-image:radial-gradient(120% 60% at 50% -10%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 60%);background-attachment:fixed}
 h1,h2,h3{color:var(--text);letter-spacing:-.018em;font-weight:720}
@@ -2213,7 +2213,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 #playback{padding:22px;background-image:linear-gradient(160deg,color-mix(in srgb,var(--accent) 10%,transparent),transparent 48%)}
 #playback #playbackHeading{color:var(--accent);font-size:.8rem;font-weight:800;letter-spacing:1px;text-transform:uppercase}
 #playback #state{font-size:.85rem;font-weight:700;border-radius:99px;padding:4px 10px;background:color-mix(in srgb,currentColor 9%,transparent)}
-#playback #title.big{font-size:1.65rem;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
+#playback #title.big{font-size:var(--sc-type-hero);font-weight:800;line-height:1.2;overflow-wrap:anywhere}
 #playback #receiver,#playback #nowDetails{font-size:.95rem}
 .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px}
 .glance-tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md,12px);padding:12px 14px;min-width:0}
@@ -4586,4 +4586,4 @@ function syncMediaSession(s){
   window.updateTick=function(){const n=Date.now();if(n-last<60000)return;last=n;load()};
 })();
 </script></body></html>"""
-_HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())
+_HTML = _HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())

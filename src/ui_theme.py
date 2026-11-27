@@ -156,4 +156,4 @@ row.queue-row.current .queue-title { color: @accent_color; }
 .compact button.transport-step, .compact button.pill { min-height: 44px; padding: 5px 5px; }
 .compact button.transport-step { min-width: 40px; }
 """.encode("utf-8")
-CSS = ui_tokens.snap_gtk_radii(CSS)
+CSS = ui_tokens.apply_gtk(CSS)
