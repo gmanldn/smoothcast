@@ -11,6 +11,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 
 import frozen_runtime
 from dataclasses import dataclass
@@ -282,6 +283,7 @@ class CattBackend:
 
     def __init__(self) -> None:
         self._advertisements: tuple[Device, ...] = ()
+        self._last_refresh: dict[str, float] = {}
 
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
@@ -314,8 +316,30 @@ class CattBackend:
         # to send a command to the cached IP.
         return name
 
+    def refreshed_route(self, name: str) -> str:
+        """Re-discover (at most every 15 s per receiver), then return a verified route."""
+        now = time.monotonic()
+        if now - self._last_refresh.get(name, -1e9) < 15.0:
+            return name
+        self._last_refresh[name] = now
+        try:
+            self._advertisements = tuple(_passive_cast_scan(3.0))
+        except Exception:
+            return name
+        return self.receiver_route(name)
+
     def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
-        return _catt_info(device, timeout)
+        result = _catt_info(device, timeout)
+        if result is not None or not device.strip():
+            return result
+        # catt's own name lookup can fail where a verified address works.
+        route = self.refreshed_route(device)
+        if route == device:
+            return None
+        retried = _catt_info(route, timeout)
+        if retried is not None:
+            _info_failures.pop(device, None)
+        return retried
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         return _catt_command(device, *args, timeout=timeout)
