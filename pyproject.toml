@@ -302,6 +302,7 @@ py-modules = [
     "preference_choices",
     "preferences_link_ui",
     "preferences_picture_ui",
+    "preferences_room_ui",
     "preferences_tracks_ui",
     "preferences_ui",
     "preferences_update_ui",
