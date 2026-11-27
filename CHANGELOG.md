@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 448889e3e6ed2d10d198950d76aa1400a4464dae -->
+<!-- sc-changelog-through: dbc0511b82e970613bf2c8382e71c0ea7e2c4010 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:51:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:54:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:54:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dbc0511b82e9`](https://github.com/gmanldn/smoothcast/commit/dbc0511b82e970613bf2c8382e71c0ea7e2c4010)
+
+- 🟦 **06:54:26 · Refactor** — refactor(arch): hw encoder failure record persists through the atomic Store (Refs #701) · [`edda32045082`](https://github.com/gmanldn/smoothcast/commit/edda320450829eacb1efd58c008124c3f1df5111)
+
+- 🟩 **06:53:20 · Feature** — feat(setup): pure read-only bootstrap preflight planner for virgin machines (Refs #350) · [`7bd6bade120c`](https://github.com/gmanldn/smoothcast/commit/7bd6bade120c736bbf66c5329e56b7b30758d1fa)
+
+- ⬜ **06:51:49 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ba748bb2ddbc`](https://github.com/gmanldn/smoothcast/commit/ba748bb2ddbc37a8d669f24d9090686bf53934bf)
 
 - ⬜ **06:51:48 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`448889e3e6ed`](https://github.com/gmanldn/smoothcast/commit/448889e3e6ed2d10d198950d76aa1400a4464dae)
 
