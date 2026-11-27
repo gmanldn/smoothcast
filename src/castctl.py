@@ -507,8 +507,8 @@ class _StatusMirror:
                 # A freshly joined app reports its media session shortly after.
                 try:
                     media.update_status()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log_backend_failure(f"media status refresh failed: {exc}")
                 wait_until = min(deadline, time.monotonic() + 1.5)
                 while (time.monotonic() < wait_until
                        and getattr(media.status, "media_session_id", None) is None):
@@ -553,8 +553,8 @@ class _StatusMirror:
         if chromecast is not None:
             try:
                 cast(Any, chromecast).disconnect(timeout=1)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_backend_failure(f"receiver disconnect failed: {exc}")
 
     def close(self) -> None:
         with self._lock:
