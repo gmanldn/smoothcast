@@ -231,6 +231,8 @@ class NetworkPopover:
     @staticmethod
     def describe(p: node_profile.NodeProfile) -> str:
         lines = [f"{p.name} — {p.role} · {p.headline}"]
+        if p.platform:
+            lines.append(f"  Platform: {p.platform}")
         for label, values in (("Address", p.addresses), ("Can", p.capabilities), ("Receivers", p.targets),
                               ("Clients", p.clients), ("Shares", p.sources)):
             if values:

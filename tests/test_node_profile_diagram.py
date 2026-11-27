@@ -162,3 +162,18 @@ def test_profile_shows_uptime_only_when_the_clock_is_given():
     p = node_profile.profile(r, now=10_000 + 7200)
     assert p.uptime == "2 h 0 min" and p.headline.endswith("up 2 h 0 min")
     assert node_profile.as_dict(p)["uptime"] == "2 h 0 min"
+
+
+def test_profile_exposes_reported_platform_and_gtk_description():
+    r = rec(platform="Linux")
+    p = node_profile.profile(r)
+    assert p.platform == "Linux"
+    assert node_profile.as_dict(p)["platform"] == "Linux"
+    import ast
+    from pathlib import Path
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "src/mesh_ui.py").read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "NetworkPopover")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "describe")
+    ns = {"node_profile": node_profile}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), "<mesh describe>", "exec"), ns)
+    assert "Platform: Linux" in ns["describe"](p)

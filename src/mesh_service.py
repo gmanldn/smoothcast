@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 import json
 import os
+import platform
 from pathlib import Path
 import random
 import secrets
@@ -177,6 +178,7 @@ class MeshService:
                             version=cfg.version if _valid_version(cfg.version) else "0.0.0",
                             rev=1, boot_epoch=epoch, mesh_port=http.port,
                             room_port=cfg.room_port,
+                            platform=platform.system() or "Unknown",
                             capabilities=("room", "screens", mesh_acquisition_activity.HINT,
                                           *((mesh_acquisition_bridge.HINT,)
                                             if cfg.acquisition_worker is not None

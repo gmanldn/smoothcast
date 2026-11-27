@@ -32,6 +32,7 @@ class NodeProfile:
     name: str
     role: str                 # This device | Primary | Node | Leaving
     version: str
+    platform: str
     capabilities: tuple[str, ...]
     addresses: tuple[str, ...]
     ports: str
@@ -97,7 +98,7 @@ def profile(record, *, local_id: str | None = None, primary_id: str | None = Non
     uptime = uptime_text(record.boot_epoch, now)
     if uptime:
         headline += f" · up {uptime}"
-    return NodeProfile(record.node_id, record.name, role, record.version, caps,
+    return NodeProfile(record.node_id, record.name, role, record.version, record.platform, caps,
                        tuple(record.addresses), ports, targets, clients, sources, links, headline, uptime)
 
 
