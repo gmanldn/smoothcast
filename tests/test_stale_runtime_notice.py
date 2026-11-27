@@ -17,10 +17,10 @@ import version
 
 
 def handler():
-    source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "cast_app_lifecycle.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     owner = next(node for node in tree.body
-                 if isinstance(node, ast.ClassDef) and node.name == "CastControlApp")
+                 if isinstance(node, ast.ClassDef) and node.name == "AppLifecycleMixin")
     method = next(node for node in owner.body
                   if isinstance(node, ast.FunctionDef)
                   and node.name == "_show_stale_runtime_notice")
@@ -29,7 +29,7 @@ def handler():
     namespace = {
         "version": version,
         "pathlib": __import__("pathlib"),
-        "__file__": str(ROOT / "src" / "cast_control.py"),
+        "__file__": str(ROOT / "src" / "cast_app_lifecycle.py"),
     }
     exec(compile(module, "<isolated desktop handler>", "exec"), namespace)
     return namespace["_show_stale_runtime_notice"]
@@ -70,9 +70,9 @@ def test_new_version_is_distinguished_from_same_version_revision():
                            return_value="b" * 40):
         handler()(app, window)
     assert len(messages) == 1
-    assert "Installed SmoothCast v9.9.9" in messages[0][0]
+    assert "Available local SmoothCast v9.9.9" in messages[0][0]
     assert f"running v{version.__version__}" in messages[0][0]
-    assert "installed" in window.update_notice.lower()
+    assert "quit and reopen" in window.update_notice.lower()
 
 
 def test_no_stale_notice_for_same_release_or_closing_window():

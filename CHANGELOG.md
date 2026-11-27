@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c8137ab7cc520cac286f247bdaa50b669af4956a -->
+<!-- sc-changelog-through: e88a2d672692db17ac109e4e4325c5d9562854f1 -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **06:00:00 · Fix** — fix(packaging): bundle and verify GPLv3 project legal notices (Refs #218) <!-- sc-changelog-pending -->
+- 🟦 **06:08:16 · Refactor** — refactor(gui): move runtime version notices into lifecycle mixin (Refs #706) <!-- sc-changelog-pending -->
+
+- 🟥 **06:04:29 · Fix** — fix(packaging): bundle and verify GPLv3 project legal notices (Refs #218) · [`e88a2d672692`](https://github.com/gmanldn/smoothcast/commit/e88a2d672692db17ac109e4e4325c5d9562854f1)
 
 - 🟥 **05:54:50 · Fix** — fix(agents): restore root instruction budget without relaxing policies (Refs #706) · [`c8137ab7cc52`](https://github.com/gmanldn/smoothcast/commit/c8137ab7cc520cac286f247bdaa50b669af4956a)
 
