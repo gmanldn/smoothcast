@@ -409,6 +409,13 @@ def _private_ipv4(value: str) -> str | None:
         return None
 
 
+_CATT_MEDIA_KEYS = (
+    "content_type", "stream_type", "media_metadata", "subtitle_tracks",
+    "current_subtitle_tracks", "supported_media_commands", "playback_rate",
+    "idle_reason", "duration", "media_custom_data",
+)
+
+
 class _StatusMirror:
     """Kept read-only PyChromecast connections, keyed by verified host.
 
@@ -457,6 +464,11 @@ class _StatusMirror:
             for key in ("display_name", "status_text"):
                 value = getattr(cast_status, key, None)
                 if value:
+                    status[key] = value  # type: ignore[literal-required]
+            # Same media keys as `catt info -j`, so every caller sees one shape.
+            for key in _CATT_MEDIA_KEYS:
+                value = getattr(media.status, key, None)
+                if value is not None and key not in status:
                     status[key] = value  # type: ignore[literal-required]
             return status
         except Exception as exc:
