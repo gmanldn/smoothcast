@@ -195,6 +195,7 @@ py-modules = [
     "mesh_ui",
     "mesh_view_model",
     "mesh_visibility",
+    "mini_player",
     "mpris",
     "music_autogain",
     "music_import",
@@ -287,7 +288,6 @@ py-modules = [
     "version",
     "video_policy",
     "watch_history",
-    "zoom_pan",
 ]
 
 [tool.setuptools.package-dir]
