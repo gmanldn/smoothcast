@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bda5e86d4630eb80042c4dccbc889096e9b4254f -->
+<!-- sc-changelog-through: 6a89078cf06f0807a7a420596b507aeea99b6cc0 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:06:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:07:49 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:07:49 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6a89078cf06f`](https://github.com/gmanldn/smoothcast/commit/6a89078cf06f0807a7a420596b507aeea99b6cc0)
+
+- 🟪 **16:07:41 · Tests** — test(store): record presence.py as explicit raw-writer debt (Refs #701) · [`a25d9c44a0aa`](https://github.com/gmanldn/smoothcast/commit/a25d9c44a0aa781e67bff0dd068ead789f4e2e73)
 
 - ⬜ **16:06:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bda5e86d4630`](https://github.com/gmanldn/smoothcast/commit/bda5e86d4630eb80042c4dccbc889096e9b4254f)
 
 - 🟦 **16:06:13 · Refactor** — refactor(store): house\_history and known\_nodes persist via Store (Refs #701) · [`a438a89da58a`](https://github.com/gmanldn/smoothcast/commit/a438a89da58aad5fd80d62e6ce93631a8fe16c36)
+
+- ⬜ **16:06:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0afe32a4b965`](https://github.com/gmanldn/smoothcast/commit/0afe32a4b9657800e0c57b734a3e161553ea227e)
 
 - ⬜ **16:04:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b95d0a279bc6`](https://github.com/gmanldn/smoothcast/commit/b95d0a279bc6905ecaa218e1558ba59d383ada8e)
 
