@@ -34,6 +34,7 @@ def payload(size: int, seed: int) -> bytes:
 
 class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
+        time.sleep(self.server.rtt_ms / 1000)
         self.server.received = self.rfile.read(int(self.headers["Content-Length"]))
         self.send_response(204)
         self.end_headers()
@@ -47,26 +48,33 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(206)
         else:
             self.send_response(200)
+        time.sleep(self.server.rtt_ms / 1000)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         for offset in range(0, len(body), CHUNK):
-            self.wfile.write(body[offset:offset + CHUNK])
+            piece = body[offset:offset + CHUNK]
+            self.wfile.write(piece)
+            self.wfile.flush()
+            if self.server.bandwidth_mbps:
+                time.sleep(len(piece) * 8 / (self.server.bandwidth_mbps * 1_000_000))
 
     def log_message(self, *_args):
         pass
 
 
-def server():
+def server(rtt_ms: float, bandwidth_mbps: float):
     instance = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     instance.received = b""
+    instance.rtt_ms = rtt_ms
+    instance.bandwidth_mbps = bandwidth_mbps
     thread = Thread(target=instance.serve_forever, daemon=True)
     thread.start()
     return instance, thread, f"http://127.0.0.1:{instance.server_port}"
 
 
-def run_scenario(name: str, data: bytes, clients: int) -> dict:
-    origin, origin_thread, origin_url = server()
-    destination, dest_thread, dest_url = server()
+def run_scenario(name: str, data: bytes, clients: int, rtt_ms: float, bandwidth_mbps: float) -> dict:
+    origin, origin_thread, origin_url = server(rtt_ms, bandwidth_mbps)
+    destination, dest_thread, dest_url = server(rtt_ms, bandwidth_mbps)
     latencies, delivered = [], []
     started = time.perf_counter()
     first_byte = None
@@ -148,22 +156,34 @@ def main() -> int:
     parser.add_argument("--scenario", choices=(*SCENARIOS, "all"), default="all")
     parser.add_argument("--clients", type=int, default=4)
     parser.add_argument("--seed", type=int, default=573)
+    parser.add_argument("--rtt-ms", type=float, choices=(0, .1, 1, 10, 100), default=0)
+    parser.add_argument("--bandwidth-mbps", type=float, default=0, help="0 means unshaped")
+    parser.add_argument("--baseline", type=Path, help="compare against prior JSON report")
+    parser.add_argument("--tolerance", type=float, default=.25)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if not 1 <= args.clients <= 64:
         parser.error("--clients must be in 1..64")
+    if args.bandwidth_mbps < 0 or not 0 <= args.tolerance < 1:
+        parser.error("bandwidth must be nonnegative and tolerance in [0, 1)")
     sizes = SIZES if args.size == "all" else {args.size: SIZES[args.size]}
     scenarios = SCENARIOS if args.scenario == "all" else (args.scenario,)
-    runs = [run_scenario(scenario, payload(size, args.seed), args.clients)
+    runs = [run_scenario(scenario, payload(size, args.seed), args.clients, args.rtt_ms, args.bandwidth_mbps)
             for size in sizes.values() for scenario in scenarios]
     report = {"schema": 1, "machine": platform.platform(), "python": platform.python_version(),
               "seed": args.seed, "size_bytes": sizes, "runs": runs}
+    if args.baseline:
+        baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+        prior = {run["scenario"]: run["summary"] for run in baseline.get("runs", [])}
+        for run in runs:
+            old = prior.get(run["scenario"])
+            run["baseline_regressions"] = transfer_metrics.compare(old, run["summary"], args.tolerance) if old else []
     output = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(output, encoding="utf-8")
     else:
         print(output, end="")
-    return int(any(run["invariants"] for run in runs))
+    return int(any(run["invariants"] or run.get("baseline_regressions") for run in runs))
 
 
 if __name__ == "__main__":
