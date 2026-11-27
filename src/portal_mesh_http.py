@@ -68,7 +68,7 @@ def _heartbeat(server) -> dict | None:
         return None
     try:
         beat = provider()
-    except Exception:
+    except Exception:  # noqa: BLE001 - no heartbeat provider result means no data
         return None
     return beat if isinstance(beat, dict) else None
 

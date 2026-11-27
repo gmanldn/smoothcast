@@ -75,7 +75,7 @@ class UpdateButton:
             def answered(dlg, res) -> None:
                 try:
                     choice = dlg.choose_finish(res)
-                except Exception:
+                except Exception:  # noqa: BLE001 - a dismissed or failed dialog counts as the default choice
                     choice = 0
                 if choice == 1:
                     self._apply(runner, True)

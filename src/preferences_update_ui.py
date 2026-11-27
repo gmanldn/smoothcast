@@ -49,5 +49,5 @@ class UpdatePreferencesMixin:
             self.update_status_row.set_title(status.running_line)
             self.update_status_row.set_subtitle(
                 f"{status.headline}. {status.detail} {status.channel_line}.")
-        except Exception:
+        except Exception:  # noqa: BLE001 - fall back to a plain subtitle
             self.update_status_row.set_subtitle("Version details are unavailable.")

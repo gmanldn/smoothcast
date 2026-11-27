@@ -67,7 +67,7 @@ class PortalUploadRecoveryMixin:
             accepted.add(upload_id)
         try:
             reason = self._cast_path(pathlib.Path(path), 0)
-        except Exception:
+        except Exception:  # noqa: BLE001 - undo the dedupe bookkeeping then re-raise
             # A failed fallback must never leave a permanently deduped ID.
             casting.pop(upload_id, None)
             if accepted is not None:

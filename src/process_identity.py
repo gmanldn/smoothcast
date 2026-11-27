@@ -84,7 +84,7 @@ def snapshot(pid: int | None) -> Identity | None:
                 or not math.isfinite(started) or started <= 0):
             return None
         return Identity(pid, started, argv, owner)
-    except Exception:  # AccessDenied, NoSuchProcess, zombie, platform API error.
+    except Exception:  # AccessDenied, NoSuchProcess, zombie, platform API error.  # noqa: BLE001 - AccessDenied, NoSuchProcess or a platform error means unknown identity
         return None
 
 
@@ -146,7 +146,7 @@ def signal_verified(
         else:
             process.terminate()
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 - a failed terminate reports False
         return False
 
 

@@ -194,7 +194,7 @@ class ReplicaManager:
             while not scope.wait(interval):
                 try:
                     self.tick()
-                except Exception:
+                except Exception:  # noqa: BLE001 - a failed tick must not end the loop
                     pass
         self._thread = runtime.spawn_daemon("replica-manager", self._scope, run)
 

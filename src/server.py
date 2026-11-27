@@ -254,7 +254,7 @@ def log_event(message: str, *, exc_info: bool = False) -> None:
     """Best-effort: a full disk or bad permissions must never break streaming."""
     try:
         server_log().add(message, exc_info=exc_info)
-    except Exception:
+    except Exception:  # noqa: BLE001 - logging must never raise
         pass
 
 
@@ -567,7 +567,7 @@ def main(argv: list[str] | None = None) -> None:
             threading.Thread(target=_idle_watchdog, args=(servers,),
                              name="hls-idle-watchdog", daemon=True).start()
         servers[-1].serve_forever()
-    except Exception:
+    except Exception:  # noqa: BLE001 - log the unexpected stop
         log_event("server stopped unexpectedly", exc_info=True)
         raise
     finally:

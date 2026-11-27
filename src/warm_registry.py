@@ -39,7 +39,7 @@ class Registry:
         d = self._dir(key)
         try:
             self.handle = self.start(key, d)
-        except Exception:
+        except Exception:  # noqa: BLE001 - clean up and report skipped
             self.rmtree(d)
             self.key = self.handle = None
             self.state = "idle"
@@ -58,7 +58,7 @@ class Registry:
         if self.handle is not None:
             try:
                 self.handle.cancel()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort cancel
                 pass
         if self.dir:
             self.rmtree(self.dir)

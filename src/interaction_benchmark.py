@@ -43,7 +43,7 @@ class InteractionBenchmarkMixin:
             samples = self._collect_interaction_samples()
             interaction_probe.write_samples(target, samples)
             print(f"INTERACTION: samples written to {target}")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a broken benchmark must not wedge the isolated run; reported to stderr
             # A broken benchmark must not wedge the isolated run.
             print(f"INTERACTION FAILED: {exc}", file=sys.stderr)
         finally:

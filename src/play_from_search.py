@@ -62,7 +62,7 @@ class Resolver:
                 continue
             try:
                 status, body = probe(o["id"], item.content_key)
-            except Exception:                            # a probe must never take playback down
+            except Exception:                            # a probe must never take playback down  # noqa: BLE001 - a probe must never take playback down
                 status, body = 599, {}
             if status == 200 and isinstance(body, dict) and body.get("ok"):
                 return {"ok": True, "origin": o["id"], "local": False, "size": body.get("size"), "tried": tried}

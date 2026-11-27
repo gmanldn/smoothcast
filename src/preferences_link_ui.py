@@ -39,7 +39,7 @@ class LinkSetupMixin:
             try:
                 import link_diagnostics
                 link_diagnostics.describe_switches(self.owner, dict(self.owner.cfg), self._switches)
-            except Exception:
+            except Exception:  # noqa: BLE001 - switch descriptions are best-effort
                 pass
             return False
 
