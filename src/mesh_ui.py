@@ -101,7 +101,7 @@ class _Section:
         try:
             item.update_property([Gtk.AccessibleProperty.LABEL],
                                  [f"{row.title}, {row.state_text}" + (f", {row.detail}" if row.detail else "")])
-        except Exception:
+        except Exception:  # noqa: BLE001 - accessibility labels are best-effort
             pass
 
 
@@ -186,7 +186,7 @@ class NetworkPopover:
         try:
             import mesh_service
             saved = mesh_service.load_settings()
-        except Exception:
+        except Exception:  # noqa: BLE001 - settings read failure leaves the panel unsynced
             return
         self._syncing = True
         try:
@@ -224,7 +224,7 @@ class NetworkPopover:
             from gi.repository import Gdk
             svg = mesh_diagram.render(profiles).encode("utf-8")
             self.diagram.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(svg)))
-        except Exception:
+        except Exception:  # noqa: BLE001 - diagram render failure clears the picture
             self.diagram.set_paintable(None)
         self.details.set_text("\n\n".join(self.describe(p) for p in profiles))
 
@@ -296,5 +296,5 @@ def refresh(window: object) -> None:
                               for r in view.nodes)
         popover.show(vm.build_model(view, primary_id=service.roles.primary, cached_peers=cached,
                                     multicast_hint=diag.get("multicast_hint", "")))
-    except Exception:
+    except Exception:  # noqa: BLE001 - popover failure must not break the UI
         return

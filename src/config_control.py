@@ -318,7 +318,7 @@ def _as_current_config(raw: dict | None, defaults: dict) -> dict:
         migrated, _ = migrate(raw)
     except ConfigSchemaError:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a buggy migration is re-raised as ConfigSchemaError
         raise ConfigSchemaError("saved settings cannot be migrated") from exc
     config = sanitise_config(migrated, defaults)
     for name, value in migrated.items():
@@ -394,7 +394,7 @@ def load_file(path: Path, defaults: dict) -> dict:
         return _remember(path, sanitise_config({}, defaults))
     try:
         migrated, original = migrate(raw)
-    except Exception:  # A buggy migration must never cost the user's settings.
+    except Exception:  # A buggy migration must never cost the user's settings.  # noqa: BLE001 - a buggy migration must never cost the user's settings
         with _STATE_LOCK:
             _PROTECTED.add(key)
         return _remember(path, sanitise_config(raw, defaults))
@@ -527,12 +527,12 @@ class DebouncedWriter:
             error = None
             try:
                 ok = self._write(cfg)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - save failure is reported through on_error
                 error = f"Could not save SmoothCast settings: {exc}"
             if not ok and self._on_error is not None:
                 try:
                     self._on_error(error or "Could not save SmoothCast settings")
-                except Exception:
+                except Exception:  # noqa: BLE001 - an error callback must not raise
                     pass
             with self._condition:
                 self._completed_sequence = sequence
