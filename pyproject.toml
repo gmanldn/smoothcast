@@ -317,6 +317,7 @@ py-modules = [
     "server",
     "shortcut_map",
     "shutdown_plan",
+    "skip_segments",
     "sleep_fade",
     "slider_accessibility",
     "slo_gate",
