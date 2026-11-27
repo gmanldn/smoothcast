@@ -318,6 +318,51 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   2. Close other media servers on this computer.
   3. Restart SmoothCast.
 
+<a id="errors-network-vpn-default-route"></a>
+## `network.vpn_default_route`
+
+- Severity: warning; retryable: yes
+- Message: A VPN is carrying your network traffic, so the TV may not be reachable.
+- Try:
+  1. Pause the VPN, or allow local network access in its settings.
+  2. Choose the receiver again from the list.
+
+<a id="errors-network-interface-ambiguous"></a>
+## `network.interface_ambiguous`
+
+- Severity: warning; retryable: yes
+- Message: This computer is on more than one network, and SmoothCast could not tell which one the TV is on.
+- Try:
+  1. Choose the network that your TV uses in Network settings.
+  2. Disconnect networks you are not using, then scan again.
+
+<a id="errors-network-subnet-mismatch"></a>
+## `network.subnet_mismatch`
+
+- Severity: error; retryable: no
+- Message: The TV is on a different network segment than this computer.
+- Try:
+  1. Connect this computer to the same Wi-Fi or VLAN as the TV.
+  2. Ask your router admin to allow local discovery between the two networks.
+
+<a id="errors-network-client-isolation"></a>
+## `network.client_isolation`
+
+- Severity: error; retryable: no
+- Message: The network blocks devices from talking to each other (client isolation).
+- Try:
+  1. Turn off AP or client isolation on your router, or use a different network.
+  2. Join this computer and the TV to the same non-guest network.
+
+<a id="errors-network-discovery-blocked"></a>
+## `network.discovery_blocked`
+
+- Severity: warning; retryable: yes
+- Message: This network does not pass the discovery messages SmoothCast uses to find TVs.
+- Try:
+  1. Add the TV by its address instead.
+  2. Allow multicast (mDNS) on your router or firewall, then scan again.
+
 <a id="errors-internal-unexpected"></a>
 ## `internal.unexpected`
 

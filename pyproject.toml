@@ -221,6 +221,7 @@ py-modules = [
     "network_activity_ui",
     "network_route_ui",
     "network_routes",
+    "network_topology",
     "node_profile",
     "notifications",
     "panel_ui",
