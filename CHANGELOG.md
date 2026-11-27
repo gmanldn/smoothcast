@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 7516b89286ab5cc13805bd4a4108c807f4a7a5ba -->
+<!-- sc-changelog-through: 38270735f2092089f58a34e1100d45923ac07410 -->
 
 ## 2026-11-27 · UTC
 
-- 🟦 **05:24:37 · Performance** — perf(gui): defer network diagram rendering and keep labels readable (Refs #710) <!-- sc-changelog-pending -->
+- 🟨 **05:24:48 · Documentation** — docs(manual): publish expanded SmoothCast product manual and technical reference <!-- sc-changelog-pending -->
+
+- 🟦 **05:24:48 · Performance** — perf(gui): defer network diagram rendering and keep labels readable (Refs #710) · [`38270735f209`](https://github.com/gmanldn/smoothcast/commit/38270735f2092089f58a34e1100d45923ac07410)
 
 - 🟥 **05:23:03 · Fix** — fix(agents): preserve Markdown punctuation in changelog entries (Refs #715) · [`7516b89286ab`](https://github.com/gmanldn/smoothcast/commit/7516b89286ab5cc13805bd4a4108c807f4a7a5ba)
 
