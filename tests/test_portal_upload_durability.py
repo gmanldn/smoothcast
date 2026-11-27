@@ -52,6 +52,35 @@ def test_chunk_checkpoints_by_time(upload):
     assert second["committed"] == 6
 
 
+def test_failed_checkpoint_restores_offsets_and_accepts_original_range(upload, monkeypatch):
+    manager, _ = upload
+    upload_id = manager.create("owner", "film.mkv", 6)["id"]
+    first = manager.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert (first["received"], first["committed"]) == (3, 0)
+
+    real_sync = os.fsync
+    calls = 0
+
+    def fail_second_sync(fd):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError(28, "No space left on device")
+        return real_sync(fd)
+
+    monkeypatch.setattr(portal_uploads, "CHECKPOINT_BYTES", 3)
+    monkeypatch.setattr(os, "fsync", fail_second_sync)
+    with pytest.raises(OSError, match="No space"):
+        manager.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+
+    status = manager.status("owner", upload_id)
+    assert (status["received"], status["committed"]) == (3, 0)
+    assert manager._get("owner", upload_id).partial_path.stat().st_size == 3
+
+    retry = manager.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    assert (retry["received"], retry["committed"]) == (6, 6)
+
+
 def test_finalize_syncs_trailing_bytes(upload, monkeypatch):
     manager, _ = upload
     upload_id = manager.create("owner", "film.mkv", 3)["id"]

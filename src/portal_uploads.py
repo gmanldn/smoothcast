@@ -582,6 +582,9 @@ class UploadManager:
             fd = os.open(upload.partial_path, flags)
             written = 0
             rollback_safe = False
+            previous_received = upload.received
+            previous_committed = upload.committed
+            previous_checkpoint = upload.last_checkpoint
             try:
                 info = os.fstat(fd)
                 if not stat.S_ISREG(info.st_mode) or info.st_size < start:
@@ -605,16 +608,22 @@ class UploadManager:
                             raise OSError("short write while storing upload")
                         view = view[amount:]
                     written += len(block)
-                upload.received += written
+                received = start + written
                 # Coalesced durable checkpoint: fsync when bounded bytes or
                 # time have elapsed since the last durable offset.
                 now = self._clock()
-                if (upload.received - upload.committed >= CHECKPOINT_BYTES
+                if (received - upload.committed >= CHECKPOINT_BYTES
                         or now - upload.last_checkpoint >= CHECKPOINT_SECONDS):
                     os.fsync(fd)
-                    upload.committed = upload.received
+                    upload.committed = received
                     upload.last_checkpoint = now
+                upload.received = received
             except BaseException:
+                # The append is one in-memory transaction too: never report
+                # bytes that rollback removed from the partial file.
+                upload.received = previous_received
+                upload.committed = previous_committed
+                upload.last_checkpoint = previous_checkpoint
                 if rollback_safe:
                     try:
                         # External truncation must not turn lost bytes into zeros.
