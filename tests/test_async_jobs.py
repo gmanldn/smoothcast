@@ -200,8 +200,10 @@ def test_work_domains_are_inherited_by_real_gui_adapter_without_importing_gtk():
     session_source = (root / "src" / "cast_session.py").read_text("utf-8")
     assert "async_jobs.WorkDomains(" in widget_source
     assert "GLib.idle_add, on_error=error_log.log" in widget_source
-    for domain in ("discovery", "status", "media"):
-        assert f'domain="{domain}"' in queue_source
+    assert f'domain="media"' in queue_source
+    discovery_source = (root / "src" / "cast_discovery.py").read_text("utf-8")
+    assert 'domain="discovery"' in discovery_source
+    assert 'domain="status"' in discovery_source
     for domain in ("transport", "status", "media", "cast_start"):
         assert f'domain="{domain}"' in session_source
 

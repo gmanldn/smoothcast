@@ -26,24 +26,24 @@ class CodenameTests(unittest.TestCase):
         self.assertEqual(len(set(commit_identity.WEAPON_NAMES)), 64)
 
     def test_pinned_codenames_detect_algorithm_drift(self):
-        self.assertEqual(commit_identity.codename("0" * 40), "Halberd-Flail")
-        self.assertEqual(commit_identity.codename("a" * 40), "Mace-Tomahawk")
-        self.assertEqual(commit_identity.codename("f" * 40), "Dirk-Talwar")
+        self.assertEqual(commit_identity.codename("0" * 40), "Sharp-Flail")
+        self.assertEqual(commit_identity.codename("a" * 40), "Jolly-Tomahawk")
+        self.assertEqual(commit_identity.codename("f" * 40), "Lethal-Talwar")
         self.assertEqual(
             commit_identity.codename("0123456789abcdef0123456789abcdef01234567"),
-            "Kukri-Stiletto",
+            "Eager-Stiletto",
         )
 
-    def test_codename_is_two_distinct_weapons(self):
-        pool = commit_identity.WEAPON_NAMES
+    def test_codename_is_adjective_and_weapon(self):
+        pool_a = commit_identity.ADJECTIVE_NAMES
+        pool_w = commit_identity.WEAPON_NAMES
         for seed in ("0" * 40, "1" * 40, "a" * 40, "f" * 40,
-                     "0123456789abcdef0123456789abcdef01234567"):
+                      "0123456789abcdef0123456789abcdef01234567"):
             with self.subTest(seed=seed):
                 first, separator, second = commit_identity.codename(seed).partition("-")
                 self.assertEqual(separator, "-")
-                self.assertIn(first, pool)
-                self.assertIn(second, pool)
-                self.assertNotEqual(first, second)
+                self.assertIn(first, pool_a)
+                self.assertIn(second, pool_w)
 
     def test_codename_is_case_insensitive_and_stable(self):
         sha = "abcdef0123456789" + "1" * 24

@@ -37,6 +37,18 @@ WEAPON_NAMES = (
     "Trident", "Warhammer", "Yatagan",
 )
 
+ADJECTIVE_NAMES = (
+    "Gawping", "Rustic", "Naked", "Fissile", "Blazing", "Savage", "Silent",
+    "Howling", "Crimson", "Iron", "Glass", "Shadow", "Frozen", "Burning",
+    "Hollow", "Jagged", "Lethal", "Molten", "Noisy", "Pale", "Quaking",
+    "Roaring", "Sharp", "Tangled", "Vicious", "Wicked", "Ancient", "Broken",
+    "Cursed", "Dusty", "Eager", "Feral", "Grim", "Heavy", "Idle", "Jolly",
+    "Keen", "Lone", "Mad", "Nimble", "Old", "Proud", "Quick", "Ragged",
+    "Stark", "Tired", "Unholy", "Vast", "Wild", "Young", "Zealous", "Bitter",
+    "Calm", "Daring", "Eerie", "Fierce", "Gentle", "Happy", "Icy", "Jumpy",
+    "Kind", "Loud", "Meek", "Nervous",
+)
+
 _SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}(?: [0-9]{4})?\Z")
 _OFFSET = re.compile(rb"[+-]\d{4}\Z")
@@ -57,12 +69,11 @@ def codename(revision: str | None) -> str | None:
     if not revision or not _SHA.fullmatch(revision):
         return None
     digest = hashlib.sha256(revision.lower().encode("ascii")).digest()
-    size = len(WEAPON_NAMES)
-    first = digest[0] % size
-    second = digest[1] % size
-    if second == first:
-        second = (second + 1) % size
-    return f"{WEAPON_NAMES[first]}-{WEAPON_NAMES[second]}"
+    adj_size = len(ADJECTIVE_NAMES)
+    weapon_size = len(WEAPON_NAMES)
+    adjective = ADJECTIVE_NAMES[digest[0] % adj_size]
+    weapon = WEAPON_NAMES[digest[1] % weapon_size]
+    return f"{adjective}-{weapon}"
 
 
 def _valid_date(value: str) -> bool:

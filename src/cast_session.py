@@ -13,49 +13,21 @@ import pathlib
 from async_jobs import UserFacingError
 from cast_ab_repeat_ui import AbRepeatUiMixin
 from utils import pretty_title
-import threading
+import threading, time
 
-import time
-
-import capability_gate
-import cast_recovery
-import castctl
-import command_trace
-
+import capability_gate, cast_recovery, castctl, command_trace
 import dlna
-
-import streamer
-import low_end_policy
-
-import audio_delay
-import subtitle_delay
-import subtitle_style
-
+import streamer, low_end_policy
+import audio_delay, subtitle_delay, subtitle_style
 import subtitle_restart
-
 import playback_state
-
 import watch_history
-
 import progress_model
-
-import direct_probe
-import receiver_memory
-
+import direct_probe, receiver_memory
 import stream_watchdog
-
-import hls_pause_recovery
-import fingerprint
-import hdr_tonemap
-import picture_adjustments
-
-import preflight
-import queue_metadata
-import reliability_metrics
-
-import cast_failure_code
-import gui_link_add
-import url_control
+import hls_pause_recovery, fingerprint, hdr_tonemap, picture_adjustments
+import preflight, queue_metadata, reliability_metrics
+import cast_failure_code, gui_link_add, url_control
 
 from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
 
@@ -86,7 +58,6 @@ class SessionMixin(AbRepeatUiMixin):
         None means the background preparation was submitted, not that the
         receiver is playing. Desktop callers already receive toast feedback.
         """
-        # None resumes; zero rewinds.
         offset = playback_state.start_offset(
             offset, watch_history.saved_position(
                 self.cfg, path, fingerprint.KEYS.get(path)))
@@ -115,6 +86,9 @@ class SessionMixin(AbRepeatUiMixin):
                                "message": "Preparing media and connecting to the room receiver."}
         renderer = self._dlna_renderer(device)
         reliability_metrics.start_attempt(self, "dlna" if renderer is not None else "cast")
+        offset = playback_state.start_offset(
+            offset, watch_history.saved_position(
+                self.cfg, path, fingerprint.KEYS.get(path)))
         cancel = threading.Event()
         self._dlna_cancel = cancel
         if renderer is not None:
@@ -122,7 +96,6 @@ class SessionMixin(AbRepeatUiMixin):
                 "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
             )
             self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
-        # Publish cancellability for Cast as well as DLNA before worker submission.
         self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
             reason = "DLNA receiver is not currently discovered; scan your network again"
@@ -527,7 +500,6 @@ class SessionMixin(AbRepeatUiMixin):
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
         if hls_pause_recovery.resume_from_long_pause(self, session, device, renderer, want_play):
             return
-        # Serialize transport commands.
         self.busy = True
         self._refresh_controls()
 
