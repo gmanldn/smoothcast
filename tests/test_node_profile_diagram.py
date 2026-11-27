@@ -56,3 +56,13 @@ def test_panel_references_diagram_routes():
     import portal_mesh_panel
     html = portal_mesh_panel.panel_html()
     assert "/api/mesh/diagram.svg" in html and "/api/mesh/profiles" in html
+
+
+def test_gtk_popover_describes_every_node_fact():
+    import pytest
+    gi = pytest.importorskip("gi")
+    mesh_ui = pytest.importorskip("mesh_ui")
+    r = rec(addresses=("192.168.1.5",), mesh_port=7001, targets=(mm.TargetObservation("t1", "cast", "TV"),),
+            edges=(mm.EdgeObservation("node", "z" * 32, 1, 7),))
+    text = mesh_ui.NetworkPopover.describe(node_profile.profile(r))
+    assert "192.168.1.5" in text and "TV (cast, ready)" in text and "7 ms" in text and "mesh 7001" in text
