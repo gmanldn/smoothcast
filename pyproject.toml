@@ -289,6 +289,7 @@ py-modules = [
     "portal_screens_http",
     "portal_service",
     "portal_status",
+    "portal_target_picker",
     "portal_update_http",
     "portal_upload_recovery",
     "portal_uploads",
