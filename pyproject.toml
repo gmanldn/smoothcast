@@ -333,6 +333,7 @@ py-modules = [
     "subtitle_restart",
     "subtitle_search",
     "subtitle_style",
+    "sync_session",
     "text_fit",
     "thumb_strip",
     "tone_knobs",
