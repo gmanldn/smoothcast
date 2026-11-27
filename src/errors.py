@@ -226,6 +226,13 @@ class SmoothCastError(Exception):
         return self.spec.steps
 
 
+def coded(exc: BaseException, code: str) -> BaseException:
+    """Tag a legacy exception with its catalogue code (message text unchanged)."""
+    if code in CATALOGUE:
+        exc.code = code  # type: ignore[attr-defined]
+    return exc
+
+
 def describe(exc: object) -> ErrorSpec:
     """Catalogue entry for ``exc``; anything uncatalogued is ``internal.unexpected``."""
     try:

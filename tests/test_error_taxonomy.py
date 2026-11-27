@@ -73,3 +73,25 @@ def test_issue_207_named_failure_classes_are_all_catalogued():
     for prefix in _REQUIRED_PREFIXES:
         assert any(c.startswith(prefix) for c in codes), prefix
     assert len(codes) >= 20
+
+
+def test_coded_tags_legacy_exceptions_and_ignores_unknown_codes():
+    import failure_boundary
+    tagged = errors.coded(RuntimeError("SSDP multicast discovery failed: /home/u/x"), "discovery.failed")
+    failure = failure_boundary.describe(tagged)
+    assert failure.code == "discovery.failed"
+    assert failure.title == errors.CATALOGUE["discovery.failed"].message
+    assert "/home/" not in failure.title
+    assert not hasattr(errors.coded(RuntimeError("x"), "no.such_code"), "code")
+    assert failure_boundary.describe(errors.coded(RuntimeError("x"), "no.such_code")).code == errors.FALLBACK.code
+
+
+def test_discovery_dlna_and_port_sites_raise_coded_errors():
+    root = Path(__file__).resolve().parents[1] / "src"
+    sites = {"dlna.py": ('"discovery.failed"', '"dlna.command_failed"'),
+             "pychromecast_backend.py": ('"discovery.failed"',),
+             "streamer.py": ('"network.port_in_use"',)}
+    for name, needles in sites.items():
+        text = (root / name).read_text(encoding="utf-8")
+        for needle in needles:
+            assert "errors.coded(" in text and needle in text, (name, needle)

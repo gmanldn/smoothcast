@@ -134,7 +134,7 @@ class PyChromecastBackend:
                         timeout=max(1.0, min(timeout, 15.0)),
                     )
                 except Exception as exc:
-                    raise CastError(f"Google Cast discovery failed: {exc}") from exc
+                    raise errors.coded(CastError(f"Google Cast discovery failed: {exc}"), "discovery.failed") from exc
 
             if timeout > 0:
                 deadline = time.monotonic() + timeout

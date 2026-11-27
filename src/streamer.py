@@ -29,6 +29,7 @@ import cache_privacy
 import ffmpeg_compat
 import font_attachments
 import castctl
+import errors
 import frozen_runtime
 import hw_encoder_state
 import hdr_tonemap
@@ -1514,7 +1515,7 @@ class Session:
                     "address and could not be verified for replacement; stop it and retry")
             _terminate_pid(pid, "server")
             if _port_open(port):
-                raise StreamError(f"Port {port} is still in use by the previous streaming server")
+                raise errors.coded(StreamError(f"Port {port} is still in use by the previous streaming server"), "network.port_in_use")
             break
         else:
             # Pass 2: the first port nobody is listening on.
