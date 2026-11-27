@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 95637c71f28917598a2037a611c936de91d57759 -->
+<!-- sc-changelog-through: 4bf9e78213c08c0a8c237a0d324e18132115f0fb -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:46:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:47:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:47:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4bf9e78213c0`](https://github.com/gmanldn/smoothcast/commit/4bf9e78213c08c0a8c237a0d324e18132115f0fb)
+
+- 🟪 **15:47:22 · Tests** — test(arch): ratchet blocks new source-text tests; 106 existing frozen (Refs #699) · [`c0e9b819cc53`](https://github.com/gmanldn/smoothcast/commit/c0e9b819cc530da66668cf36486961710822e8a8)
+
+- 🟩 **15:47:19 · Feature** — feat(transfer): pure browser-to-mesh transfer session contract, API doc and tests (Refs #569) · [`437b440a4d3a`](https://github.com/gmanldn/smoothcast/commit/437b440a4d3a15452e0969bc204b57537cde39ff)
 
 - ⬜ **15:46:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`95637c71f289`](https://github.com/gmanldn/smoothcast/commit/95637c71f28917598a2037a611c936de91d57759)
+
+- ⬜ **15:46:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`aba79c15204a`](https://github.com/gmanldn/smoothcast/commit/aba79c15204aa1ebd968ce4ea3d5a9383803248d)
 
 - 🟦 **15:46:42 · Refactor** — refactor(settings): PortalSettings.house\_pin; portal PIN and guest-screens reads go through the typed settings (Refs #693) (Refs #325) · [`91741cf9104a`](https://github.com/gmanldn/smoothcast/commit/91741cf9104aa880ca8092ec2e2c6878cefbb1ec)
 
