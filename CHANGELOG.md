@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 9eb28b06e0b5c54ba73150ee88904cb0f288a993 -->
+<!-- sc-changelog-through: d247e56053f7e75c0b87affc01f3e40fec99f9bd -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:22:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:26:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:26:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d247e56053f7`](https://github.com/gmanldn/smoothcast/commit/d247e56053f7e75c0b87affc01f3e40fec99f9bd)
+
+- 🟨 **18:25:57 · Documentation** — docs(security): link portal threat model from handbook (Refs #702) · [`abd18926cd5d`](https://github.com/gmanldn/smoothcast/commit/abd18926cd5d60089a0cdc45976fcb7c4508a127)
 
 - ⬜ **18:22:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9eb28b06e0b5`](https://github.com/gmanldn/smoothcast/commit/9eb28b06e0b5c54ba73150ee88904cb0f288a993)
+
+- ⬜ **18:22:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`fa0b90e6105e`](https://github.com/gmanldn/smoothcast/commit/fa0b90e6105e6fb9eac2ed977f7bef91a13d8962)
 
 - 🟪 **18:22:13 · Tests** — test: exercise installed shortcuts behaviorally (Refs #699) · [`9bf3fcc4dbd4`](https://github.com/gmanldn/smoothcast/commit/9bf3fcc4dbd47f44022c608671f12a072f9ab60d)
 
