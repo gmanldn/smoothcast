@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 55762ff9e79d0045330ecfb0120d71a18982b533 -->
+<!-- sc-changelog-through: 2c848fe00e9bd7670db176bc46a5c75db6354543 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:55:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:59:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:59:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2c848fe00e9b`](https://github.com/gmanldn/smoothcast/commit/2c848fe00e9bd7670db176bc46a5c75db6354543)
+
+- 🟪 **17:59:16 · Tests** — test: measure portal quit with overlapping mDNS goodbyes (Refs #705) · [`9dcdf679427a`](https://github.com/gmanldn/smoothcast/commit/9dcdf679427a49dc616583fd39c56b94abcff529)
 
 - ⬜ **17:55:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55762ff9e79d`](https://github.com/gmanldn/smoothcast/commit/55762ff9e79d0045330ecfb0120d71a18982b533)
+
+- ⬜ **17:55:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`800b12e32422`](https://github.com/gmanldn/smoothcast/commit/800b12e324227bee908194743c8643bd7d79d9ca)
 
 - 🟪 **17:55:38 · Tests** — test(agents): verify scope narrowing and changelog shipment recovery (Refs #715) · [`f44aafb27e8a`](https://github.com/gmanldn/smoothcast/commit/f44aafb27e8a1403505592ff37952c3eccb183b5)
 
