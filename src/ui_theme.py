@@ -6,6 +6,8 @@ overrides across the UI widgets.
 """
 from __future__ import annotations
 
+import ui_tokens
+
 
 def is_dark_hour(hour: int) -> bool:
     """True during the scheduled night window (19:00–06:59 local time)."""
@@ -154,3 +156,4 @@ row.queue-row.current .queue-title { color: @accent_color; }
 .compact button.transport-step, .compact button.pill { min-height: 44px; padding: 5px 5px; }
 .compact button.transport-step { min-width: 40px; }
 """.encode("utf-8")
+CSS = ui_tokens.snap_gtk_radii(CSS)
