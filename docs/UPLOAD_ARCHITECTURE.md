@@ -1,7 +1,8 @@
 # Browser upload transfer architecture (#568)
 
 Source of truth: `src/portal_uploads.py` (`UploadManager`). Tests:
-`tests/test_portal_uploads.py` and `tests/test_portal_upload_faults.py`.
+`tests/test_portal_upload_durability.py`, `tests/test_portal_uploads.py`, and
+`tests/test_portal_upload_faults.py`.
 
 ## Contract
 
@@ -19,9 +20,10 @@ Source of truth: `src/portal_uploads.py` (`UploadManager`). Tests:
   checkpoint. Finalization syncs any remaining unsynced bytes. A successful
   final rename is followed by a directory sync on Linux before finalization
   returns. A progressive cast can retain the original path.
-- **Retry and rollback.** A failed or disconnected chunk is truncated back to its
-  starting offset, so the browser can resend it. A lost acknowledged prefix is
-  rejected rather than zero-filled.
+- **Retry and rollback.** Short or disconnected chunks are truncated back to
+  their starting offset for retry. If checkpoint sync fails after a full write,
+  the file rolls back but the reported received offset can stay ahead, blocking
+  that retry. A lost acknowledged prefix is rejected to avoid zero-filled data.
 - **Resume.** While the host process is running, the browser can resume at
   `received`. After a restart, the host has no record of the session, even if
   the partial file and some synced bytes still exist. The browser must start a
