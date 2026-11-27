@@ -48,6 +48,7 @@ class PortalSettings:
     screens: bool = True
     link_youtube: bool = True
     link_magnet: bool = True
+    house_pin: bool = False        # require the printed PIN to join
 
     @classmethod
     def from_config(cls, cfg: dict) -> "PortalSettings":
@@ -55,7 +56,8 @@ class PortalSettings:
                    hls_port=_port(cfg, "hls_port", 8767) or 8767,
                    screens=_flag(cfg, "portal_screens", True),
                    link_youtube=_flag(cfg, "portal_link_youtube", True),
-                   link_magnet=_flag(cfg, "portal_link_magnet", True))
+                   link_magnet=_flag(cfg, "portal_link_magnet", True),
+                   house_pin=_flag(cfg, "house_pin_enabled", False))
 
 
 def _number(cfg: dict, key: str, default: float, lo: float, hi: float) -> float:

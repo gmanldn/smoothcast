@@ -13,6 +13,7 @@ import pathlib
 import stat
 import secrets
 
+import settings
 import portal
 import portal_uploads
 import queue_metadata
@@ -230,7 +231,7 @@ class PortalQueueMixin:
         streamed; the path is returned to the portal process internally and never
         reaches a client. The host can turn guest screens off entirely.
         """
-        if not self.cfg.get("portal_screens", True):
+        if not settings.PortalSettings.from_config(self.cfg).screens:
             raise portal.PortalRequestError(
                 403, "The host has turned off screens for this room")
         index = self._portal_queue_index(payload.get("id"))
