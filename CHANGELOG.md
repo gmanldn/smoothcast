@@ -8,11 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8dfe02001d536ad2f479b8967e4da8c210e5579a -->
+<!-- sc-changelog-through: 2e1e1d1ae6fdc96b56a88b6cdf0785d42eacf66b -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:23:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:27:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:27:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2e1e1d1ae6fd`](https://github.com/gmanldn/smoothcast/commit/2e1e1d1ae6fdc96b56a88b6cdf0785d42eacf66b)
+
+- 🟦 **17:27:03 · Refactor** — refactor(errors): justify 21 boundary catches across nine modules (Refs #694) · [`d95f0b281989`](https://github.com/gmanldn/smoothcast/commit/d95f0b281989862282543002601107b01d28dc4a)
+
+- 🟩 **17:25:46 · Feature** — feat(diagnostics): bundle carries latency percentiles and buckets when a Stats is supplied (Refs #698) · [`dd0c4cefd543`](https://github.com/gmanldn/smoothcast/commit/dd0c4cefd54382c808f4e20cc5241663c9d4c4fb)
+
+- 🟦 **17:24:14 · Refactor** — refactor(runtime): sc\_core loop runs under spawn\_daemon keeping its thread name; allowance removed (Refs #696) · [`4dea2bedca9d`](https://github.com/gmanldn/smoothcast/commit/4dea2bedca9d0c8e4b1d8846b70fa4518e42236e)
+
+- ⬜ **17:23:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7670fadf573b`](https://github.com/gmanldn/smoothcast/commit/7670fadf573b406a4975ac08265cec9ce2be811d)
 
 - ⬜ **17:23:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8dfe02001d53`](https://github.com/gmanldn/smoothcast/commit/8dfe02001d536ad2f479b8967e4da8c210e5579a)
 
