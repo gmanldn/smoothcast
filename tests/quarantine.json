@@ -1,10 +1,4 @@
 {
   "_doc": "Known-red tests (ARCH-12, #700). Entries only shrink; expired entries stop being excused. Fields: owner, ticket, expires (YYYY-MM-DD).",
-  "entries": {
-    "tests/test_design_tokens.py::test_served_page_follows_light_dark_and_contrast_preferences": {
-      "owner": "#352 (portal.py CSS comment '#708' reads as a hard-coded colour)",
-      "ticket": 700,
-      "expires": "2026-12-15"
-    }
-  }
+  "entries": {}
 }

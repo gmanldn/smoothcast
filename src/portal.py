@@ -2148,7 +2148,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #castEntry{padding:0;margin-top:0;background:transparent;border:0}
 body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePanel"])) #roomInvite{display:none}
 @media(min-width:720px){#homePanel .home-actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
-/* GTK parity (#708): the Now Playing card is the same hero card as the desktop app. */
+/* GTK parity (ticket 708): the Now Playing card is the same hero card as the desktop app. */
 #playback{padding:22px;background-image:linear-gradient(160deg,color-mix(in srgb,var(--accent) 10%,transparent),transparent 48%)}
 #playback #playbackHeading{color:var(--accent);font-size:.8rem;font-weight:800;letter-spacing:1px;text-transform:uppercase}
 #playback #state{font-size:.85rem;font-weight:700;border-radius:99px;padding:4px 10px;background:color-mix(in srgb,currentColor 9%,transparent)}
