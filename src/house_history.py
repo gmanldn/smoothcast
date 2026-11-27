@@ -7,8 +7,7 @@ host does not see them here); guests get titles hidden. The host can clear every
 from __future__ import annotations
 
 import json
-import os
-import tempfile
+import store
 import time as _time
 from pathlib import Path
 
@@ -77,15 +76,7 @@ class History:
     def _save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".hh")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"version": 1, "seq": self.seq, "events": self.events}, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        store.Store(self.path).write({"version": 1, "seq": self.seq, "events": self.events})  # atomic, owner-only (#701)
 
 
 def group_by_day_room(events: list[dict], tz_offset_s: int = 0) -> list[dict]:

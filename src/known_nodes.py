@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
+import store
 import re
-import tempfile
 from pathlib import Path
 
 VERSION = 1
@@ -82,12 +81,4 @@ class Known:
     def _save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".kn")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"version": VERSION, "nodes": self.nodes}, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        store.Store(self.path).write({"version": VERSION, "nodes": self.nodes})  # atomic, owner-only (#701)
