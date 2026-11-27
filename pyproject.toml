@@ -138,6 +138,7 @@ py-modules = [
     "frozen_runtime",
     "group_sync",
     "guest_messages",
+    "guest_url",
     "gui_link_add",
     "gui_test_safety",
     "handoff_accuracy",
