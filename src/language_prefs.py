@@ -31,7 +31,6 @@ Policy
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -137,8 +136,8 @@ def prefs_from_config(config: object, series: str | None = None) -> LanguagePref
 
 
 def config_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "cast-control" / "config.json"
+    import paths  # one place decides where config lives (#701)
+    return paths.config_dir() / "config.json"
 
 
 def load(media_path: object = None, path: Path | None = None) -> LanguagePrefs:

@@ -226,8 +226,8 @@ def describe(found: Detection, width: int, height: int) -> str:
 # --- configuration and the cached plan --------------------------------------------------
 
 def config_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "cast-control" / "config.json"
+    import paths  # one place decides where config lives (#701)
+    return paths.config_dir() / "config.json"
 
 
 def load_flags(path: Path | None = None) -> tuple[bool, bool]:
