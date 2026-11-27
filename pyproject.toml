@@ -150,6 +150,7 @@ py-modules = [
     "frozen_entry",
     "frozen_runtime",
     "group_sync",
+    "growing_file",
     "guest_messages",
     "guest_passes",
     "guest_url",
