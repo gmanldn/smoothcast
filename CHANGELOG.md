@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a33b470dbf4cda0394b3af59f63177b19d1e4167 -->
+<!-- sc-changelog-through: f61d57db171842a903977eccefca76bd55179df1 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:53:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:53:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:53:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f61d57db1718`](https://github.com/gmanldn/smoothcast/commit/f61d57db171842a903977eccefca76bd55179df1)
+
+- 🟦 **15:53:49 · Refactor** — refactor(settings): library\_indexer flag in PortalSettings (Refs #693) (Refs #325) · [`39d27a1fa0b0`](https://github.com/gmanldn/smoothcast/commit/39d27a1fa0b07713d6eb5c7aaf42ad899fc68172)
+
+- ⬜ **15:53:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0e5323864942`](https://github.com/gmanldn/smoothcast/commit/0e532386494255dfdd602c5a3fbd36818a19c54a)
 
 - ⬜ **15:53:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a33b470dbf4c`](https://github.com/gmanldn/smoothcast/commit/a33b470dbf4cda0394b3af59f63177b19d1e4167)
 
