@@ -120,6 +120,21 @@ def test_symlink_partial_is_rejected_without_reading_target(tmp_path):
     uploads.close()
 
 
+def test_busy_host_rearms_early_cast_on_the_next_chunk_then_gives_up(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mkv", 80, "192.168.1.5")
+    uid = created["id"]
+    for n in range(portal_uploads.EARLY_CAST_MAX_RETRIES):
+        got = uploads.append("owner", uid, f"bytes {n}-{n}/80", 1, BytesIO(b"x"))
+        assert got["ready_to_cast"] is True
+        uploads.mark_early_cast(uid, accepted=False, transient=True)
+    got = uploads.append("owner", uid, "bytes 6-6/80", 1, BytesIO(b"x"))
+    assert got["ready_to_cast"] is True
+    uploads.mark_early_cast(uid, accepted=False, transient=True)
+    assert uploads.append("owner", uid, "bytes 7-7/80", 1, BytesIO(b"x"))["ready_to_cast"] is False
+    uploads.close()
+
+
 def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tmp_path):
     uploads = manager(tmp_path, early_cast_min_bytes=1)
     created = uploads.create("owner", "film.mkv", 6, "192.168.1.5")

@@ -48,6 +48,9 @@ AUDIO_SUFFIXES = frozenset({
 # buffered. FFmpeg transcodes with ``-readrate``, so on a LAN the transfer
 # stays well ahead of playback and never catches the end of the file.
 EARLY_CAST_MIN_BYTES = 16 * 1024 * 1024
+# A busy or slow host (409/503) retries early casting on later chunks this
+# many times before it falls back to casting the finished file.
+EARLY_CAST_MAX_RETRIES = 6
 _EARLY_CAST_SUFFIXES = frozenset({".mkv", ".ts", ".webm", ".mpeg", ".mpg"})
 _INDEXED_SUFFIXES = frozenset({".mp4", ".m4v", ".mov"})
 _MP4_SCAN_LIMIT = 64 * 1024 * 1024
@@ -202,6 +205,7 @@ class _Upload:
     dispatch_queue_only: bool | None = None
     # "idle" -> "requested" -> "active"/"declined"; early casting state.
     early_cast: str = "idle"
+    early_retries: int = 0
     keep_partial: bool = False
     queue_only: bool = False
     audio_only: bool = False
@@ -534,14 +538,23 @@ class UploadManager:
                 self._announced.pop(key, None)
         return len(rows)
 
-    def mark_early_cast(self, upload_id: str, *, accepted: bool) -> None:
-        """Record whether the GUI accepted an early-cast request for an upload."""
+    def mark_early_cast(self, upload_id: str, *, accepted: bool,
+                        transient: bool = False) -> None:
+        """Record whether the GUI accepted an early-cast request for an upload.
+
+        ``transient`` (host busy or slow) re-arms the request for the next
+        acknowledged chunk, a bounded number of times, instead of declining.
+        """
         with self._lock:
             upload = self._uploads.get(upload_id)
         if upload is None:
             return
         with upload.lock:
-            if upload.early_cast == "requested":
+            if (not accepted and transient and upload.early_cast == "requested"
+                    and upload.early_retries < EARLY_CAST_MAX_RETRIES):
+                upload.early_retries += 1
+                upload.early_cast = "idle"
+            elif upload.early_cast == "requested":
                 upload.early_cast = "active" if accepted else "declined"
             elif upload.early_cast == "active" and not accepted:
                 upload.early_cast = "declined"

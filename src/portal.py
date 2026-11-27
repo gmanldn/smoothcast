@@ -1556,10 +1556,11 @@ class _Handler(BaseHTTPRequestHandler):
                 "client": result.get("client", ""),
                 "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
-            accepted = True
-        except Exception:
+            accepted, transient = True, False
+        except Exception as exc:
             accepted = False
-        self.server.uploads.mark_early_cast(upload_id, accepted=accepted)
+            transient = isinstance(exc, PortalRequestError) and exc.status in (409, 503)
+        self.server.uploads.mark_early_cast(upload_id, accepted=accepted, transient=transient)
         return accepted
 
     def do_PUT(self) -> None:  # noqa: N802
