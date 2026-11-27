@@ -24,8 +24,10 @@ def _redact_tree(value):
     return value
 
 
-def collect(root: Path, *, app_version: str = "", capabilities: dict | None = None) -> dict:
+def collect(root: Path, *, app_version: str = "", capabilities: dict | None = None, latency=None) -> dict:
+    """``latency`` is an optional ``latency_stats.Stats``; its percentiles and buckets ride along (numbers only)."""
     return _redact_tree({
+        "latency": {"summary": latency.summary(), **latency.snapshot()} if latency is not None else {},
         "app_version": app_version,
         "python": sys.version.split()[0],
         "platform": platform.system(),
