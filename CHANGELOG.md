@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: fccd3cdd72b9d674d0a86590d955893ff1f18de0 -->
+<!-- sc-changelog-through: eaf470edc523e45a099dcf6c7902c21c3c292727 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:15:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:15:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:15:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`eaf470edc523`](https://github.com/gmanldn/smoothcast/commit/eaf470edc523e45a099dcf6c7902c21c3c292727)
+
+- 🟥 **07:15:58 · Fix** — fix(cast,api): kept status connection is created under the mirror lock so concurrent reads no longer leak a second Chromecast socket; OpenAPI documents /api/mesh/profiles, /api/mesh/diagram.svg and GET/POST /api/update with capabilities (Refs #686) · [`731b2e8279c6`](https://github.com/gmanldn/smoothcast/commit/731b2e8279c61f73691665fef6325834ed126807)
+
+- 🟩 **07:15:46 · Feature** — feat(rooms): pure quiet-hours rules with midnight windows, strictest-wins cap, fade and 1h override (Refs #375) · [`0d20c8cdf539`](https://github.com/gmanldn/smoothcast/commit/0d20c8cdf539e0e87083e9884265ed90db00bb85)
 
 - ⬜ **07:15:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fccd3cdd72b9`](https://github.com/gmanldn/smoothcast/commit/fccd3cdd72b9d674d0a86590d955893ff1f18de0)
+
+- ⬜ **07:15:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`08941575a769`](https://github.com/gmanldn/smoothcast/commit/08941575a7697a57617f8e93864bce1a1e2ab962)
 
 - 🟦 **07:15:01 · Refactor** — refactor(paths): five duplicated config.json locators use paths.config\_dir (Refs #701) (Refs #325) · [`4bbd0824b7f3`](https://github.com/gmanldn/smoothcast/commit/4bbd0824b7f383a23419def1a09d659140e53ec3)
 
