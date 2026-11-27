@@ -227,6 +227,7 @@ py-modules = [
     "portal_uploads",
     "position_tracker",
     "preference_choices",
+    "preferences_link_ui",
     "preferences_picture_ui",
     "preferences_tracks_ui",
     "preferences_ui",

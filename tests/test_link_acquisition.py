@@ -1144,3 +1144,25 @@ def test_install_reports_actionable_repair_when_unsupported(tmp_path, monkeypatc
     ok, message = link_provision.install()
     assert not ok and "bubblewrap" in message
     assert not link_provision.wrapper_path().exists()
+
+
+def test_setup_and_qualify_reports_unsupported_without_writing(monkeypatch, tmp_path):
+    import link_provision
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(link_provision, "unsupported_reason", lambda: "install bubblewrap")
+    ok, text = link_provision.setup_and_qualify()
+    assert not ok and "bubblewrap" in text
+    assert not link_provision.wrapper_path().exists()
+
+
+def test_setup_and_qualify_failed_probe_stays_off(monkeypatch, tmp_path):
+    import link_provision
+    import link_sandbox_probe
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(link_provision, "unsupported_reason", lambda: "")
+    saved = []
+    monkeypatch.setattr(link_sandbox_probe, "qualify",
+                        lambda _l: link_sandbox_probe.Qualification(False, {}, "lan reachable"))
+    monkeypatch.setattr(link_sandbox_probe, "save", lambda l, r: saved.append(r.verified))
+    ok, text = link_provision.setup_and_qualify()
+    assert not ok and "lan reachable" in text and saved == [False]

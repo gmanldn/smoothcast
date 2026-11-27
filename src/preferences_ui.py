@@ -15,10 +15,11 @@ import picture_adjustments
 from preferences_picture_ui import PicturePreferencesMixin
 from preferences_tracks_ui import TrackPreferencesMixin
 from preferences_update_ui import UpdatePreferencesMixin
+from preferences_link_ui import LinkSetupMixin
 from cast_widgets import save_config
 
 
-class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePreferencesMixin, Adw.PreferencesWindow):
+class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePreferencesMixin, LinkSetupMixin, Adw.PreferencesWindow):
     def __init__(self, owner) -> None:
         super().__init__(transient_for=owner, modal=True)
         self.owner = owner
@@ -99,6 +100,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
         self._switch(queue, "portal_link_magnet", "Let guests acquire BitTorrent magnets",
                      "Authorised public torrents only. Requires aria2c, FFprobe and an isolated "
                      "host worker with restricted network access. Takes effect after a room restart.")
+        self._build_link_setup_row(queue)
         room_port_row = Adw.ActionRow(
             title="Room remote port",
             subtitle="High-range port used by phone links and QR codes. Change takes effect on the next launch.",
