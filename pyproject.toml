@@ -230,6 +230,7 @@ py-modules = [
     "mesh_view_model",
     "mesh_visibility",
     "mini_player",
+    "movie_poll",
     "mpris",
     "music_autogain",
     "music_catalog",
