@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import settings
 import slider_accessibility
 import command_trace
 import benchmark
@@ -648,8 +649,8 @@ class AvMixin:
     def _preview_monitor_chain(self) -> tuple[list, str]:
         """Meter chain and hint for the audio of the locally previewed file."""
         profile = str(self.cfg.get("audio", "dialogue"))
-        gain = float(self.cfg.get("audio_gain", 0.0) or 0.0)
-        mode = str(self.cfg.get("audio_loudness", "off"))
+        audio = settings.AudioSettings.from_config(self.cfg)
+        gain, mode = audio.gain, audio.loudness
         chain, hint = streamer.monitor_summary(profile, gain, mode)
         return chain, "Local preview · " + hint
 
