@@ -21,6 +21,28 @@ class Service(Protocol):
     def stop(self) -> None: ...
 
 
+def bounded(fn: Callable[[], object], hard: float, *, name: str = "bounded") -> tuple[bool, BaseException | None]:
+    """Run ``fn`` on a daemon thread; return ``(finished, error)`` within ``hard`` seconds.
+
+    A call still running at the deadline is abandoned (``finished`` False) so a hung
+    close can never hold the caller, e.g. window shutdown (#692).
+    """
+    done = threading.Event()
+    failure: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 - reported to the caller, never raised into it
+            failure.append(exc)
+        finally:
+            done.set()
+
+    threading.Thread(target=run, daemon=True, name=name).start()
+    finished = done.wait(hard)
+    return finished, (failure[0] if failure else None)
+
+
 @dataclass
 class _Entry:
     service: Service
@@ -77,19 +99,10 @@ class Supervisor:
     def stop(self, name: str) -> str:
         """Stop within ``hard`` seconds; a service still stopping after that is abandoned."""
         entry = self._services[name]
-        done = threading.Event()
-
-        def run() -> None:
-            try:
-                entry.service.stop()
-            except Exception as exc:  # noqa: BLE001 - a failing stop is recorded; shutdown continues
-                entry.last_error = str(exc)[:200]
-            finally:
-                done.set()
-
-        threading.Thread(target=run, daemon=True, name=f"stop-{name}").start()
-        done.wait(entry.hard)
-        entry.state = STOPPED if done.is_set() else STUCK
+        finished, error = bounded(entry.service.stop, entry.hard, name=f"stop-{name}")
+        if error is not None:
+            entry.last_error = str(error)[:200]
+        entry.state = STOPPED if finished else STUCK
         return entry.state
 
     def stop_all(self) -> dict[str, str]:

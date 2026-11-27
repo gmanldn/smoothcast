@@ -67,3 +67,24 @@ def test_start_failure_is_contained_and_restarts_are_capped():
         now[0] = t
         s.tick()
     assert fake.starts == 3            # first start + 2 restarts, then it stops trying
+
+
+def test_bounded_returns_at_deadline_when_call_hangs():
+    import threading
+    import time
+    import supervisor
+    release = threading.Event()
+    start = time.monotonic()
+    finished, error = supervisor.bounded(release.wait, 0.1)
+    assert not finished and error is None and time.monotonic() - start < 1.0
+    release.set()
+
+
+def test_bounded_reports_completion_and_errors():
+    import supervisor
+
+    def boom():
+        raise OSError("closed")
+    assert supervisor.bounded(lambda: None, 1.0) == (True, None)
+    finished, error = supervisor.bounded(boom, 1.0)
+    assert finished and isinstance(error, OSError)
