@@ -1,27 +1,26 @@
-"""Device discovery, scanning, polling and target selection."""
+"""Receiver discovery, status polling and selection for the main window."""
 from __future__ import annotations
-
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 
 from gi.repository import GLib, Gtk
-
+import time
 import castctl
+import state_labels
 import dlna
 import playback_state
-import state_labels
-
 import cast_targets
 import reliability_metrics
-import time
-
-from cast_widgets import Async, fmt_time, save_config
+from cast_widgets import save_config, fmt_time, Async
 
 
 class DeviceDiscoveryMixin:
     def scan_devices(self) -> None:
         if self.scan_busy:
+            # Queue one refresh, rather than publishing the older in-flight
+            # result or launching unbounded simultaneous SSDP scans.
             self._scan_again = True
             return
         self._scan_again = False
@@ -91,6 +90,7 @@ class DeviceDiscoveryMixin:
         if unlocked and saved_uuid and cast_fresh:
             matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
             if matched is not None and matched.name != self.cfg["device"]:
+                # Pending volume write targets the old receiver.
                 if self._volume_job is not None:
                     GLib.source_remove(self._volume_job)
                     self._volume_job = None
@@ -111,6 +111,8 @@ class DeviceDiscoveryMixin:
         self.device_dropdown.set_selected(selected)
         self._syncing = False
         selected = next((d for d in cast_devices if d.name == self.cfg["device"]), None)
+        # Migrate older configurations when the selected display name itself
+        # is unique. Do not adopt a duplicate name or overwrite a saved UUID.
         if cast_fresh and not saved_uuid and selected is not None and selected.uuid:
             unique = castctl.uniquely_named_device(selected.uuid, cast_devices)
             if unique is selected:
@@ -149,6 +151,8 @@ class DeviceDiscoveryMixin:
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
+        # A failed scan is not a successful empty scan. Retain the last known
+        # targets and let the independent status query determine reachability.
         self.device_detail.set_text("Scan failed — last known targets retained; check Wi-Fi or VPN")
         self._set_device_badge("SCAN FAILED", "offline")
         self.toast(str(message), error=True)
@@ -162,11 +166,13 @@ class DeviceDiscoveryMixin:
         if self.poll_busy:
             return True
         if device.startswith("DLNA · ") and renderer is None:
+            # A missing DLNA discovery record must never be sent to catt.
             self._poll_done(None)
             return True
         self.poll_busy = True
 
         def completed(info):
+            # A late response belongs only to the receiver it queried.
             if device != self._device():
                 self.poll_busy = False
                 self._poll_device()
@@ -188,6 +194,8 @@ class DeviceDiscoveryMixin:
 
     def _poll_done(self, info) -> None:
         self.poll_busy = False
+        # A busy receiver often misses one status read; keep the last good
+        # reading for two misses instead of flashing the device "Offline".
         if info is None and self.device_info is not None and getattr(self, "_poll_misses", 0) < 2:
             self._poll_misses = getattr(self, "_poll_misses", 0) + 1
             return
@@ -204,6 +212,10 @@ class DeviceDiscoveryMixin:
         reliability_metrics.observe(self, self.device_state)
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
+            # Chromecast reports the *new HLS playlist's* current_time from
+            # zero after each seek. Convert it to source-file seconds, including
+            # the original -ss offset and any non-1× playback rate. Direct play
+            # already uses the source timeline and needs no conversion.
             current_time = info.get("current_time")
             duration = info.get("duration")
             if current_time is not None:
@@ -249,6 +261,8 @@ class DeviceDiscoveryMixin:
             if playback_state.url_cast_matches(info, self._url_cast_url):
                 self._url_cast_seen = True
             elif self._url_cast_seen:
+                # A different active content replaced our URL cast; never stop
+                # that replacement when the sleep timer expires.
                 self._url_cast_url = None
                 self._url_cast_seen = False
         if playback_state.playback_ended(
@@ -273,6 +287,8 @@ class DeviceDiscoveryMixin:
 
     def _add_cast_target(self) -> None:
         """Manually connect to a Google Cast receiver when mDNS is blocked."""
+        # Return and Add IP reach this handler even when a widget is disabled
+        # (for instance, a pending signal). Never retarget an owned TV.
         if (self.session is not None or self.busy
                 or self._cast_starting or self.external):
             self.toast("Stop this cast before switching receivers.", error=True)
@@ -289,7 +305,7 @@ class DeviceDiscoveryMixin:
             targets.append(target)
         self.cfg["cast_targets"] = targets[-32:]
         self.cfg["device"] = target
-        self.cfg["device_uuid"] = ""
+        self.cfg["device_uuid"] = ""  # Manual IP does not claim a discovered identity.
         save_config(self.cfg)
         self.cast_ip_entry.set_text("")
         self._scan_done(self.devices)
@@ -309,6 +325,8 @@ class DeviceDiscoveryMixin:
         if (name and name != self.cfg["device"]
                 and (self.session is not None or self.busy
                      or self._cast_starting or self.external)):
+            # Keep A selected even if a queued GTK signal tries to select B.
+            # Commands already in flight must retain their receiver identity.
             self._syncing = True
             try:
                 for current_index in range(model.get_n_items()):
@@ -320,6 +338,7 @@ class DeviceDiscoveryMixin:
             self.toast("Stop this cast before switching receivers.", error=True)
             return
         if name and name != self.cfg["device"]:
+            # Never allow a previously queued volume write for A to affect B.
             if self._volume_job is not None:
                 GLib.source_remove(self._volume_job)
                 self._volume_job = None
@@ -342,12 +361,13 @@ class DeviceDiscoveryMixin:
     def _detect_external(self) -> None:
         info = self.device_info
         idle = (self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
-                or self._join_slate_showing(info))
+                or self._join_slate_showing(info))  # our own idle slate is not user playback (#420)
         if idle:
             self._external_runtime = None
             self._external_display_clock = None
             if self.external:
                 self.external = False
+            # An idle receiver must not leave an old URL cast marked as owned.
             self._url_cast_url = None
             self._url_cast_seen = False
             if not self.session:
@@ -360,7 +380,7 @@ class DeviceDiscoveryMixin:
                     playback_state.hls_session_matches(
                         info, state.stream_url, state.title,
                     )):
-                self.external = False
+                self.external = False  # Exact saved HLS URL; encoder may be done.
                 return
             if (state.mode == "direct" and
                     playback_state.direct_session_matches(info, state.title)):
@@ -369,11 +389,15 @@ class DeviceDiscoveryMixin:
             if state.mode not in {"transcode", "direct"} and self.session.active():
                 self.external = False
                 return
+        # A matching port, title or playlist suffix is NOT ownership proof.
+        # Without a matching saved stream the receiver is playing other media.
         self.external = True
         self.tracker.clear()
         self._external_runtime = None
         clock = playback_state.external_display_clock(info, self.device_state)
         self._external_display_clock = clock
+        # Paint the first receiver sample immediately, including paused media.
+        # The separate display clock never makes the external stream seekable.
         if hasattr(self, "np_title"):
             title, size = playback_state.external_media_labels(info)
             self.np_title.set_text(title)

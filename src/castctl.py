@@ -300,6 +300,25 @@ class CattBackend:
         self._last_refresh: dict[str, float] = {}
         self._mirror = _StatusMirror()
         self._mirror_routes: dict[str, str] = {}
+        self._verified_hosts: dict[str, tuple[str, float]] = {}
+
+    def _direct_host(self, device: str) -> str | None:
+        """A private address safe for the direct connection, without discovery.
+
+        An IP target is used as-is; a name only through the identity-checked
+        route of the latest scan, cached for a minute so polls skip the check.
+        """
+        host = _private_ipv4(device)
+        if host is not None:
+            return host
+        now = time.monotonic()
+        cached = self._verified_hosts.get(device)
+        if cached is not None and now - cached[1] < 60.0:
+            return cached[0]
+        host = _private_ipv4(self.receiver_route(device))
+        if host is not None:
+            self._verified_hosts[device] = (host, now)
+        return host
 
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
@@ -359,6 +378,16 @@ class CattBackend:
                     return status
             self._mirror_routes.pop(device, None)
             self._mirror.forget(host)
+        # catt's start-up alone can take most of the budget on a loaded host,
+        # leaving the fallback below no time to prove the direct route. Try a
+        # known safe address first with a bounded slice, then catt (#712).
+        host = self._direct_host(device) if device.strip() else None
+        if host is not None:
+            status = self._mirror.info(host, min(4.0, max(0.5, timeout / 2)))
+            if status:
+                _info_failures.pop(device, None)
+                self._mirror_routes[device] = host
+                return status
         result = _catt_info(device, max(0.5, deadline - time.monotonic()))
         if result is not None or not device.strip():
             return result
@@ -410,6 +439,7 @@ class CattBackend:
     def close(self) -> None:
         self._advertisements = ()
         self._mirror_routes.clear()
+        self._verified_hosts.clear()
         self._mirror.close()
 
 

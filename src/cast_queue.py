@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Queue, file opening and device discovery/target selection."""
+"""Queue and file opening; receiver discovery lives in cast_discovery."""
 from __future__ import annotations
 
 import gi
@@ -10,7 +10,9 @@ gi.require_version("Adw", "1")
 from gi.repository import Gio, GLib, Gtk
 import pathlib
 
+
 import fingerprint
+
 
 import streamer
 
@@ -23,12 +25,13 @@ from queue_prewarm_ui import QueuePrewarmMixin
 from queue_row_ui import QueueRowMixin
 from music_import_ui import MusicImportMixin
 from playlist_ui import PlaylistMixin
-
 from cast_discovery import DeviceDiscoveryMixin
+
 from cast_widgets import ROOM_CHECKPOINT_FILE, save_config, fmt_time, Async
 
 
-class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMixin, DeviceDiscoveryMixin):
+class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMixin,
+                 DeviceDiscoveryMixin):
     def add_files(self) -> None:
         dialog = Gtk.FileDialog(title="Add media to the queue")
         store = Gio.ListStore.new(Gtk.FileFilter)
@@ -424,5 +427,3 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         self.remaining_label.set_text("--:--")
         self.np_title.set_text("Ready to cast")
         self.np_meta.set_text("Open a film to inspect and cast it")
-
-

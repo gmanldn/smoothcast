@@ -1154,6 +1154,7 @@ class LinkJobs:
                     continue
             directory = self.root / (job.home or job.id)
             delivered = False
+            outcome: dict | None = None
             reused: Path | None = None
 
             def cancelled():
@@ -1207,17 +1208,21 @@ class LinkJobs:
                         self._change(job, stage="delivery_uncertain",
                                      error="Queue accepted media but its receipt could not be saved. Check Up Next.")
             except LinkError as exc:
-                self._change(job, stage="cancelled" if cancelled() and not delivered else
-                             "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
+                outcome = dict(stage="cancelled" if cancelled() and not delivered else
+                               "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
             except Exception:
-                self._change(job, stage="delivery_uncertain" if delivered else
-                             "cancelled" if cancelled() else "failed",
-                             error="Queue delivery not confirmed; check Up Next." if delivered else
-                             "Acquisition could not finish on this host.", rate=None)
+                outcome = dict(stage="delivery_uncertain" if delivered else
+                               "cancelled" if cancelled() else "failed",
+                               error="Queue delivery not confirmed; check Up Next." if delivered else
+                               "Acquisition could not finish on this host.", rate=None)
             finally:
                 if not delivered and reused is None and not job.home:
                     shutil.rmtree(directory, ignore_errors=True)
+                # Publish a terminal failure only once staging is gone and the
+                # journal holds it, so no reader sees "failed" before it is durable.
                 with self._lock:
+                    if outcome:
+                        self._change(job, **outcome)
                     if job.stage != "ready":
                         self._save()
 

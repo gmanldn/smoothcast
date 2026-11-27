@@ -753,7 +753,7 @@ class Element{
 }
 const el=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel",
  "youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(k=>[k,new Element()]));
-const $=id=>el[id],document={createElement:()=>new Element()};
+const $=id=>el[id],document={createElement:()=>new Element(),getElementById:()=>null};
 let youtubeSearchBusy=false,linkCapabilities={youtube:true},calls=[],fail=true,refreshes=0,csrf="csrf-token",linkStorageAvailable=null,linkPosting=false,linkOwnerEnabled=null,linkLocalPrerequisites=null,linkSignature="",linkAttempt=null,busy=false,queueRevision=0,queueState=[],roomSnapshotEpoch="",stalePage=false;
 function updateLinkControls(){}
 function clock(s){return String(s)}

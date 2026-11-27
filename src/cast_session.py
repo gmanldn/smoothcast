@@ -7,32 +7,59 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import GLib
 import pathlib
 
 from async_jobs import UserFacingError
 from cast_ab_repeat_ui import AbRepeatUiMixin
+from cast_remote_url import RemoteUrlCastMixin
 from utils import pretty_title
-import threading, time
+import threading
 
-import capability_gate, cast_recovery, castctl, command_trace
+import time
+
+import capability_gate
+import cast_recovery
+import castctl
+import command_trace
+
 import dlna
-import streamer, low_end_policy
-import audio_delay, subtitle_delay, subtitle_style
+
+import streamer
+import low_end_policy
+
+import audio_delay
+import subtitle_delay
+import subtitle_style
+
 import subtitle_restart
+
 import playback_state
+
 import watch_history
+
 import progress_model
-import direct_probe, receiver_memory
+
+import direct_probe
+import receiver_memory
+
 import stream_watchdog
-import hls_pause_recovery, fingerprint, hdr_tonemap, picture_adjustments
-import preflight, queue_metadata, reliability_metrics
-import cast_failure_code, gui_link_add, url_control
+
+import hls_pause_recovery
+import fingerprint
+import hdr_tonemap
+import picture_adjustments
+
+import preflight
+import queue_metadata
+import reliability_metrics
+
+import cast_failure_code
 
 from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
 
 
-class SessionMixin(AbRepeatUiMixin):
+class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
     def cast_selected(self) -> None:
         path = None
         if self.selected_index is not None and self.selected_index < len(self.queue):
@@ -58,6 +85,7 @@ class SessionMixin(AbRepeatUiMixin):
         None means the background preparation was submitted, not that the
         receiver is playing. Desktop callers already receive toast feedback.
         """
+        # None resumes; zero rewinds.
         offset = playback_state.start_offset(
             offset, watch_history.saved_position(
                 self.cfg, path, fingerprint.KEYS.get(path)))
@@ -86,9 +114,6 @@ class SessionMixin(AbRepeatUiMixin):
                                "message": "Preparing media and connecting to the room receiver."}
         renderer = self._dlna_renderer(device)
         reliability_metrics.start_attempt(self, "dlna" if renderer is not None else "cast")
-        offset = playback_state.start_offset(
-            offset, watch_history.saved_position(
-                self.cfg, path, fingerprint.KEYS.get(path)))
         cancel = threading.Event()
         self._dlna_cancel = cancel
         if renderer is not None:
@@ -96,6 +121,7 @@ class SessionMixin(AbRepeatUiMixin):
                 "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
             )
             self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
+        # Publish cancellability for Cast as well as DLNA before worker submission.
         self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
             reason = "DLNA receiver is not currently discovered; scan your network again"
@@ -500,6 +526,7 @@ class SessionMixin(AbRepeatUiMixin):
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
         if hls_pause_recovery.resume_from_long_pause(self, session, device, renderer, want_play):
             return
+        # Serialize transport commands.
         self.busy = True
         self._refresh_controls()
 
@@ -1091,86 +1118,8 @@ class SessionMixin(AbRepeatUiMixin):
         return False
 
 
-    def _cast_remote_url(self, value: str) -> None:
-        # External URLs use Cast, not DLNA.
-        if self._dlna_renderer() is not None:
-            self.toast("Open URL currently requires a Google Cast target; choose Cast or open a local film", error=True)
-            return
-        try:
-            url = url_control.validate_media_url(value)
-        except ValueError:
-            self.toast("Enter a valid HTTP or HTTPS media URL and try again.", error=True)
-            return
-        if self.busy:
-            self.toast("Hold on — finishing the last command")
-            return
-        device = self._device()
-        previous = self.session
-        self.session = None
-        self.busy = True
-        self._refresh_controls()
-        self.toast(f"Opening remote stream on {device}…")
-
-        def work():
-            if previous is not None:
-                previous.stop(device, send_stop=False)
-            # Don't send remote URLs through local-file ffprobe.
-            return castctl.command(device, "cast", "--no-subs", url, timeout=60)
-
-        def done(result):
-            ok, message = result
-            self.busy = False
-            if not ok:
-                self._cast_failed(message or "Remote cast failed")
-                return
-            self._stop_monitor()
-            # Release local playback after handoff to prevent overlapping audio.
-            self._unload_local_video()
-            self.local_playback.stop()
-            self.media = None
-            self.now_playing = None
-            self.external = True
-            self._url_cast_url = url
-            self._url_cast_seen = False
-            self.tracker.clear()
-            self._external_display_clock = None
-            self._external_runtime = None
-            self.np_title.set_text("Remote stream")
-            self.toast(f"Remote stream sent to {device}")
-            self._console(f"Remote stream sent to {device}")
-            self._refresh_controls()
-            self._poll_device()
-
-        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
 
 
-    def _open_url(self) -> None:
-        dialog = Adw.AlertDialog.new("Open URL", "Paste a stream URL")
-        entry = Gtk.Entry()
-        entry.set_placeholder_text("https://...")
-        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Stream URL"])
-        dialog.set_extra_child(entry)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("open", "Open")
-        dialog.set_default_response("open")
-        dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
-        def on_resp(d, r):
-            if r == "open":
-                url = entry.get_text().strip()
-                if url and gui_link_add.is_youtube(url):
-                    self._add_youtube_link(url)    # a page, not media: acquire into Up Next
-                elif url:
-                    self._cast_remote_url(url)
-        dialog.connect("response", on_resp)
-        dialog.present(self)
-
-
-    def _add_youtube(self) -> None:
-        gui_link_add.show_dialog(self)
-
-
-    def _add_youtube_link(self, url: str) -> None:
-        gui_link_add.add_link(self, url)
 
 
     def _toggle_fullscreen(self) -> None:
