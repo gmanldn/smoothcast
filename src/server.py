@@ -208,13 +208,13 @@ _LOGS_LOCK = threading.Lock()
 STREAM_HEALTH = StreamHealth()
 _HEALTH_LOCK = threading.Lock()
 _health_written = 0.0
-_SEGMENT = re.compile(r"\.(?:ts|m4s|mp4|aac)$", re.IGNORECASE)
+_MEDIA_SUFFIX = re.compile(r"\.(?:ts|m4s|mp4|aac)$", re.IGNORECASE)
 
 
 def record_segment(path: str, code: object) -> None:
     """Count one served/failed media segment; ignore playlists and other paths."""
     name = _url_path(path)
-    if not _SEGMENT.search(name):
+    if not _MEDIA_SUFFIX.search(name):
         return
     try:
         ok = int(code) < 400
