@@ -315,6 +315,7 @@ py-modules = [
     "subtitle_style",
     "text_fit",
     "thumb_strip",
+    "tone_knobs",
     "track_choices",
     "ui_theme",
     "ui_tokens",
