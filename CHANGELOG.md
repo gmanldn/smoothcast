@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e25df5de42eb99b41f700528a737afd6946c4d05 -->
+<!-- sc-changelog-through: 2efacec86a3317f68220f8b8c81885141418cf82 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:37:46 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:40:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:40:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2efacec86a33`](https://github.com/gmanldn/smoothcast/commit/2efacec86a3317f68220f8b8c81885141418cf82)
+
+- 🟩 **06:40:26 · Feature** — feat(stream): server counts served and failed HLS segments into the measured stream-health aggregate (Refs #49) · [`7c712970d1bf`](https://github.com/gmanldn/smoothcast/commit/7c712970d1bfed23360419b6635fb4bb49075681)
+
+- 🟩 **06:39:15 · Feature** — feat(remote): single capability view driving every control, shared with server-side gate (Refs #337) · [`42321da6bbb9`](https://github.com/gmanldn/smoothcast/commit/42321da6bbb9a1f85455e7da5eb023ee105ccd7b)
 
 - ⬜ **06:37:46 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e25df5de42eb`](https://github.com/gmanldn/smoothcast/commit/e25df5de42eb99b41f700528a737afd6946c4d05)
 
 - ⬜ **06:37:46 · Maintenance** — chore(ci): rebaseline complexity after reviewed feature growth (api\_spec OpenAPI routes, mesh\_ui row reconciliation #707, portal mesh panel, lifecycle mixin split #706, ffmpeg\_compat timeout) so the ratchet flags new growth again instead of every ship reporting a pre-existing failure (Refs #706) · [`a3a74cc1d4c0`](https://github.com/gmanldn/smoothcast/commit/a3a74cc1d4c0284dd363c2c4584ca47e993921b0)
+
+- ⬜ **06:37:46 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`15bb5b5ad4d5`](https://github.com/gmanldn/smoothcast/commit/15bb5b5ad4d5eb793132e3fe782b36d77625c70f)
 
 - 🟩 **06:37:24 · Feature** — feat(remote): pure role-scoped track descriptors and generation-bound selection (Refs #335) · [`82aae3358b67`](https://github.com/gmanldn/smoothcast/commit/82aae3358b67cfaf42fb49c3dd40e330ae85ba52)
 
