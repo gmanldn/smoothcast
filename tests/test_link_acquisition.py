@@ -1163,6 +1163,6 @@ def test_setup_and_qualify_failed_probe_stays_off(monkeypatch, tmp_path):
     saved = []
     monkeypatch.setattr(link_sandbox_probe, "qualify",
                         lambda _l: link_sandbox_probe.Qualification(False, {}, "lan reachable"))
-    monkeypatch.setattr(link_sandbox_probe, "save", lambda l, r: saved.append(r.verified))
+    monkeypatch.setattr(link_sandbox_probe, "save", lambda _l, r: saved.append(r.verified))
     ok, text = link_provision.setup_and_qualify()
     assert not ok and "lan reachable" in text and saved == [False]
