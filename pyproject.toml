@@ -46,6 +46,7 @@ smoothcast-gui = "cli:main"
 [tool.setuptools]
 packages = ["smoothcast_assets"]
 py-modules = [
+    "a11y_prefs",
     "ab_repeat",
     "accent",
     "action_state",
