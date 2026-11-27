@@ -49,6 +49,11 @@ GitHub Issues ([docs/ISSUES.md](docs/ISSUES.md)) are authoritative; the read-onl
 
 - Small, complete, well-scoped patches; explain real evidence. Tests are
   deferred on `develop`: ship work, test lazily; never claim unrun checks passed.
+- Owner policy (27 Nov 2026): physical hardware/device testing is desirable,
+  **never a prerequisite for a `develop` push**. Ship coherent work promptly;
+  record unrun hardware checks as UNVERIFIED. Keep release qualification and
+  ticket acceptance evidence separate from shipment. Lease, version-integrity
+  and non-force publication safeguards still apply.
 - **Never launch the real GUI** or control real receivers during tests. See
   [testing](docs/agents/testing.md); use `scripts/test_gui_isolated.py`; full
   suite: `python3 -m pytest -q tests`.

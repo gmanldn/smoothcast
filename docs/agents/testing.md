@@ -7,6 +7,11 @@ GNOME dock pins, discover/control the user's TV, or touch real media. Never use
 Do not use the user's live X11/Wayland display or desktop DBus (D-Bus).
 
 **Owner policy:** rapid, coherent `develop` commits do not require tests.
+Physical hardware/device tests are desirable, never a prerequisite for a
+`develop` push (27 Nov 2026). Ship coherent changes without waiting for
+receivers or native hardware; record unrun checks as UNVERIFIED. This does
+not waive release qualification, ticket acceptance evidence, or the required
+lease and version-history guards.
 The Verify workflow runs manually, not on every push, and does not promote
 to `main`. Use `scripts/agent.py ship --skip-checks` for an explicitly
 unverified fast push; plain `ship` runs optional affected checks.
