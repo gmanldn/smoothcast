@@ -11,15 +11,16 @@ def facts_for_preferences(cfg: dict, *, root, playing: bool = False) -> UpdateFa
     the row therefore never claims an update is available, staged or running.
     """
     import version
+    from settings import UpdateSettings
     from update_managed import managed_facts
+    prefs = UpdateSettings.from_config(cfg)
     active, previous, journal_state = managed_facts(root)
     return UpdateFacts(
         running_version=version.__version__,
         running_commit=version.read_checkout_revision(root),
         active_commit=active, previous_commit=previous, journal_state=journal_state,
-        channel=str(cfg.get("update_channel", "develop")),
-        checks_enabled=cfg.get("check_release_updates") is True,
-        require_signature=cfg.get("release_check_verify") is not False,
+        channel=prefs.channel, checks_enabled=prefs.check_releases,
+        require_signature=prefs.verify_release,
         playing=bool(playing))
 
 
@@ -37,9 +38,9 @@ def check_now(cfg: dict, root) -> str:
     import dataclasses
     import update_control
     import update_status
-    channel = cfg.get("update_channel")
-    channel = channel if channel in update_control.UPDATE_CHANNELS else "develop"
-    verify = cfg.get("release_check_verify") is not False
+    from settings import UpdateSettings
+    prefs = UpdateSettings.from_config(cfg)
+    channel, verify = prefs.channel, prefs.verify_release
     try:
         found = update_control.find_candidate(root, enabled=True, verify=verify, channel=channel)
     except Exception:
