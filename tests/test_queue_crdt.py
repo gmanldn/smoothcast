@@ -1,159 +1,112 @@
-"""#421: the mergeable queue converges for any delivery order."""
-from __future__ import annotations
-
-from pathlib import Path
 import random
 import sys
-
-import pytest
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import queue_crdt as qc
+import queue_crdt as q
 
 
-def order(replica):
-    return [(i.id, i.key) for i in replica.ordered()]
+def ref(n):
+    return {"content_ref": f"qh:{n}", "added_by": "me", "added_at": 1}
 
 
-def test_key_between_is_strictly_between_and_never_ends_in_zero():
+def ids(r):
+    return [i["id"] for i in q.ordered(r.state)]
+
+
+def test_generate_key_is_strictly_between_for_random_pairs():
     rng = random.Random(1)
     keys = [None]
-    for _ in range(400):
-        keys_sorted = sorted(k for k in keys if k)
-        i = rng.randrange(len(keys_sorted) + 1)
-        before = keys_sorted[i - 1] if i else None
-        after = keys_sorted[i] if i < len(keys_sorted) else None
-        key = qc.key_between(before, after)
-        assert (before is None or before < key) and (after is None or key < after)
-        assert not key.endswith("0")
-        keys.append(key)
-    with pytest.raises(ValueError):
-        qc.key_between("b", "a")
+    for _ in range(300):
+        a, b = sorted(rng.sample(keys, 2), key=lambda k: k or "") if len(keys) > 1 else (None, None)
+        if a == b:
+            a, b = None, None
+        k = q.generate_key(a, b)
+        assert (a or "") < k and (b is None or k < b) and not k.endswith("a"), (a, b, k)
+        keys.append(k)
 
 
-def test_local_edits_build_the_expected_order():
-    q = qc.QueueCrdt("a")
-    one = q.insert("one")
-    two = q.insert("two")                               # appended
-    zero = q.insert("zero", before_id=one["id"])        # at the front
-    mid = q.insert("mid", after_id=one["id"])           # between one and two
-    assert [i.ref for i in q.ordered()] == ["zero", "one", "mid", "two"]
-    q.move(two["id"], before_id=zero["id"])
-    assert [i.ref for i in q.ordered()][0] == "two"
-    q.delete(mid["id"])
-    assert [i.ref for i in q.ordered()] == ["two", "zero", "one"]
+def test_convergence_three_replicas_200_seeds_random_interleavings():
+    for seed in range(200):
+        rng = random.Random(seed)
+        reps = [q.Replica(n) for n in ("n1", "n2", "n3")]
+        pool = []
+        for step in range(25):
+            r = rng.choice(reps)
+            live = ids(r)
+            c = rng.random()
+            if c < .5 or not live:
+                after = rng.choice(live + [None]); idx = live.index(after) + 1 if after in live else 0
+                before = live[idx] if idx < len(live) else None
+                pool += r.insert(f"{r.node}-{step}", ref(step), after, before)
+            elif c < .8:
+                tgt = rng.choice(live); rest = [x for x in live if x != tgt]
+                after = rng.choice(rest + [None]); idx = rest.index(after) + 1 if after in rest else 0
+                pool += r.move(tgt, after, rest[idx] if idx < len(rest) else None)
+            else:
+                pool += r.delete(rng.choice(live))
+            if rng.random() < .3:                       # partial, shuffled, duplicated delivery
+                o = rng.choice(reps); batch = rng.sample(pool, len(pool)); o.receive(batch[: len(batch) // 2])
+        for r in reps:
+            batch = pool + rng.sample(pool, len(pool) // 2); rng.shuffle(batch); r.receive(batch)
+        assert ids(reps[0]) == ids(reps[1]) == ids(reps[2]), seed
+        assert ids(reps[0]) == [i["id"] for i in q.ordered(q.merge(reps[0].state, reps[1].state))]
 
 
-@pytest.mark.parametrize("seed", range(200))
-def test_replicas_converge_for_any_delivery_order_with_duplicates(seed):
-    rng = random.Random(seed)
-    replicas = [qc.QueueCrdt(n) for n in "abc"]
-    log = []                                            # (origin index, op)
-    for _ in range(rng.randint(8, 30)):
-        idx = rng.randrange(3)
-        r = replicas[idx]
-        live = r.ordered()
-        action = rng.choice(["ins", "ins", "mov", "del"]) if live else "ins"
-        if action == "ins":
-            anchor = rng.choice(live) if live and rng.random() < 0.6 else None
-            where = rng.choice(["after_id", "before_id"])
-            op = r.insert(f"t{len(log)}", **({where: anchor.id} if anchor else {}))
-        elif action == "mov":
-            target = rng.choice(live)
-            others = [i for i in live if i.id != target.id]
-            anchor = rng.choice(others) if others else None
-            op = r.move(target.id, **({rng.choice(["after_id", "before_id"]): anchor.id} if anchor else {}))
-        else:
-            op = r.delete(rng.choice(live).id)
-        log.append((idx, op))
-        if rng.random() < 0.3:                          # sometimes sync a random pair mid-way
-            a, b = rng.sample(range(3), 2)
-            for _o, op2 in rng.sample(log, len(log)):
-                replicas[b].apply(op2)
-    for target in range(3):                             # finally everyone receives everything,
-        deliveries = [op for _i, op in log] * rng.randint(1, 2)   # shuffled, possibly twice
-        rng.shuffle(deliveries)
-        for op in deliveries:
-            replicas[target].apply(op)
-    assert order(replicas[0]) == order(replicas[1]) == order(replicas[2]), f"seed {seed}"
+def test_partition_heal_keeps_every_insert():
+    a, b = q.Replica("a"), q.Replica("b")
+    base = a.insert("x", ref(0)) + a.insert("y", ref(1), after="x"); b.receive(base)
+    ea = a.insert("a1", ref(2), after="x", before="y") + a.insert("a2", ref(3), after="a1", before="y")
+    eb = b.insert("b1", ref(4), after="x", before="y") + b.insert("b2", ref(5), after="y")
+    a.receive(eb); b.receive(ea)
+    assert ids(a) == ids(b) and set(ids(a)) == {"x", "y", "a1", "a2", "b1", "b2"} and ids(a)[0] == "x" and ids(a)[-1] == "b2"
 
 
-def test_partition_then_heal_loses_no_inserts():
-    a, b = qc.QueueCrdt("a"), qc.QueueCrdt("b")
-    seed_ops = [a.insert("one"), a.insert("two"), a.insert("three")]
-    for op in seed_ops:
-        b.apply(op)
-    side_a = [a.insert(f"a{i}") for i in range(5)] + [a.delete(seed_ops[0]["id"])]
-    side_b = [b.insert(f"b{i}", after_id=seed_ops[1]["id"]) for i in range(5)] + [
-        b.move(seed_ops[2]["id"], before_id=seed_ops[1]["id"])]
-    for op in side_b:
-        a.apply(op)
-    for op in side_a:
-        b.apply(op)
-    assert order(a) == order(b)
-    refs = [i.ref for i in a.ordered()]
-    assert {f"a{i}" for i in range(5)} | {f"b{i}" for i in range(5)} <= set(refs)
-    assert "one" not in refs and len(refs) == 12        # 13 items minus the deleted one
+def test_concurrent_move_and_delete_delete_wins_either_order():
+    a, b = q.Replica("a"), q.Replica("b")
+    base = a.insert("x", ref(0)) + a.insert("y", ref(1), after="x"); b.receive(base)
+    mv, dl = a.move("x", after="y"), b.delete("x")
+    a.receive(dl); b.receive(mv)
+    assert ids(a) == ids(b) == ["y"]
+    c = q.Replica("c"); c.receive(mv + dl + base); d = q.Replica("d"); d.receive(base + dl + mv)
+    assert ids(c) == ids(d) == ["y"]
 
 
-def test_operations_that_arrive_before_their_insert_are_held():
-    origin = qc.QueueCrdt("a")
-    ins = origin.insert("x")
-    mov = origin.insert("y")
-    move = origin.move(ins["id"], after_id=mov["id"])
-    gone = origin.delete(mov["id"])
-    late = qc.QueueCrdt("b")
-    for op in (gone, move, mov, ins):                    # worst order: dependents first
-        late.apply(op)
-    assert order(late) == order(origin)
+def test_ops_idempotent_and_out_of_order_delivery():
+    a = q.Replica("a"); ops = a.insert("x", ref(0)) + a.insert("y", ref(1), after="x") + a.move("x", after="y") + a.delete("y")
+    b = q.Replica("b"); b.receive(ops[::-1]); b.receive(ops); b.receive(ops)
+    assert ids(b) == ids(a) == ["x"]
+    s = q.new_state()
+    for o in ops: q.apply(s, o)
+    before = {k: dict(v) for k, v in s["items"].items()}
+    for o in ops: q.apply(s, o)
+    assert s["items"] == before
 
 
-def test_delete_wins_over_a_concurrent_move_and_replays_are_idempotent():
-    a, b = qc.QueueCrdt("a"), qc.QueueCrdt("b")
-    ins = a.insert("x")
-    other = a.insert("y")
-    b.apply(ins), b.apply(other)
-    moved = b.move(ins["id"], after_id=other["id"])
-    deleted = a.delete(ins["id"])
-    for op in (moved, deleted, moved, deleted):
-        a.apply(op)
-    for op in (deleted, moved, deleted):
-        b.apply(op)
-    assert order(a) == order(b) and [i.ref for i in a.ordered()] == ["y"]
-    assert a.apply(deleted) is False and a.apply(moved) is False
+def test_merge_commutative_associative_idempotent():
+    a, b, c = q.Replica("a"), q.Replica("b"), q.Replica("c")
+    a.insert("x", ref(0)); b.insert("y", ref(1)); c.insert("z", ref(2)); b.delete("y"); a.move("x", before=None)
+    m = q.merge
+    assert m(a.state, b.state) == m(b.state, a.state)
+    assert m(m(a.state, b.state), c.state) == m(a.state, m(b.state, c.state))
+    assert m(a.state, a.state)["items"] == a.state["items"]
 
 
-def test_concurrent_inserts_at_the_same_spot_are_both_kept_in_a_stable_order():
-    a, b = qc.QueueCrdt("a"), qc.QueueCrdt("b")
-    first = a.insert("first")
-    b.apply(first)
-    x, y = a.insert("x", after_id=first["id"]), b.insert("y", after_id=first["id"])
-    a.apply(y), b.apply(x)
-    assert order(a) == order(b) and {i.ref for i in a.ordered()} == {"first", "x", "y"}
+def test_key_growth_bounded_by_rebalance():
+    r = q.Replica("a"); r.insert("first", ref(0)); r.insert("last", ref(1), after="first")
+    for i in range(120):
+        r.insert(f"n{i}", ref(i), after="first", before=ids(r)[1])
+    assert max(len(i["key"]) for i in q.ordered(r.state)) <= q.MAX_KEY + 1
+    assert len(ids(r)) == 122 and ids(r)[0] == "first"
 
 
-def test_invalid_keys_and_unknown_items_are_refused_safely():
-    q = qc.QueueCrdt("a")
-    assert q.apply({"op": "ins", "id": "i1", "key": "", "ref": 1, "l": 1, "n": "z"}) is False
-    assert q.apply({"op": "ins", "id": "i2", "key": "x" * 200, "ref": 1, "l": 1, "n": "z"}) is False
-    assert q.ordered() == []
-    with pytest.raises(KeyError):
-        q.delete("missing")
-    with pytest.raises(KeyError):
-        q.insert("x", after_id="missing")
-
-
-def test_inserting_between_items_with_identical_keys_is_safe_and_convergent():
-    a, b = qc.QueueCrdt("a"), qc.QueueCrdt("b")
-    root = a.insert("root")
-    b.apply(root)
-    x = a.insert("x", after_id=root["id"])
-    y = b.insert("y", after_id=root["id"])
-    assert x["key"] == y["key"]                        # the collision this guards against
-    a.apply(y), b.apply(x)
-    pair = [i.id for i in a.ordered()][1:]
-    z = a.insert("z", after_id=pair[0])                # "between" the equal-key pair
-    w = b.insert("w", before_id=pair[1])
-    a.apply(w), b.apply(z)
-    assert order(a) == order(b)
-    assert {i.ref for i in a.ordered()} == {"root", "x", "y", "z", "w"}
+def test_invalid_ops_ignored_and_item_cap():
+    s = q.new_state()
+    for bad in [{}, {"op": "ins"}, {"op": "ins", "id": "../x", "key": "b", "ref": ref(1), "lamport": 1, "node": "n"},
+                {"op": "mov", "id": "x", "key": "AB", "lamport": 1, "node": "n"}, {"op": "mov", "id": "x", "key": "ba", "lamport": 1, "node": "n"},
+                {"op": "del", "id": "x", "lamport": True, "node": "n"}, {"op": "ins", "id": "x", "key": "b", "ref": {"content_ref": ""}, "lamport": 1, "node": "n"}]:
+        q.apply(s, bad)
+    assert s["items"] == {}
+    for i in range(q.MAX_ITEMS + 20):
+        q.apply(s, {"op": "ins", "id": f"i{i}", "key": "b", "ref": ref(i), "lamport": i, "node": "n"})
+    assert len(s["items"]) == q.MAX_ITEMS

@@ -1,158 +1,157 @@
-"""Mergeable Up Next: an operation-based sequence CRDT (issue #421).
+"""Mergeable Up Next queue: a fractional-key sequence CRDT (#421). Pure, no I/O.
 
-Every queue item has an immutable id and a movable fractional position key.
-Operations commute and are idempotent, so replicas that saw the same set of
-operations - in any order, with duplicates - show the same queue. That is what
-lets a house split by a Wi-Fi outage keep editing on both sides and merge
-without lost inserts. Live playback stays under the host's fenced commands.
-
-* ``ins``  create an item (first writer of an id wins; ids are random).
-* ``mov``  give an item a new key; last writer wins by (lamport, node).
-* ``del``  tombstone; a delete always wins over concurrent moves.
-
-GTK-free and clock-free.
+State: {"items": {id: {key, ref, by, at, deleted, ks}}, "clock": n}. Order = sort by (key, id).
+Op: {op:'ins'|'mov'|'del', id, key?, ref?, lamport, node}. Ops are idempotent and commute; ``merge`` is a
+per-item join (ref once, deleted OR, key by highest (lamport,node)). A delete is a permanent tombstone, so
+move+delete -> delete wins. Playback state is NOT replicated here.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import secrets
-from typing import Any
+import re
 
-DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-MAX_KEY = 64
+MAX_ITEMS, MAX_KEY = 500, 32
+_KEY = re.compile(r"[a-z]{1,64}\Z")
+_ID = re.compile(r"[A-Za-z0-9_\-:.]{1,64}\Z")
 
 
-def midpoint(a: str, b: str | None) -> str:
-    """A key strictly between ``a`` and ``b`` (``a`` may be empty, ``b`` None = end)."""
+def new_state() -> dict:
+    return {"items": {}, "clock": 0}
+
+
+def generate_key(a: str | None, b: str | None) -> str:
+    """A key strictly between a and b (None = open bound). Keys never end in 'a'."""
+    a = a or ""
     if b is not None:
         n = 0
-        while n < len(b) and (a[n] if n < len(a) else DIGITS[0]) == b[n]:
+        while n < len(b) and (a[n] if n < len(a) else "a") == b[n]:
             n += 1
-        if n > 0:
-            return b[:n] + midpoint(a[n:], b[n:])
-    low = DIGITS.index(a[0]) if a else 0
-    high = DIGITS.index(b[0]) if b else len(DIGITS)
-    if high - low > 1:
-        return DIGITS[(low + high + 1) // 2 if high - low > 2 else low + 1]
-    if b is not None and len(b) > 1:
+        if n:
+            return b[:n] + generate_key(a[n:], b[n:])
+    da = ord(a[0]) - 97 if a else 0
+    db = ord(b[0]) - 97 if b else 26
+    if db - da > 1:
+        return chr(97 + (da + db + 1) // 2)
+    if b and len(b) > 1:
         return b[:1]
-    return DIGITS[low] + midpoint(a[1:], None)
+    return chr(97 + da) + generate_key(a[1:], None)
 
 
-def key_between(before: str | None, after: str | None) -> str:
-    """Key for a new/moved item placed between two neighbours' keys."""
-    if before is not None and after is not None and before >= after:
-        raise ValueError("neighbours are out of order")
-    return midpoint(before or "", after)
+def _stamp(op) -> tuple:
+    return (op["lamport"], op["node"])
 
 
-@dataclass
-class Item:
-    id: str
-    key: str
-    ref: Any
-    by: str
-    stamp: tuple[int, str]
-    deleted: bool = False
-
-
-@dataclass
-class QueueCrdt:
-    node: str
-    lamport: int = 0
-    items: dict[str, Item] = field(default_factory=dict)
-    _pending: dict[str, list[dict]] = field(default_factory=dict)
-
-    # -- reads ------------------------------------------------------------
-    def ordered(self) -> list[Item]:
-        live = [i for i in self.items.values() if not i.deleted]
-        return sorted(live, key=lambda i: (i.key, i.id))
-
-    def _neighbours(self, after_id: str | None, before_id: str | None,
-                    exclude: str | None = None) -> tuple[str | None, str | None]:
-        """Keys of the neighbours a new/moved item goes between.
-
-        Concurrent inserts can leave two items with the same key (ordered by id);
-        no key lies strictly between them, so the item goes just after that
-        equal-key group instead, which keeps every replica convergent.
-        """
-        line = [i for i in self.ordered() if i.id != exclude]
-        ids = [i.id for i in line]
-        if after_id is not None:
-            if after_id not in ids:
-                raise KeyError(after_id)
-            slot = ids.index(after_id) + 1
-        elif before_id is not None:
-            if before_id not in ids:
-                raise KeyError(before_id)
-            slot = ids.index(before_id)
-        else:
-            slot = len(line)
-        before = line[slot - 1].key if slot else None
-        while before is not None and slot < len(line) and line[slot].key <= before:
-            slot += 1
-        return before, (line[slot].key if slot < len(line) else None)
-
-    # -- local edits (each returns the op to broadcast) -------------------
-    def _tick(self) -> tuple[int, str]:
-        self.lamport += 1
-        return self.lamport, self.node
-
-    def insert(self, ref: Any, *, after_id: str | None = None, before_id: str | None = None,
-               by: str = "") -> dict:
-        before, after = self._neighbours(after_id, before_id)
-        lamport, node = self._tick()
-        op = {"op": "ins", "id": secrets.token_hex(8), "key": key_between(before, after),
-              "ref": ref, "by": by, "l": lamport, "n": node}
-        self.apply(op)
-        return op
-
-    def move(self, item_id: str, *, after_id: str | None = None,
-             before_id: str | None = None) -> dict:
-        if item_id not in self.items or self.items[item_id].deleted:
-            raise KeyError(item_id)
-        before, after = self._neighbours(after_id, before_id, exclude=item_id)
-        lamport, node = self._tick()
-        op = {"op": "mov", "id": item_id, "key": key_between(before, after), "l": lamport, "n": node}
-        self.apply(op)
-        return op
-
-    def delete(self, item_id: str) -> dict:
-        if item_id not in self.items:
-            raise KeyError(item_id)
-        lamport, node = self._tick()
-        op = {"op": "del", "id": item_id, "l": lamport, "n": node}
-        self.apply(op)
-        return op
-
-    # -- applying (remote or local) ---------------------------------------
-    def apply(self, op: dict) -> bool:
-        """Apply one operation; idempotent. Returns True if it changed anything."""
-        kind, item_id = op["op"], op["id"]
-        self.lamport = max(self.lamport, int(op["l"]))
-        stamp = (int(op["l"]), str(op["n"]))
-        if kind == "ins":
-            if item_id in self.items:
-                return False
-            if not isinstance(op["key"], str) or not 0 < len(op["key"]) <= MAX_KEY:
-                return False
-            self.items[item_id] = Item(item_id, op["key"], op["ref"], str(op.get("by", "")), stamp)
-            for waiting in sorted(self._pending.pop(item_id, []), key=lambda o: (o["l"], o["n"])):
-                self.apply(waiting)
-            return True
-        item = self.items.get(item_id)
-        if item is None:                      # arrived before its insert: hold it
-            bucket = self._pending.setdefault(item_id, [])
-            if op not in bucket:
-                bucket.append(op)
-            return False
-        if kind == "del":
-            changed = not item.deleted
-            item.deleted = True
-            return changed
-        if kind == "mov":
-            if item.deleted or stamp <= item.stamp or not 0 < len(op["key"]) <= MAX_KEY:
-                return False
-            item.key, item.stamp = op["key"], stamp
-            return True
+def valid_op(op) -> bool:
+    if not isinstance(op, dict) or op.get("op") not in ("ins", "mov", "del"):
         return False
+    if not (isinstance(op.get("id"), str) and _ID.match(op["id"]) and isinstance(op.get("node"), str) and _ID.match(op["node"])
+            and isinstance(op.get("lamport"), int) and not isinstance(op["lamport"], bool) and 0 <= op["lamport"] < 2**53):
+        return False
+    if op["op"] != "del" and not (isinstance(op.get("key"), str) and _KEY.match(op["key"]) and not op["key"].endswith("a")):
+        return False
+    if op["op"] == "ins":
+        r = op.get("ref")
+        return isinstance(r, dict) and isinstance(r.get("content_ref"), str) and 0 < len(r["content_ref"]) <= 512
+    return True
+
+
+def _slot(state, i):
+    return state["items"].setdefault(i, {"key": "", "ref": None, "by": "", "at": 0, "deleted": False, "ks": (-1, "")})
+
+
+def apply(state: dict, op: dict) -> dict:
+    if not valid_op(op):
+        return state
+    state["clock"] = max(state["clock"], op["lamport"])
+    if op["id"] not in state["items"] and len(state["items"]) >= MAX_ITEMS:
+        return state
+    it = _slot(state, op["id"])
+    if op["op"] == "del":
+        it["deleted"] = True
+        return state
+    if op["op"] == "ins" and it["ref"] is None:
+        r = op["ref"]
+        it["ref"], it["by"], it["at"] = r["content_ref"], str(r.get("added_by", ""))[:60], r.get("added_at", 0)
+    if _stamp(op) > tuple(it["ks"]):
+        it["key"], it["ks"] = op["key"], _stamp(op)
+    return state
+
+
+def merge(a: dict, b: dict) -> dict:
+    out = new_state()
+    out["clock"] = max(a["clock"], b["clock"])
+    for i in set(a["items"]) | set(b["items"]):
+        x, y = a["items"].get(i), b["items"].get(i)
+        if x is None or y is None:
+            out["items"][i] = dict(x or y)
+            continue
+        hi = x if tuple(x["ks"]) >= tuple(y["ks"]) else y
+        src = x if x["ref"] is not None else y
+        out["items"][i] = {"key": hi["key"], "ks": tuple(hi["ks"]), "ref": src["ref"], "by": src["by"], "at": src["at"],
+                           "deleted": x["deleted"] or y["deleted"]}
+    return out
+
+
+def ordered(state: dict) -> list[dict]:
+    live = [(v["key"], i, v) for i, v in state["items"].items() if not v["deleted"] and v["ref"] is not None]
+    return [{"id": i, "key": k, "content_ref": v["ref"], "added_by": v["by"], "added_at": v["at"]} for k, i, v in sorted(live, key=lambda t: (t[0], t[1]))]
+
+
+def rebalance_ops(state: dict, node: str, lamport: int) -> list[dict]:
+    """Deterministic: re-key live items evenly with 3-letter keys (tied to current order)."""
+    live = ordered(state)
+    n = len(live)
+    step = 26 ** 3 // (n + 1)
+    ops = []
+    for idx, it in enumerate(live, 1):
+        v, key = idx * step, ""
+        for _ in range(3):
+            v, d = divmod(v, 26)
+            key = chr(97 + d) + key
+        key = key.rstrip("a") or "b"
+        ops.append({"op": "mov", "id": it["id"], "key": key, "lamport": lamport, "node": node})
+    return ops
+
+
+class Replica:
+    def __init__(self, node: str) -> None:
+        self.node, self.state, self.log = node, new_state(), []
+
+    def _emit(self, op: dict) -> dict:
+        apply(self.state, op)
+        self.log.append(op)
+        return op
+
+    def _tick(self) -> int:
+        self.state["clock"] += 1
+        return self.state["clock"]
+
+    def _key_between(self, after: str | None, before: str | None) -> str:
+        k = {i["id"]: i["key"] for i in ordered(self.state)}
+        return generate_key(k.get(after), k.get(before))
+
+    def insert(self, item_id: str, ref: dict, after: str | None = None, before: str | None = None) -> list[dict]:
+        key = self._key_between(after, before)
+        ops = [self._emit({"op": "ins", "id": item_id, "key": key, "ref": ref, "lamport": self._tick(), "node": self.node})]
+        return ops + self._maybe_rebalance(key)
+
+    def move(self, item_id: str, after: str | None = None, before: str | None = None) -> list[dict]:
+        key = self._key_between(after, before)
+        ops = [self._emit({"op": "mov", "id": item_id, "key": key, "lamport": self._tick(), "node": self.node})]
+        return ops + self._maybe_rebalance(key)
+
+    def delete(self, item_id: str) -> list[dict]:
+        return [self._emit({"op": "del", "id": item_id, "lamport": self._tick(), "node": self.node})]
+
+    def _maybe_rebalance(self, key: str) -> list[dict]:
+        if len(key) <= MAX_KEY:
+            return []
+        lam = self._tick()
+        return [self._emit(o) for o in rebalance_ops(self.state, self.node, lam)]
+
+    def receive(self, ops) -> None:
+        for op in ops:
+            apply(self.state, op)
+            if op in self.log:
+                continue
+            if valid_op(op):
+                self.log.append(op)
