@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f270b476f9b22bec31084ad6ac95d0b08976f37c -->
+<!-- sc-changelog-through: cad5aa251e6ef68b0237b75fe45c5d941ff58ef3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:41:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:41:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:41:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cad5aa251e6e`](https://github.com/gmanldn/smoothcast/commit/cad5aa251e6ef68b0237b75fe45c5d941ff58ef3)
+
+- 🟩 **07:41:36 · Feature** — feat(arch): pure plan\_encode with reasons, golden argv tests and lighter-plan degradation (Refs #697) · [`1671d0da4594`](https://github.com/gmanldn/smoothcast/commit/1671d0da459413c959f93780926d3a8e988a62f2)
 
 - ⬜ **07:41:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f270b476f9b2`](https://github.com/gmanldn/smoothcast/commit/f270b476f9b22bec31084ad6ac95d0b08976f37c)
+
+- ⬜ **07:41:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`cbb6e7578e54`](https://github.com/gmanldn/smoothcast/commit/cbb6e7578e54c6a59b983c71fe079fc357118371)
 
 - 🟥 **07:40:56 · Fix** — fix(persist): night mode, lyrics sync nudges and the room requests board save through store.Store, so a full or read-only disk no longer raises out of a GTK or portal handler and saves are fsynced and owner-only (Refs #686) · [`db46ca635fc2`](https://github.com/gmanldn/smoothcast/commit/db46ca635fc279dba4bb47e9c01045deb052fb51)
 
