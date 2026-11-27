@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: be431811e5678bb48deed83e9fbf5560081af7a0 -->
+<!-- sc-changelog-through: 91662b9102fd487f5915dc7f8352cc1111272fac -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:42:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:44:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:44:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`91662b9102fd`](https://github.com/gmanldn/smoothcast/commit/91662b9102fd487f5915dc7f8352cc1111272fac)
+
+- 🟩 **07:44:17 · Feature** — feat(arch): HardwareEncoder port with VAAPI, NVENC and fake backends, ranked selection with visible reasons (Refs #703) · [`9ee923f2ace5`](https://github.com/gmanldn/smoothcast/commit/9ee923f2ace5fae6738dc9da5dc6b94db0b4ed9b)
+
+- 🟩 **07:43:40 · Feature** — feat(prewarm): pure single-job warm registry with instant cancel, budget and take-over (Refs #423) · [`90a5a24f619e`](https://github.com/gmanldn/smoothcast/commit/90a5a24f619e5edd40be52533b97a2d414c60ac9)
 
 - ⬜ **07:42:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`be431811e567`](https://github.com/gmanldn/smoothcast/commit/be431811e5678bb48deed83e9fbf5560081af7a0)
 
 - 🟩 **07:42:53 · Feature** — feat(arch): per-attempt artifact folders, bounded retention and redacted bundle (Refs #698) · [`be459e78f831`](https://github.com/gmanldn/smoothcast/commit/be459e78f831fde2dfaa8e4aadfddfdac0bcc503)
+
+- ⬜ **07:42:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2e9062f56aba`](https://github.com/gmanldn/smoothcast/commit/2e9062f56aba06e1fc727f992087931b60fbb2b1)
 
 - 🟩 **07:42:34 · Feature** — feat(queue): pure fractional-key sequence CRDT for a partition-tolerant Up Next (Refs #421) · [`d9bbdb14c1d5`](https://github.com/gmanldn/smoothcast/commit/d9bbdb14c1d578bd497b9ff318086b54445ab414)
 
