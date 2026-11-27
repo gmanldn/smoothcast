@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 6b15ed0a46cc2d30fc87923f4beee5d66e84c4b6 -->
+<!-- sc-changelog-through: 74b9ca1f110d6e8269ce9cdc37edec4c1e22adb4 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:01:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:02:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:02:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`74b9ca1f110d`](https://github.com/gmanldn/smoothcast/commit/74b9ca1f110d6e8269ce9cdc37edec4c1e22adb4)
+
+- 🟪 **07:02:23 · Tests** — test(arch): ratchet against new raw os.replace writers; allowlist only shrinks (Refs #701) · [`dcd0d324a691`](https://github.com/gmanldn/smoothcast/commit/dcd0d324a691904c94f0e7f0b907863a8ce5c84a)
+
+- 🟩 **07:02:10 · Feature** — feat(kids): pure rating, bedtime (midnight-safe) and budget limits (Refs #364) · [`541a1787a8e5`](https://github.com/gmanldn/smoothcast/commit/541a1787a8e596090a032e7f4c8d9fabe857c09a)
 
 - ⬜ **07:01:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6b15ed0a46cc`](https://github.com/gmanldn/smoothcast/commit/6b15ed0a46cc2d30fc87923f4beee5d66e84c4b6)
 
 - 🟦 **07:01:16 · Refactor** — refactor(arch): link qualification cache persists through the atomic Store (Refs #701) · [`6dbfbb68db77`](https://github.com/gmanldn/smoothcast/commit/6dbfbb68db778f4fe3526cd875641c09c2357fd9)
+
+- ⬜ **07:01:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`83f4780b3107`](https://github.com/gmanldn/smoothcast/commit/83f4780b3107441b4d7a7c25c7dbf16c5e5715ac)
 
 - 🟩 **07:01:09 · Feature** — feat(residents): atomic versioned resident store with scrypt PINs and lockout (Refs #363) · [`aa9c97899908`](https://github.com/gmanldn/smoothcast/commit/aa9c978999085266256b6df000eb7f8b87e0fa86)
 
