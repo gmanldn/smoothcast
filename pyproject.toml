@@ -292,6 +292,7 @@ py-modules = [
     "remote_link",
     "replica_manager",
     "replica_store",
+    "resident_profiles",
     "responsive_layout",
     "room_activity",
     "room_checkpoint",
