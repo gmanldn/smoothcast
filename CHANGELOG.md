@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 53c4bceece6c1c6dfbffd0de29a4567b08899126 -->
+<!-- sc-changelog-through: 1607c6e6fbd5b6e7c32600ab139f033270a54ff0 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:22:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:23:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:23:59 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1607c6e6fbd5`](https://github.com/gmanldn/smoothcast/commit/1607c6e6fbd5b6e7c32600ab139f033270a54ff0)
+
+- 🟩 **07:23:48 · Feature** — feat(persist): Store quarantines a corrupt record and starts from defaults (Refs #701) (Refs #325) · [`b99f55d05c87`](https://github.com/gmanldn/smoothcast/commit/b99f55d05c8735cd71a0a22a9634771304f4613c)
+
+- 🟩 **07:23:31 · Feature** — feat(music): pure podcast feed parser with XML hardening, subscriptions and conditional refresh (Refs #380) · [`678c835302c6`](https://github.com/gmanldn/smoothcast/commit/678c835302c652e3cc31495a535674c324644c90)
 
 - ⬜ **07:22:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`53c4bceece6c`](https://github.com/gmanldn/smoothcast/commit/53c4bceece6c1c6dfbffd0de29a4567b08899126)
+
+- ⬜ **07:22:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0f1dfb2a5e15`](https://github.com/gmanldn/smoothcast/commit/0f1dfb2a5e1596d9abb15fbbf2cccc882cbb097e)
 
 - 🟩 **07:22:36 · Feature** — feat(ship): warn on pre-existing red that is not in the quarantine list (Refs #700) · [`aa08a81bfdb6`](https://github.com/gmanldn/smoothcast/commit/aa08a81bfdb6289622e435311b3fc8669782e746)
 
