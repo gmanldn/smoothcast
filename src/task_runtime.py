@@ -49,8 +49,10 @@ class Runtime:
                        for k, n in (limits or LIMITS).items()}
         self._scopes: list[Scope] = []
         self._futures: list[Future] = []
+        self._daemons: list[threading.Thread] = []
         self._lock = threading.Lock()
         self._closed = False
+        self.errors: list[tuple[str, BaseException]] = []
 
     def scope(self, deadline: float | None = None) -> Scope:
         scope = Scope(deadline)
@@ -79,11 +81,40 @@ class Runtime:
             self._futures = [f for f in self._futures if not f.done()] + [future]
         return future
 
+    def spawn_daemon(self, name: str, scope: Scope, fn: Callable[[Scope], None]) -> threading.Thread | None:
+        """Own a long-lived loop (accept loop, heartbeat, watcher) on a dedicated named thread.
+
+        Not drawn from the bounded pools, so a daemon can never starve short tasks. ``fn(scope)``
+        must poll ``scope.cancelled`` (or ``scope.check()``); ``shutdown`` cancels it and joins
+        within the budget. An uncaught error ends the loop and is recorded on ``errors``.
+        """
+        if self._closed or scope.cancelled:
+            return None
+
+        def run():
+            try:
+                fn(scope)
+            except Cancelled:
+                pass
+            except BaseException as exc:  # noqa: BLE001 - a dying daemon must be visible, not silent
+                self.errors.append((name, exc))
+
+        thread = threading.Thread(target=run, name=f"sc-daemon-{name}", daemon=True)
+        with self._lock:
+            self._daemons = [t for t in self._daemons if t.is_alive()] + [thread]
+        thread.start()
+        return thread
+
+    @property
+    def daemon_count(self) -> int:
+        with self._lock:
+            return sum(1 for t in self._daemons if t.is_alive())
+
     def shutdown(self, budget: float = 1.0) -> bool:
         """Cancel everything, then wait up to ``budget`` s. True when all tasks finished."""
         self._closed = True
         with self._lock:
-            scopes, futures = list(self._scopes), list(self._futures)
+            scopes, futures, daemons = list(self._scopes), list(self._futures), list(self._daemons)
         for scope in scopes:
             scope.cancel()
         end = time.monotonic() + budget
@@ -91,6 +122,10 @@ class Runtime:
         for future in futures:
             left = end - time.monotonic()
             if left <= 0 or not _wait(future, left):
+                clean = False
+        for thread in daemons:
+            thread.join(max(0.0, end - time.monotonic()))
+            if thread.is_alive():
                 clean = False
         for pool in self._pools.values():
             pool.shutdown(wait=False, cancel_futures=True)
