@@ -109,3 +109,12 @@ def test_external_metadata_is_receiver_only_and_never_invents_bytes():
     assert playback_state.external_media_labels({"title": "Live", "size_bytes": True}) == (
         "Live", "Size unavailable"
     )
+
+
+def test_catt_nested_metadata_title_rejects_another_apps_media():
+    # `catt info -j` has no top-level title; it is inside media_metadata (#686).
+    other = {"player_state": "PLAYING", "content_id": "http://192.168.0.16:8010/x",
+             "media_metadata": {"title": "Someone else's film"}}
+    assert not playback_state.direct_session_matches(other, "My film.mkv")
+    ours = dict(other, media_metadata={"title": "My film.mkv"})
+    assert playback_state.direct_session_matches(ours, "My film.mkv")
