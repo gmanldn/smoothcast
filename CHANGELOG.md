@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 28f6f57cff330499674edf18f4024d5105e35045 -->
+<!-- sc-changelog-through: 517a9af33f16d7ba0b0fc1929102fb6590f9fdc6 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:48:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:48:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:48:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`517a9af33f16`](https://github.com/gmanldn/smoothcast/commit/517a9af33f16d7ba0b0fc1929102fb6590f9fdc6)
+
+- 🟦 **07:48:50 · Refactor** — refactor(runtime): portal update check runs on the bounded network pool (Refs #696) · [`506b7a049028`](https://github.com/gmanldn/smoothcast/commit/506b7a049028a71be0ce36572d439150928bd353)
+
+- 🟩 **07:48:32 · Feature** — feat(rooms): pure house/solo namespaced queues with isolated revisions and deduped rejoin (Refs #429) · [`945e79b8741f`](https://github.com/gmanldn/smoothcast/commit/945e79b8741f66c5f6ea2109287bfc52ca2fd9b9)
 
 - ⬜ **07:48:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`28f6f57cff33`](https://github.com/gmanldn/smoothcast/commit/28f6f57cff330499674edf18f4024d5105e35045)
 
 - 🟥 **07:48:20 · Fix** — fix(cast): a receiver that keeps timing out is logged once per kind of failure, not once per timeout value, so a status poll can no longer write 68 near-identical lines an hour to errors.log (Refs #686) · [`908d0ab63a47`](https://github.com/gmanldn/smoothcast/commit/908d0ab63a4705342248cae760efe8b3f6a8b745)
+
+- ⬜ **07:48:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ab9d7c33a543`](https://github.com/gmanldn/smoothcast/commit/ab9d7c33a543a21eb00c9ea86b5352fd49f903db)
 
 - ⬜ **07:47:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`00bd571e4596`](https://github.com/gmanldn/smoothcast/commit/00bd571e459631487b7c91df4fb50f9eef8e7873)
 
