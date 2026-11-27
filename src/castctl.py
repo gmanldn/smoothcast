@@ -6,6 +6,7 @@ import command_trace
 import ipaddress
 import json
 import pathlib
+import re
 import shutil
 import math
 import os
@@ -194,9 +195,14 @@ def last_info_failure(device: str) -> str:
     return _info_failures.get(device, "")
 
 
+_TIMEOUT_VALUE = re.compile(r" after [0-9.]+s\b")
+
+
 def _info_failed(device: str, reason: str) -> None:
-    # Log only when the reason changes so a 40 s poll cannot flood errors.log.
-    if _info_failures.get(device) != reason:
+    # Log only when the kind of failure changes so a 40 s poll cannot flood
+    # errors.log; callers use different timeouts, which must not count.
+    previous = _info_failures.get(device)
+    if previous is None or _TIMEOUT_VALUE.sub("", previous) != _TIMEOUT_VALUE.sub("", reason):
         log_backend_failure(f"Receiver status unavailable for {device!r}: {reason}")
     _info_failures[device] = reason
 
