@@ -90,9 +90,12 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
 
 ## Lazy, risk-weighted CI — never a develop merge gate
 
-**Development never waits for CI.** Push coherent changes immediately to
-`develop`; do not start long global pytest/GTK/native builds for every
-agent patch. A failed or unrun check is *not* a licence to say a ticket passed
+**Development never waits for CI or physical hardware qualification.** Push
+coherent changes immediately to `develop`; do not start long global
+pytest/GTK/native builds for every agent patch. Owner policy (27 Nov 2026):
+hardware/device tests are desirable but never gate shipment to `develop`.
+Record unrun hardware checks as UNVERIFIED; keep ticket acceptance and release
+qualification separate from shipping. A failed or unrun check is *not* a licence to say a ticket passed
 testing. Always describe actual evidence accurately.
 **Finish, then move on:** ship, record it untested, and test lazily to close tickets.
 
