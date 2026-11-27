@@ -58,3 +58,18 @@ def test_correlation_ids():
     assert L.valid_correlation_id(cid) and len(cid) == 12
     assert L.new_correlation_id(lambda: "abcdef012345") == "abcdef012345"
     assert not any(L.valid_correlation_id(x) for x in ("", "ABCDEF012345", "short", None, "abcdef01234g"))
+
+
+def test_save_then_load_round_trips_and_bad_files_give_empty(tmp_path):
+    s = L.Stats()
+    s.record("portal.request", 12)
+    assert L.save(s, tmp_path) is True
+    assert L.load(tmp_path).summary()["portal.request"]["count"] == 1
+    (tmp_path / L.FILE_NAME).write_text("{not json")
+    assert L.load(tmp_path).summary() == {}
+    assert L.load(tmp_path / "missing").summary() == {}
+    assert L.save(s, tmp_path / "missing") is False
+
+
+def test_shared_is_one_instance():
+    assert L.shared() is L.shared()

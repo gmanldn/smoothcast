@@ -86,3 +86,39 @@ class Stats:
                 if _NAME.match(str(k)) and isinstance(v, list) and len(v) == len(BOUNDS_MS) + 1 and all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in v):
                     self._h.setdefault(k, [0] * len(v))
                     self._h[k] = [a + b for a, b in zip(self._h[k], v)]
+
+
+_SHARED = Stats()
+FILE_NAME = "latency.json"
+
+
+def shared() -> Stats:
+    """Process-wide recorder: call sites record here, the app saves it, diagnostics read it."""
+    return _SHARED
+
+
+def save(stats: Stats, directory) -> bool:
+    """Atomically write the snapshot to ``directory/latency.json``; False when the disk refuses."""
+    import json
+    import os
+    from pathlib import Path
+    target = Path(directory) / FILE_NAME
+    tmp = target.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(stats.snapshot()), encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError:
+        return False
+    return True
+
+
+def load(directory) -> Stats:
+    """A fresh Stats restored from ``directory/latency.json``; missing or corrupt files give an empty one."""
+    import json
+    from pathlib import Path
+    stats = Stats()
+    try:
+        stats.restore(json.loads((Path(directory) / FILE_NAME).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        pass
+    return stats

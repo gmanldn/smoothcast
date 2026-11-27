@@ -247,10 +247,12 @@ def cmd_cast(args: argparse.Namespace) -> dict:
 def cmd_diagnose(args: argparse.Namespace) -> dict:
     """Write a redacted support bundle of recent cast attempts; nothing is uploaded."""
     import time
+    import latency_stats
     import version
     dest = Path(args.out) if args.out else Path.cwd() / f"smoothcast-diagnostics-{int(time.time())}.json"
     try:
-        written = diagnose_bundle.write_bundle(paths.cache_dir(), dest, app_version=version.__version__)
+        written = diagnose_bundle.write_bundle(paths.cache_dir(), dest, app_version=version.__version__,
+                                             latency=latency_stats.load(paths.cache_dir()))
     except OSError as exc:
         raise CliError(EXIT_FAILED, f"could not write {dest}: {exc.strerror or exc}") from exc
     return {"path": str(written), "message": f"wrote {written} (paths and tokens removed; nothing was sent)"}
