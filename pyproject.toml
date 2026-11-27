@@ -99,6 +99,7 @@ py-modules = [
     "chrome_mesh_readiness",
     "cli",
     "cli_control",
+    "command_receipt",
     "command_trace",
     "commit_identity",
     "config_control",
