@@ -1958,6 +1958,11 @@ class Session:
         # that its VAAPI encoder is producing media. Retry once on software
         # after a bounded startup window, terminating the old encoder first.
         timeout = 15 if not software else 30
+        if burn_subs or embedded_subtitle_index is not None:
+            # libass must scan the whole source for fonts and cues before the
+            # first frame; a large or cold MKV can exceed the plain window while
+            # ffmpeg is healthy and silent (empty log).
+            timeout *= 3
         if not self._wait_for_segments(timeout):
             tail = self.log_tail()
             if not software:
@@ -1982,7 +1987,8 @@ class Session:
                     music_autogain=music_autogain,
                 )
                 return
-            raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
+            raise StreamError("the encoder failed to produce a stream within "
+                              f"{timeout}s" + (f" — {tail}" if tail else " — ffmpeg was silent (large source or subtitle burn-in?)"))
         if self._vaapi_stalled:
             self._vaapi_stalled = False
             hw_encoder_state.record_failure(
