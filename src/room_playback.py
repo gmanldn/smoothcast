@@ -84,7 +84,16 @@ class RoomPlayback:
 
     def submit(self, cmd: Command) -> Result:
         if cmd.key in self._seen:
-            return Result(True, "duplicate", self._seen[cmd.key], duplicate=True)
+            first = self._seen[cmd.key]
+            if isinstance(first, Result):              # a rejection stays rejected; use a new key to try again
+                return Result(False, first.reason, duplicate=True)
+            return Result(True, "duplicate", first, duplicate=True)
+        result = self._decide(cmd)
+        if not result.ok:
+            self._seen[cmd.key] = result
+        return result
+
+    def _decide(self, cmd: Command) -> Result:
         if cmd.base_revision is not None and cmd.base_revision != self.revision:
             return Result(False, "stale_revision")
         if not cmd.owner:

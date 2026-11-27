@@ -60,3 +60,14 @@ def test_random_contention_never_gives_two_owners_and_replays_exactly():
         assert (s.owner == "") == (s.receiver == "")
     assert replay(r.events) == r.state
     assert len({e.seq for e in r.events}) == len(r.events)
+
+
+def test_a_rejected_key_stays_rejected_after_the_receiver_frees_up():
+    r = _owned()
+    busy = r.submit(Command("claim", "bob1", owner="bob", receiver="tv"))
+    assert not busy.ok and busy.reason == "receiver_busy"
+    assert r.submit(Command("release", "k1", owner="ann")).ok
+    again = r.submit(Command("claim", "bob1", owner="bob", receiver="tv"))
+    assert not again.ok and again.duplicate and again.reason == "receiver_busy"
+    assert r.state.owner == ""
+    assert r.submit(Command("claim", "bob2", owner="bob", receiver="tv")).ok   # a fresh intent uses a fresh key
