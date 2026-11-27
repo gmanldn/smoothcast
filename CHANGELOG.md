@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 18b63b01bd242426d7e256983a30e58dbdd91808 -->
+<!-- sc-changelog-through: ba42de094a4b781fc4ae023f8eb4da5bf1565743 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:28:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:34:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:34:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ba42de094a4b`](https://github.com/gmanldn/smoothcast/commit/ba42de094a4b781fc4ae023f8eb4da5bf1565743)
+
+- 🟩 **16:33:59 · Feature** — feat(cli): smoothcast diagnose writes a redacted support bundle, nothing sent (Refs #698) · [`f62681e7a1a4`](https://github.com/gmanldn/smoothcast/commit/f62681e7a1a44e43cc5a2dfc6ac642bcdd840f23)
+
+- 🟪 **16:30:13 · Tests** — test(arch): convert two source-text tests (accent default behaviour, action-state wiring greps removed); baseline 106 -&gt; 104 (Refs #699) · [`db4d71c0494a`](https://github.com/gmanldn/smoothcast/commit/db4d71c0494a5b98f89f40621bfa17129b1ea961)
+
+- ⬜ **16:28:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a914823490f9`](https://github.com/gmanldn/smoothcast/commit/a914823490f986567886fcaf680f07fa2ca5e919)
 
 - ⬜ **16:28:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`18b63b01bd24`](https://github.com/gmanldn/smoothcast/commit/18b63b01bd242426d7e256983a30e58dbdd91808)
 
