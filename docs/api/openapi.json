@@ -646,6 +646,37 @@
         ]
       }
     },
+    "/api/mesh/diagram.svg": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "image/svg+xml": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rendered mesh diagram",
+        "tags": [
+          "mesh"
+        ]
+      }
+    },
     "/api/mesh/events": {
       "get": {
         "responses": {
@@ -703,6 +734,37 @@
           }
         ],
         "summary": "Dedicated primary-node heartbeat (coordinator, activities and counters)",
+        "tags": [
+          "mesh"
+        ]
+      }
+    },
+    "/api/mesh/profiles": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Per-node hardware profiles for the mesh panel",
         "tags": [
           "mesh"
         ]
@@ -1304,6 +1366,69 @@
           }
         ],
         "summary": "Playback, queue, room presence, receiver state and link acquisitions",
+        "tags": [
+          "room"
+        ]
+      }
+    },
+    "/api/update": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "One-click update availability (host only)",
+        "tags": [
+          "room"
+        ]
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "csrf": []
+          }
+        ],
+        "summary": "Start the one-click update (host only)",
         "tags": [
           "room"
         ]

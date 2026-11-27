@@ -82,6 +82,11 @@ PATHS: dict[str, dict] = {
     "/api/mesh/heartbeat": {"get": _op(
         "Dedicated primary-node heartbeat (coordinator, activities and counters)",
         tag="mesh")},
+    "/api/mesh/profiles": {"get": _op("Per-node hardware profiles for the mesh panel", tag="mesh")},
+    "/api/mesh/diagram.svg": {"get": _op("Rendered mesh diagram", content="image/svg+xml",
+                                         tag="mesh")},
+    "/api/update": {"get": _op("One-click update availability (host only)"),
+                    "post": _op("Start the one-click update (host only)", csrf=True)},
     "/api/uploads": {"post": _op("Start a resumable upload", csrf=True, method_body="UploadStart",
                                  tag="uploads")},
     "/api/uploads/{id}": {
@@ -157,6 +162,9 @@ ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
     ("/api/mesh", "get"): "mesh:read",
     ("/api/mesh/events", "get"): "mesh:read",
     ("/api/mesh/heartbeat", "get"): "mesh:read",
+    ("/api/mesh/profiles", "get"): "mesh:read",
+    ("/api/mesh/diagram.svg", "get"): "mesh:read",
+    ("/api/update", "get"): "room:read",
     ("/api/screens", "get"): "room:read",
     ("/api/screens/{id}", "get"): "room:read",
     ("/api/screens/{id}/poll", "get"): "room:read",
@@ -168,6 +176,7 @@ ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
     ("/api/screens/{id}", "delete"): "room:write",
     ("/api/screens/{id}/report", "post"): "room:write",
     ("/api/screens/{id}/command", "post"): "room:write",
+    ("/api/update", "post"): "room:write",
     # Uploads.
     ("/api/uploads", "post"): "uploads:create",
     ("/api/uploads/{id}", "put"): "uploads:manage",

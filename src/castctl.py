@@ -490,13 +490,14 @@ class _StatusMirror:
             import pychromecast
             from pychromecast_backend import PyChromecastBackend
 
+            # Creating the object opens no socket (wait() does), so do it under
+            # the lock: concurrent pollers must share one connection, not leak one.
             with self._lock:
                 chromecast = self._casts.get(host)
-            if chromecast is None:
-                chromecast = pychromecast.get_chromecast_from_host(
-                    (host, 8009, None, None, None), tries=1,
-                    timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
-                with self._lock:
+                if chromecast is None:
+                    chromecast = pychromecast.get_chromecast_from_host(
+                        (host, 8009, None, None, None), tries=1,
+                        timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
                     self._casts[host] = chromecast
             cc = cast(Any, chromecast)
             cc.wait(timeout=max(0.1, deadline - time.monotonic()))
