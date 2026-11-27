@@ -102,6 +102,24 @@ def test_parse_envelope_rejects_invalid_bodies(body):
         commands.parse_envelope(body)
 
 
+@pytest.mark.parametrize("position", [10**400, -(10**400), 86401, -1])
+def test_seek_out_of_range_is_a_safe_client_error(position):
+    body = {"client_id": "phone", "command_id": "cmd",
+            "expected_session_id": SESSION, "expected_revision": 0,
+            "action": "seek", "payload": {"value": position}}
+    with pytest.raises(commands.CommandError) as error:
+        commands.parse_envelope(body)
+    assert error.value.status == 400
+
+
+@pytest.mark.parametrize("position", [0, 86400])
+def test_seek_range_boundaries_are_accepted(position):
+    body = {"client_id": "phone", "command_id": "cmd",
+            "expected_session_id": SESSION, "expected_revision": 0,
+            "action": "seek", "payload": {"value": position}}
+    assert commands.parse_envelope(body).payload == {"value": float(position)}
+
+
 def test_fence_rotates_when_media_generation_changes():
     state = {"film": "A", "device": "TV"}
     fence = commands.CommandFence(
