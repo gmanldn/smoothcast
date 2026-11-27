@@ -5,9 +5,12 @@ import textwrap
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+from entry_name import EntryName
 from gui_source import main_window_methods
+from portal import Portal
 import reliability_metrics
 import shutdown_plan
 
@@ -168,6 +171,37 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(entry_done.is_set())
         self.assertIsNone(obj._entry_name)
         self.assertIsNone(obj._portal)
+
+    def test_portal_quit_completes_two_250_ms_goodbyes_within_350_ms(self):
+        entry_zeroconf, portal_zeroconf = mock.Mock(), mock.Mock()
+        for zeroconf in (entry_zeroconf, portal_zeroconf):
+            zeroconf.unregister_service.side_effect = lambda _info: time.sleep(0.25)
+
+        entry = EntryName("127.0.0.1", 12345,
+                          zeroconf_factory=lambda _ip: entry_zeroconf,
+                          info_factory=mock.Mock())
+        entry.apply(True)
+        portal = Portal.__new__(Portal)
+        portal.peers = None
+        portal._zeroconf, portal._service_info = portal_zeroconf, object()
+        portal.thread = SimpleNamespace(is_alive=lambda: True, join=mock.Mock())
+        portal.server = mock.Mock(uploads=None)
+        obj = window()
+        obj._closing = True
+        obj._entry_name, obj._portal = entry, portal
+
+        with mock.patch("cast_mesh.stop"):
+            start = time.monotonic()
+            obj._stop_portal()
+            elapsed = time.monotonic() - start
+
+        self.assertLess(elapsed, 0.35, f"Portal shutdown took {elapsed * 1000:.1f} ms")
+        self.assertIsNone(entry.name)
+        for zeroconf in (entry_zeroconf, portal_zeroconf):
+            zeroconf.unregister_service.assert_called_once()
+            zeroconf.close.assert_called_once()
+        portal.server.shutdown.assert_called_once()
+        portal.server.server_close.assert_called_once()
 
     def test_portal_rebind_closes_entry_before_stopping_server(self):
         obj = window()
