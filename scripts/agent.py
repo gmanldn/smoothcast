@@ -952,6 +952,17 @@ def failing_ids(output: str) -> list[str]:
     return sorted(ids)
 
 
+def unquarantined(ids: list[str]) -> list[str]:
+    """Failing ids with no live entry in tests/quarantine.json (#700): red nobody owns."""
+    import datetime
+    try:
+        entries = json.loads((ROOT / "tests" / "quarantine.json").read_text())["entries"]
+    except (OSError, ValueError, KeyError):
+        entries = {}
+    today = datetime.date.today().isoformat()
+    return [i for i in ids if str(entries.get(i, {}).get("expires", "")) < today]
+
+
 def failing_on_develop(ids: list[str]) -> set[str]:
     """Which of these tests also fail on a pristine origin/develop (not your regression)."""
     import tempfile
@@ -1283,6 +1294,10 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         return 1
                     print(f"  NOT yours: {len(ids)} test(s) already fail on "
                           f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
+                    orphan = unquarantined(ids)
+                    if orphan:
+                        print("  WARNING: red with no owner/expiry; add to tests/quarantine.json "
+                              f"or fix (#700): {', '.join(orphan)[:300]}")
                 else:
                     checks_run.append(label)
             checked_base = git("rev-parse", "origin/develop").strip()
