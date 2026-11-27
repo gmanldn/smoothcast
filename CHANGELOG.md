@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b705ba192b7079eabb3e350dec79564e83237a75 -->
+<!-- sc-changelog-through: 00bd571e459631487b7c91df4fb50f9eef8e7873 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:46:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:47:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:47:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`00bd571e4596`](https://github.com/gmanldn/smoothcast/commit/00bd571e459631487b7c91df4fb50f9eef8e7873)
+
+- 🟦 **07:47:42 · Refactor** — refactor(runtime): link setup runs on the bounded disk pool; raw-thread ratchet shrinks (Refs #696) · [`22dbe8f37892`](https://github.com/gmanldn/smoothcast/commit/22dbe8f37892fbdc4a54a332110a4ca5860e66a4)
+
+- 🟩 **07:47:11 · Feature** — feat(energy): pure energy-aware node scoring and keep-active-stream rule (Refs #428) · [`85e452b3df7f`](https://github.com/gmanldn/smoothcast/commit/85e452b3df7f774ed8716b3f0398699cde0203e0)
 
 - ⬜ **07:46:38 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b705ba192b70`](https://github.com/gmanldn/smoothcast/commit/b705ba192b7079eabb3e350dec79564e83237a75)
+
+- ⬜ **07:46:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f52dd0b7fe25`](https://github.com/gmanldn/smoothcast/commit/f52dd0b7fe2541579e978505be908cef66b0b003)
 
 - 🟦 **07:46:37 · Refactor** — refactor(runtime): update check runs on the bounded network pool with a 60s deadline; raw-thread ratchet shrinks (Refs #696) · [`5072309a7cd7`](https://github.com/gmanldn/smoothcast/commit/5072309a7cd7a004b3b0b2e34b229b8600acfd56)
 
