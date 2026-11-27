@@ -52,6 +52,7 @@ DEFAULTS: dict = {
     "subtitle_style": "default",  # burned-in caption preset, see subtitle_style.py (#34)
     "audio_track_by_file": {},
     "burn_subs": False,
+    "jank_watchdog": False,  # opt-in main-loop stall diagnostics (#442)
     "direct": True,
     "autonext": False,
     "idle_join_slate": False,  # opt-in join QR on the TV after playback ends (#420)

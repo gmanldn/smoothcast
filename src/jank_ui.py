@@ -89,7 +89,7 @@ class JankMonitorMixin:
     jank_monitor: JankMonitor | None = None
 
     def _start_jank_monitor(self) -> None:
-        if not jank_watchdog.enabled_from():
+        if not jank_watchdog.enabled_from(config=getattr(self, "cfg", None)):
             return
         try:
             self.jank_monitor = JankMonitor()

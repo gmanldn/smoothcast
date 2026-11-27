@@ -158,3 +158,11 @@ def test_enabled_from_honours_the_preference_and_the_isolated_smoke():
     # An explicit env off still loses to the smoke marker.
     assert jank_watchdog.enabled_from(
         env={**smoke, jank_watchdog.JANK_ENV: "0"}) is True
+
+
+def test_config_switch_survives_loading_and_reaches_the_monitor():
+    import cast_widgets
+    import config_control
+    cfg = config_control.sanitise_config({"jank_watchdog": True}, cast_widgets.DEFAULTS)
+    assert jank_watchdog.enabled_from(env={}, config=cfg) is True
+    assert jank_watchdog.enabled_from(env={}, config=cast_widgets.DEFAULTS) is False
