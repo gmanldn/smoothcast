@@ -95,23 +95,15 @@ class ShutdownLedger:
     def __init__(self, path: Path | None = None, *, clock: Callable[[], float] = time.time) -> None:
         self.path, self._clock = Path(path) if path else default_path(), clock
 
+    def _store(self):
+        import store             # light stdlib module; kept off the startup import path
+        return store.Store(self.path, 1)
+
     def _read(self) -> dict:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
+        return self._store().read()
 
     def _write(self, data: dict) -> None:
-        import tempfile          # only needed when writing; keeps it off the startup import path
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, name = tempfile.mkstemp(dir=self.path.parent, prefix="shutdown.", suffix=".tmp")
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, separators=(",", ":"))
-            os.replace(name, self.path)
-        except OSError:
-            pass   # a ledger problem must never affect the app
+        self._store().write(data)   # atomic; a ledger problem must never affect the app
 
     @staticmethod
     def _count(value: object) -> int:
