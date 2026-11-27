@@ -37,7 +37,6 @@ ALLOWED = {
     "shutdown_plan.py": 1,
     "streamer.py": 1,
     "supervisor.py": 1,
-    "update_button.py": 3,
 }
 
 

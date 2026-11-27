@@ -6,7 +6,7 @@ every ten minutes; the click asks first when something is playing.
 """
 from __future__ import annotations
 
-import threading
+import task_runtime
 import time
 
 from gi.repository import GLib, Gtk
@@ -42,7 +42,8 @@ class UpdateButton:
         now = time.monotonic()
         if should_check(snap["state"], self._last, now):
             self._last = now
-            threading.Thread(target=runner.check, daemon=True, name="update-check").start()
+            rt = task_runtime.shared()
+            rt.submit("network", rt.scope(deadline=60.0), lambda _s: runner.check())
         text = label_for(snap["state"])
         self.button.set_visible(text is not None)
         if text:
@@ -56,11 +57,14 @@ class UpdateButton:
             return
         self.button.set_sensitive(False)
 
-        def work(confirmed: bool) -> None:
-            result = runner.apply(confirmed=confirmed)
-            GLib.idle_add(self._done, result)
+        self._apply(runner, False)
 
-        threading.Thread(target=work, args=(False,), daemon=True, name="update-apply").start()
+    def _apply(self, runner, confirmed: bool) -> None:
+        rt = task_runtime.shared()
+        failed = {"ok": False, "message": "The update failed."}
+        if rt.submit("network", rt.scope(deadline=600.0), lambda _s: runner.apply(confirmed=confirmed),
+                     lambda result, error: GLib.idle_add(self._done, failed if error else result)) is None:
+            self.button.set_sensitive(True)
 
     def _done(self, result: dict) -> bool:
         runner = self._window.update_runner
@@ -74,8 +78,7 @@ class UpdateButton:
                 except Exception:
                     choice = 0
                 if choice == 1:
-                    threading.Thread(target=lambda: GLib.idle_add(self._done, runner.apply(confirmed=True)),
-                                     daemon=True, name="update-apply").start()
+                    self._apply(runner, True)
                 else:
                     self.button.set_sensitive(True)
 
