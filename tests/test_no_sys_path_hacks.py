@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {
     "setup/fresh_start.py": 1,
     "setup/launch.py": 1,
-    "src/update_managed.py": 1,
 }
 _MUTATION = re.compile(r"sys\.path\s*(?:\.\s*(?:insert|append|extend)\s*\(|\+=|\[\s*:\s*\]\s*=)")
 
