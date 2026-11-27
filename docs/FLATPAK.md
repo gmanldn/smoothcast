@@ -21,7 +21,7 @@ remains PyInstaller (see [PACKAGING.md](PACKAGING.md)).
 
 - **Python dependencies:** `packaging/flatpak/python3-deps.json` lists every
   runtime wheel (plus the setuptools/wheel build backend) by URL and sha256 for
-  the SDK's CPython 3.13 on x86_64; `requirements.lock.txt` is the same set in
+  the SDK's CPython 3.14 on x86_64; `requirements.lock.txt` is the same set in
   readable form. Regenerate both with
   `python3 packaging/flatpak/lock_python_deps.py` after changing
   `[project].dependencies` (pip `--dry-run` resolution; nothing executes).

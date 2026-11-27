@@ -22,8 +22,8 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/21/59/0a22abdaa8c34c1daa886001c3f238e9b09dbaeaa75febf7f8f203520774/charset_normalizer-3.5.3-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
-      "sha256": "656b9744bac4493561d28b56d7d646afd7a8471254ef7004d849aa8368020037"
+      "url": "https://files.pythonhosted.org/packages/aa/a8/0fed9cde3b8197c99b0981bc53ee7f84cc38a3805a4c5f1c1003cda50588/charset_normalizer-3.5.3-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+      "sha256": "ee9de080e8d6221bbe4ba2667367b1cee0f47a53f60ffc5e431b698cd2f2b214"
     },
     {
       "type": "file",
@@ -92,8 +92,8 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/5c/e8/b2c7a1997ae0934643716f960bbf92f404dd195e2de06780dd42d055050f/zeroconf-0.154.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-      "sha256": "c1fd35219bb548a9b145d248d65b7eec5d1e05d2569c3134cde25069ea52e800"
+      "url": "https://files.pythonhosted.org/packages/c6/28/bb668a4d33352b57b660b2ebf19fecd8d74d4475606413f91c725b2b34cd/zeroconf-0.154.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "6d381533c64def2117928dd275343d74292ca0d4af0df7a5d38e62c1ed30e20e"
     }
   ]
 }

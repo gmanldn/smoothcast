@@ -22,7 +22,7 @@ import tomllib
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-PYTHON = "3.13"  # CPython in org.gnome.Sdk//51 (freedesktop-sdk 25.08)
+PYTHON = "3.14"  # CPython in org.gnome.Sdk//51 (CI-probed 3.14.9)
 ABI = "cp" + PYTHON.replace(".", "")
 PLATFORMS = ("manylinux_2_28_x86_64", "manylinux_2_17_x86_64", "manylinux2014_x86_64", "any")
 BUILD_BACKEND = ("setuptools", "wheel")
