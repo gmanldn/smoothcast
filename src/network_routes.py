@@ -52,6 +52,34 @@ def _valid_source(value: str) -> str | None:
     return str(address)
 
 
+def receiver_url_host(value: str) -> str | None:
+    """Host part of a URL a receiver must fetch, or None if unsafe to publish.
+
+    IPv4 stays bare and IPv6 is bracketed. Link-local, zone-scoped (``%eth0``),
+    loopback, multicast and unspecified addresses only mean something on this
+    host, so they are never handed to a TV; prefer global/ULA IPv6 or IPv4.
+    """
+    text = str(value or "").strip().strip("[]")
+    if not text or "%" in text:
+        return None
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        return None
+    if (address.is_unspecified or address.is_loopback
+            or address.is_link_local or address.is_multicast):
+        return None
+    return f"[{address.compressed}]" if address.version == 6 else str(address)
+
+
+def receiver_url(host: str, port: int, path: str = "") -> str | None:
+    """``http://host:port/path`` for a receiver, IPv6-safe; None if unpublishable."""
+    url_host = receiver_url_host(host)
+    if url_host is None or not 0 < int(port) < 65536:
+        return None
+    return f"http://{url_host}:{int(port)}/{path.lstrip('/')}"
+
+
 def route_source(
     receiver: str, *, socket_factory=socket.socket,
 ) -> tuple[str | None, str | None]:
