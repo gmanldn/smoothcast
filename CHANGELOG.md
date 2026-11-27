@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a354b3a2258dbdefc73b5de810ea74e1679df8a2 -->
+<!-- sc-changelog-through: 46abce9827cb6e6c6e12f051e83a335422404393 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:48:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:49:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:49:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`46abce9827cb`](https://github.com/gmanldn/smoothcast/commit/46abce9827cb6e6c6e12f051e83a335422404393)
+
+- ⬜ **15:49:16 · Maintenance** — chore(packaging): sync pyproject py-modules with src (diagnose\_bundle, media\_source) (Refs #690) · [`92b3ce16ae52`](https://github.com/gmanldn/smoothcast/commit/92b3ce16ae52e8be01b0a92c69f7fc8308204b72)
 
 - ⬜ **15:48:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a354b3a2258d`](https://github.com/gmanldn/smoothcast/commit/a354b3a2258dbdefc73b5de810ea74e1679df8a2)
+
+- ⬜ **15:48:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1b11c5d85649`](https://github.com/gmanldn/smoothcast/commit/1b11c5d85649066d894c05ccb2bb8cf6581b7403)
 
 - 🟩 **15:48:12 · Feature** — feat(security): MediaSource resolves uploads/library files by real path containment, rejecting .., symlinks and non-files (Refs #702) · [`c8f093262f00`](https://github.com/gmanldn/smoothcast/commit/c8f093262f00816ea3aabd8f54d155c9596cd830)
 
