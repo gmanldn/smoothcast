@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f61d57db171842a903977eccefca76bd55179df1 -->
+<!-- sc-changelog-through: 38fa14a5349808a7a5e46a156d0e2f8f5afe5e0e -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:53:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:54:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:54:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`38fa14a53498`](https://github.com/gmanldn/smoothcast/commit/38fa14a5349808a7a5e46a156d0e2f8f5afe5e0e)
+
+- 🟪 **15:54:11 · Tests** — test(cast): every castctl control helper is accepted by the pychromecast backend; unknown verbs fail without raising (Refs #202) · [`b6ab068c737e`](https://github.com/gmanldn/smoothcast/commit/b6ab068c737e7072f5cba4dd120fca2ecbe85b98)
+
+- ⬜ **15:53:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0648af44c42c`](https://github.com/gmanldn/smoothcast/commit/0648af44c42c632f46aa06584510517401f2f557)
 
 - ⬜ **15:53:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f61d57db1718`](https://github.com/gmanldn/smoothcast/commit/f61d57db171842a903977eccefca76bd55179df1)
 
