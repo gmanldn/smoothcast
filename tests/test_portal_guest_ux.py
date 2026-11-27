@@ -843,36 +843,50 @@ def test_incoming_transfer_updates_reuse_rows_and_remove_only_finished_items():
     if not shutil.which("node"):
         pytest.skip("Node is needed for the browser contract")
     source = portal._HTML
-    start = source.index("let roomTransferSignature=null;")
+    start = source.index("let roomTransferSignature=null")
     end = source.index("function playbackFeedback", start)
     harness = r"""
 const assert=require("node:assert/strict");
 let made=0, moves=0;
 class Node{
-  constructor(){this.children=[];this.dataset={};this.textContent="";this.hidden=true;this.max=1;this.value=0;}
+  constructor(){this.children=[];this.dataset={};this.textContent="";this.hidden=false;this.max=1;this.value=0;this.className=""}
+  get firstChild(){return this.children[0]||null}
   append(...nodes){for(const n of nodes){n.parent=this;this.children.push(n)}}
   setAttribute(){}
+  querySelectorAll(){return this.children.filter(n=>n.className.includes("pinned"))}
+  querySelector(){return null}
   insertBefore(n,b){moves++;if(n.parent)n.remove();n.parent=this;this.children.splice(b?this.children.indexOf(b):this.children.length,0,n)}
   remove(){const p=this.parent;if(p){p.children.splice(p.children.indexOf(this),1);this.parent=null}}
 }
-const nodes=Object.fromEntries(["queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
-const $=id=>nodes[id], document={createElement(){made++;return new Node()}};
+const queueElement=new Node(),document={createElement(){made++;return new Node()}};
+const requestAnimationFrame=f=>{f();return 0};
 const mediaKindLabel=x=>x,fileUnits=x=>String(x);
 """
     scenario = r"""
-const a={id:"a",title:"Film",media_kind:"video",intent:"cast",stage:"receiving",received:0,size:100};
+const a={id:"a",title:"Film",intent:"cast",stage:"receiving",received:0,size:100};
 const b={...a,id:"b",title:"Second",intent:"queue"};
+const q=queueElement;
 renderRoomTransfers({room_transfers:[a,b]});
-const list=nodes.queueIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
-renderRoomTransfers({room_transfers:[{...a,received:60,stage:"buffering"},b]});
+const first=q.children[0],second=q.children[1],count=made,initialMoves=moves;
+assert.equal(first.children[1].firstChild.textContent,"Uploading 0%");
+renderRoomTransfers({room_transfers:[{...a,received:60,stage:"receiving"},b]});
 assert.equal(made,count);assert.equal(moves,initialMoves);
-assert.equal(list.children[0],first);assert.equal(first.children[2].value,60);
-assert.equal(list.children[1],second);
+assert.equal(q.children[0],first);assert.equal(first.children[2].value,60);
+assert.equal(first.children[1].firstChild.textContent,"Uploading 60%");
 renderRoomTransfers({room_transfers:[b]});
-assert.equal(list.children[0],second);assert.equal(list.children.length,1);
-assert.equal(made,count);
-renderRoomTransfers({room_transfers:[]});
-assert.equal(list.children.length,0);assert.equal(nodes.queueIncomingPanel.hidden,true);
+assert.equal(q.children[0],second);assert.equal(q.children.length,1);assert.equal(made,count);
+// An optimistic local row shows at once and is replaced by the server row of the same name.
+setLocalUploads([{name:"Local.mp4",size:50}]);
+assert.equal(q.children.length,2);assert.equal(q.children[1].children[1].firstChild.textContent,"Waiting");
+localUploadProgress("transfer",25,50,"");
+assert.equal(q.children[1].children[1].firstChild.textContent,"Uploading 50%");
+renderRoomTransfers({room_transfers:[b,{...a,id:"c",title:"Local.mp4",size:50,received:30}]});
+assert.equal(q.children.length,2);
+// Now-playing row is pinned first with its own chip.
+renderRoomTransfers({room_transfers:[],active:true,title:"Playing film",state:"BUFFERING",receiver:"TV"});
+assert.equal(q.children[0].children[1].firstChild.textContent,"Buffering");
+renderRoomTransfers({room_transfers:[]});localUploadProgress("choose",0,0,"");
+assert.equal(q.children.length,0);
 """
     subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
                    text=True, check=True, timeout=10)

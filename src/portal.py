@@ -1911,6 +1911,12 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 header{padding:16px 0;border-bottom:1px solid var(--header-line)}header h1{font-size:clamp(1.6rem,5vw,2.2rem);letter-spacing:-.04em}
 nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;background:var(--nav);color:var(--on-nav);text-decoration:none}nav a:hover{background:var(--nav-hover)}
 #login{max-width:30rem;margin:24px auto}#login button{width:100%}#pin{letter-spacing:.25em}button:not(.secondary):not(.vote){color:var(--on-accent)}
+.chip{display:inline-block;margin-top:4px;padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--line);color:inherit;white-space:nowrap}
+.queue-item.pinned{grid-template-columns:minmax(0,1fr) auto;position:relative}
+.queue-item.pinned progress{grid-column:1/-1;width:100%;height:6px}
+.queue-item.pinned .queue-actions{align-self:start}
+.queue-item.now .chip,.queue-item.incoming[data-stage="receiving"] .chip{background:var(--accent);color:var(--on-accent)}
+.queue-item.now{border-left:4px solid var(--accent);padding-left:10px}
 @media(max-width:480px){.queue-item{grid-template-columns:minmax(0,1fr)}.queue-actions{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
@@ -2635,6 +2641,7 @@ function renderQueue(items,revision=queueRevision){
       const text=document.createElement("div");
       text.append(document.createElement("strong"),document.createElement("div"));
       text.children[1].className="muted";
+      const chip=document.createElement("span");chip.className="chip";text.append(chip);
       const actions=document.createElement("div");
       actions.className="queue-actions";
       for(const action of ["vote","play","move-earlier","move-later","next","remove"]){
@@ -2652,6 +2659,7 @@ function renderQueue(items,revision=queueRevision){
       +(item.duration?" · "+clock(item.duration):"")
       +" · "+(item.contributor?"Added by "+item.contributor:"Contributor not recorded")
       +({upload:" · File upload",library:" · Shared library",link:" · Link download",local:" · Local media"}[item.source_kind]||"");
+    li.children[0].children[2].textContent=index===0?"Up next":"Queued";
     const buttons=li.children[1].children;
     const labels=[
       (item.voted?"Remove vote for":"Vote for")+" "+itemTitle,
@@ -2690,6 +2698,7 @@ function renderQueue(items,revision=queueRevision){
     nodes.push(more);
   }
   queue.replaceChildren(...nodes);
+  paintIncoming();
   if(focusTarget){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
     const target=row&&Array.from(row.children[1].children)
@@ -2989,40 +2998,77 @@ function renderLibraryCopies(state){
     li.append(title,detail);return li;
   }));
 }
-let roomTransferSignature=null;
+let roomTransferSignature=null,serverTransfers=[],localUploads=[],localUploadIndex=0,nowRow=null,incomingPaint=0;
+const INCOMING_CHIPS={waiting:"Waiting",receiving:"Uploading",buffering:"Starting playback",verifying:"Checking",submitting:"Queuing",awaiting_acceptance:"Queuing"};
+const NOW_CHIPS={PLAYING:"Playing",PAUSED:"Paused",BUFFERING:"Buffering",IDLE:"Preparing"};
 function renderRoomTransfers(state){
   const rows=Array.isArray(state.room_transfers)?state.room_transfers.slice(0,24):[];
   const signature=JSON.stringify(rows);
-  if(signature===roomTransferSignature)return;roomTransferSignature=signature;
-  const labels={waiting:"Waiting in batch",receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
-  for(const [panelId,listId] of [["queueIncomingPanel","queueIncomingRows"]]){
-    const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
-    if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
-    // Reuse stable rows so chunk ACKs do not rebuild the entire list,
-    // interrupt assistive technology or disturb the user's scroll position.
-    const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
-    rows.forEach((row,index)=>{
-      const id=String(row.id);
-      let li=previous.get(id);
-      if(!li){
-        li=document.createElement("li");li.dataset.transferId=id;
-        const detail=document.createElement("p");detail.className="field-hint";
-        li.append(document.createElement("strong"),detail,document.createElement("progress"));
-      }
-      previous.delete(id);
-      const [title,detail,meter]=li.children;
-      const name=row.title||"Incoming media";
-      const description=[row.batch_total>1?"File "+row.batch_index+" of "+row.batch_total:"",mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
-      if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
-      if(detail.textContent!==description)detail.textContent=description;
-      const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
-      if(meter.max!==total)meter.max=total;
-      if(meter.value!==received)meter.value=received;
-      const current=list.children[index]||null;
-      if(current!==li)list.insertBefore(li,current);
-    });
-    for(const li of previous.values())li.remove();
-  }
+  if(signature!==roomTransferSignature){roomTransferSignature=signature;serverTransfers=rows}
+  const active=state.active||state.preparing;
+  const key=active?[state.title,state.state,state.receiver,state.preparing].join("|"):"";
+  nowRow=active?{id:"now",cls:"now",title:state.title||"Preparing playback…",
+    stage:state.preparing&&!state.active?"IDLE":String(state.state||"PLAYING"),
+    note:state.receiver?"Playing on "+state.receiver:"",pos:Number(state.position)||0,dur:Number(state.duration)||0,key}:null;
+  paintIncomingSoon();
+}
+function setLocalUploads(files){
+  localUploads=Array.from(files||[],f=>({name:f.name,size:f.size,received:0,stage:"waiting"}));
+  localUploadIndex=0;paintIncomingSoon();
+}
+function localUploadProgress(phase,received,total,note){
+  if(!localUploads.length)return;
+  if(phase==="choose"){if(!(total>0)){localUploads=[];paintIncomingSoon()}return}
+  const m=/^File (\d+) of/.exec(note||"");
+  if(m)localUploadIndex=Math.max(0,Number(m[1])-1);
+  const row=localUploads[localUploadIndex];if(!row)return;
+  row.stage={prepare:"waiting",transfer:"receiving",verify:"verifying",deliver:"submitting"}[phase]||row.stage;
+  row.received=Number(received)||0;row.size=Number(total)||row.size;
+  paintIncomingSoon();
+}
+function paintIncomingSoon(){
+  if(incomingPaint)return;
+  incomingPaint=requestAnimationFrame(()=>{incomingPaint=0;paintIncoming()});
+}
+function paintIncoming(){
+  const q=queueElement;if(!q)return;
+  const names=new Set(serverTransfers.map(r=>r.title));
+  const rows=[];
+  if(nowRow)rows.push(nowRow);
+  for(const r of serverTransfers)rows.push({id:"s"+r.id,cls:"incoming",title:r.title||"Incoming media",stage:r.stage,
+    received:Number(r.received)||0,size:Number(r.size)||0,
+    note:[r.batch_total>1?"File "+r.batch_index+" of "+r.batch_total:"",r.intent==="queue"?"Up Next":"Play now"].filter(Boolean).join(" · ")});
+  localUploads.forEach((l,i)=>{if(!names.has(l.name))rows.push({id:"l"+i+"|"+l.name,cls:"incoming",title:l.name,stage:l.stage,
+    received:l.received,size:l.size,note:"From this device"})});
+  const old=new Map(Array.from(q.querySelectorAll(":scope > li.pinned"),li=>[li.dataset.incomingId,li]));
+  const empty=q.querySelector(":scope > li.empty");
+  if(empty&&empty.hidden!==rows.length>0)empty.hidden=rows.length>0;
+  rows.forEach((row,index)=>{
+    let li=old.get(row.id);
+    if(!li){
+      li=document.createElement("li");li.className="queue-item pinned "+row.cls;li.dataset.incomingId=row.id;
+      const text=document.createElement("div"),detail=document.createElement("div"),chip=document.createElement("span");
+      text.append(document.createElement("strong"),detail);detail.className="muted";chip.className="chip";
+      const side=document.createElement("div");side.className="queue-actions";side.append(chip);
+      li.append(text,side,document.createElement("progress"));
+    }
+    old.delete(row.id);
+    const [text,side,meter]=li.children,chip=side.firstChild;
+    const upload=row.cls==="incoming",pct=row.size>0?Math.floor(row.received*100/row.size):0;
+    const label=upload?(INCOMING_CHIPS[row.stage]||"Waiting")+(row.stage==="receiving"&&row.size>0?" "+pct+"%":""):(NOW_CHIPS[row.stage]||"Playing");
+    if(text.children[0].textContent!==row.title)text.children[0].textContent=row.title;
+    const detail=[row.note,upload&&row.stage==="receiving"&&row.size>0?fileUnits(row.received)+" / "+fileUnits(row.size):""].filter(Boolean).join(" · ");
+    if(text.children[1].textContent!==detail)text.children[1].textContent=detail;
+    if(chip.textContent!==label)chip.textContent=label;
+    if(li.dataset.stage!==row.stage)li.dataset.stage=row.stage;
+    li.setAttribute("aria-label",row.title+": "+label);
+    const total=upload?(row.stage==="receiving"?row.size:1):row.dur,value=upload?(row.stage==="receiving"?row.received:(row.stage==="waiting"?0:1)):row.pos;
+    meter.hidden=!(total>0);
+    if(total>0){if(meter.max!==total)meter.max=total;if(meter.value!==value)meter.value=value}
+    const current=q.children[index]||null;
+    if(current!==li)q.insertBefore(li,current);
+  });
+  for(const li of old.values())li.remove();
 }
 function playbackFeedback(state){
   const feedback=state.cast_feedback;
@@ -3733,6 +3779,7 @@ function fileUnits(bytes){
   return size.toFixed(size<10?1:0)+" "+units[index];
 }
 function transferView(phase,received=0,total=0,note="",queueOnly=$("uploadQueue").checked){
+  localUploadProgress(phase,received,total,note);
   const stage=TRANSFER_STAGES.includes(phase)?phase:"choose";
   const index=TRANSFER_STAGES.indexOf(stage);
   for(const item of ($("transferSteps")?.children||[])){
@@ -4134,6 +4181,7 @@ $("videoFile").addEventListener("change",()=>{
     $("uploadQueue").checked=false;
   }
   updateUploadControls();
+  if(file)setLocalUploads($("videoFile").files);
   if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));
   if(quick&&file&&!$("uploadButton").disabled)$("uploadButton").click();
 });
