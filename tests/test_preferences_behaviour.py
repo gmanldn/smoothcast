@@ -21,8 +21,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def extracted_preferences(*names):
     found = {}
-    # PreferencesWindow inherits PicturePreferencesMixin, so both contribute methods.
+    # PreferencesWindow inherits the picture, track and update mixins; extract
+    # every contributor so a method added to any of them stays testable here.
     for module, class_name in (("preferences_picture_ui.py", "PicturePreferencesMixin"),
+                               ("preferences_tracks_ui.py", "TrackPreferencesMixin"),
+                               ("preferences_update_ui.py", "UpdatePreferencesMixin"),
                                ("preferences_ui.py", "PreferencesWindow")):
         source = (ROOT / "src" / module).read_text("utf-8")
         owner = next(node for node in ast.parse(source).body
@@ -76,7 +79,7 @@ def test_preferences_open_reuses_window_and_resynchronises_without_casting():
 
 
 def test_reopening_reads_latest_config_and_updates_on_main_context():
-    UI = extracted_preferences("sync_from_owner")
+    UI = extracted_preferences("sync_from_owner", "_sync_update_status")
     prefs = UI()
     prefs._syncing = False
     prefs._audio_labels = None
@@ -86,6 +89,7 @@ def test_reopening_reads_latest_config_and_updates_on_main_context():
     prefs.subtitle_file = mock.Mock()
     prefs.gain = mock.Mock()
     prefs.portal_port_spin = mock.Mock()
+    prefs.update_status_row = mock.Mock()
     prefs._picture_spins = {"picture_brightness": mock.Mock()}
     prefs._combos = {"quality": mock.Mock(), "color_scheme": mock.Mock()}
     prefs._switches = {"direct": mock.Mock(), "auto_theme": mock.Mock()}
