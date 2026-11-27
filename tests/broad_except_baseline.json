@@ -69,7 +69,6 @@
   "preferences_link_ui.py": 1,
   "preferences_update_ui.py": 1,
   "process_identity.py": 2,
-  "pychromecast_backend.py": 12,
   "queue_metadata.py": 2,
   "replica_manager.py": 1,
   "replica_store.py": 3,
