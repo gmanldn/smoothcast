@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3a2cdec87d0a0674b1f948fbd59bc916046bfee8 -->
+<!-- sc-changelog-through: 9c8cf43ba048cfdc19b3bcba335dcc62be975887 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:52:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:53:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:53:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9c8cf43ba048`](https://github.com/gmanldn/smoothcast/commit/9c8cf43ba048cfdc19b3bcba335dcc62be975887)
+
+- 🟩 **07:53:46 · Feature** — feat(health): honest plain-text rows for the stream-health console (Refs #49) · [`d1a6bc137f62`](https://github.com/gmanldn/smoothcast/commit/d1a6bc137f62f97e4c80a90ebbd09134f8dcc14c)
+
+- 🟩 **07:53:13 · Feature** — feat(queue): pure old/new to Gio-style splice diff for incremental queue model updates (Refs #462) · [`5980e4cc8a67`](https://github.com/gmanldn/smoothcast/commit/5980e4cc8a679b2e51874c97c25ebfce15a03644)
 
 - ⬜ **07:52:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a2cdec87d0a`](https://github.com/gmanldn/smoothcast/commit/3a2cdec87d0a0674b1f948fbd59bc916046bfee8)
+
+- ⬜ **07:52:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d5461e19a780`](https://github.com/gmanldn/smoothcast/commit/d5461e19a780a838452d02e3099f2c11519ddf16)
 
 - 🟩 **07:52:39 · Feature** — feat(doctor): read-only firewall check (ufw/firewalld) with honest WARN when unverifiable (Refs #211) · [`db2f79a1cd04`](https://github.com/gmanldn/smoothcast/commit/db2f79a1cd0411d8cadcb894ab7faecfcc3f3fc7)
 
