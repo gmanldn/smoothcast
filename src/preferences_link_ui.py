@@ -15,8 +15,8 @@ from gi.repository import Adw, GLib, Gtk
 
 class LinkSetupMixin:
     def _build_link_setup_row(self, group) -> None:
-        import link_provision
-        reason = link_provision.unsupported_reason()
+        import link_setup
+        reason = link_setup.link_provision.unsupported_reason()
         self.link_setup_row = Adw.ActionRow(title="Set up link isolation")
         self.link_setup_row.set_subtitle_lines(0)
         self.link_setup_row.set_subtitle(
@@ -29,7 +29,7 @@ class LinkSetupMixin:
         group.add(self.link_setup_row)
 
     def _run_link_setup(self) -> None:
-        import link_provision
+        import link_setup
         self.link_setup_button.set_sensitive(False)
         self.link_setup_row.set_subtitle("Testing isolation… this takes a few seconds.")
 
@@ -43,4 +43,4 @@ class LinkSetupMixin:
                 pass
             return False
 
-        link_provision.start_setup(lambda ok, text: GLib.idle_add(done, ok, text))
+        link_setup.start_setup(lambda ok, text: GLib.idle_add(done, ok, text))
