@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4fa6f60f40bbea766d739137c14f5188746e0b39 -->
+<!-- sc-changelog-through: 3132d2016be0cbbeeb3e7b61ca66995277981f8c -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:47:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:48:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:48:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3132d2016be0`](https://github.com/gmanldn/smoothcast/commit/3132d2016be0cbbeeb3e7b61ca66995277981f8c)
+
+- 🟩 **18:48:01 · Feature** — feat: include platform in mesh node profiles (Refs #710) · [`5d06db71f813`](https://github.com/gmanldn/smoothcast/commit/5d06db71f8135eb402551b9cd3a4759d81e86249)
+
+- 🟩 **18:48:01 · Feature** — feat: include platform in mesh node profiles (Refs #710) · [`ea9a0ceb0293`](https://github.com/gmanldn/smoothcast/commit/ea9a0ceb0293ee6ad1df0878ae5b87ee5e7a89aa)
 
 - ⬜ **18:47:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4fa6f60f40bb`](https://github.com/gmanldn/smoothcast/commit/4fa6f60f40bbea766d739137c14f5188746e0b39)
 
 - 🟪 **18:47:43 · Tests** — test: align browser upload assertion with waiting playback state (Refs #570) · [`61e04e388cde`](https://github.com/gmanldn/smoothcast/commit/61e04e388cde2f5430c8cc70c5a9b7d00441c090)
+
+- ⬜ **18:47:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`714edc6d17ee`](https://github.com/gmanldn/smoothcast/commit/714edc6d17ee774e7b96f24b41a17ce51f5a7a87)
 
 - ⬜ **18:47:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`872a150c673e`](https://github.com/gmanldn/smoothcast/commit/872a150c673e78ed5b8a99f537e3c360eb2668ac)
 
