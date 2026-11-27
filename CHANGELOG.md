@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 636b51bd0da2f194c34894480d2ba1c74377f79b -->
+<!-- sc-changelog-through: 21a1755c2d36e40b741a69da8c5cae6232a7a5ec -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:56:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:58:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:58:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`21a1755c2d36`](https://github.com/gmanldn/smoothcast/commit/21a1755c2d36e40b741a69da8c5cae6232a7a5ec)
+
+- 🟦 **06:58:18 · Refactor** — refactor(arch): shutdown ledger persists through the atomic Store (Refs #701) · [`cc5923b41949`](https://github.com/gmanldn/smoothcast/commit/cc5923b4194953313912773b8f5998838117460b)
+
+- 🟩 **06:57:25 · Feature** — feat(mesh): pure per-peer expiring media ids for explicitly shared items (Refs #355) · [`8a5129fc6811`](https://github.com/gmanldn/smoothcast/commit/8a5129fc68112d4c952ed7a9ee6a327cc53713d8)
 
 - ⬜ **06:56:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`636b51bd0da2`](https://github.com/gmanldn/smoothcast/commit/636b51bd0da2f194c34894480d2ba1c74377f79b)
+
+- ⬜ **06:56:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`65188eac0ec1`](https://github.com/gmanldn/smoothcast/commit/65188eac0ec1a342af62708710a2257963ab377a)
 
 - 🟥 **06:55:37 · Fix** — fix(errors): add portal.missing\_capability to catalogue + portal category (Refs #207) · [`91e6ba68680a`](https://github.com/gmanldn/smoothcast/commit/91e6ba68680a822af5d477ea0f44a19941ddb52a)
 
