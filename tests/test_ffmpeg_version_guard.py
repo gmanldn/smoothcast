@@ -53,7 +53,7 @@ def test_supported_binary_version_passes_with_bounded_no_shell_probe():
     assert ffmpeg_compat.require_supported_ffmpeg(run=run) == (5, 0)
     args, kwargs = seen[0]
     assert args == ["ffmpeg", "-version"]
-    assert kwargs["timeout"] == 4
+    assert kwargs["timeout"] == ffmpeg_compat.VERSION_TIMEOUT
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
     assert kwargs["check"] is False
@@ -129,3 +129,19 @@ def test_compatibility_guard_is_packaged_and_release_floor_documented():
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert '"ffmpeg_compat"' in manifest
     assert "FFmpeg 5.0 or newer" in readme
+
+
+def test_good_version_is_remembered_per_binary(monkeypatch, tmp_path):
+    binary = tmp_path / "ffmpeg"
+    binary.write_text("x")
+    monkeypatch.setattr(ffmpeg_compat.media_tools, "resolve_media_tool", lambda n: str(binary))
+    ffmpeg_compat._verified.clear()
+    calls = []
+
+    def fake(args, **kw):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="ffmpeg version 7.1.5", stderr="")
+    monkeypatch.setattr(ffmpeg_compat.subprocess, "run", fake)
+    assert ffmpeg_compat.require_supported_ffmpeg() == (7, 1)
+    assert ffmpeg_compat.require_supported_ffmpeg() == (7, 1)
+    assert len(calls) == 1
