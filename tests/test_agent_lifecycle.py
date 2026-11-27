@@ -854,3 +854,12 @@ def test_ship_refuses_primary_checkout_without_a_private_task(monkeypatch, tmp_p
     assert agent.cmd_ship(args) == 2
     assert "primary checkout" in capsys.readouterr().out
     assert pushed == []
+
+
+def test_ship_checks_run_at_lowest_priority_so_they_never_starve_a_live_cast():
+    import sys
+    sys.path.insert(0, "scripts")
+    import agent
+    cmd = agent.polite(["pytest", "-q"])
+    assert cmd[-2:] == ["pytest", "-q"]
+    assert cmd[:3] == ["nice", "-n", "19"] or not __import__("shutil").which("nice")

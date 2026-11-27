@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -920,11 +921,23 @@ def plan_checks(changed: list[str], tests: dict[str, str]) -> list[tuple[str, li
     return steps
 
 
+def polite(cmd: list[str]) -> list[str]:
+    """Run checks at the lowest CPU/IO priority.
+
+    Agents share the owner's desktop; ``pytest -n auto`` at normal priority
+    starved a live cast's encoder (0.5x realtime, 60-100 s to first frame).
+    """
+    if not shutil.which(cmd[0]):
+        return cmd  # a missing tool must still surface as "unavailable"
+    wrap = [t for t in (["nice", "-n", "19"], ["ionice", "-c", "3"]) if shutil.which(t[0])]
+    return [*(a for w in wrap for a in w), *cmd]
+
+
 def run_headless_check(cmd: list[str], timeout: int = 180
                        ) -> tuple[subprocess.CompletedProcess | None, str]:
     """Never let a missing or stalled optional checker monopolise an agent."""
     try:
-        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
+        return subprocess.run(polite(cmd), cwd=ROOT, capture_output=True, text=True,
                               timeout=timeout), ""
     except (FileNotFoundError, PermissionError) as exc:
         return None, f"{cmd[0]} unavailable: {exc}"
@@ -972,7 +985,7 @@ def failing_on_develop(ids: list[str]) -> set[str]:
                           cwd=ROOT, capture_output=True).returncode:
             return set()  # cannot prove it: treat every failure as yours
         try:
-            res = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids],
+            res = subprocess.run(polite([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids]),
                                  cwd=tree, capture_output=True, text=True)
             return set(failing_ids(res.stdout))
         finally:
