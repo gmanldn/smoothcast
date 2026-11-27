@@ -11,6 +11,7 @@ import math
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import frozen_runtime
@@ -184,6 +185,8 @@ def unique_discovered_host(name: str, devices: list[Device]) -> str | None:
 
 
 _info_failures: dict[str, str] = {}
+# Passive scan (3 s) + identity check (2 s) must fit before an inline retry.
+REDISCOVERY_BUDGET = 5.0
 
 
 def last_info_failure(device: str) -> str:
@@ -329,14 +332,25 @@ class CattBackend:
         return self.receiver_route(name)
 
     def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
+        # The whole call, retry included, stays within the caller's budget:
+        # pollers such as the 40 s cast confirmation depend on it.
+        deadline = time.monotonic() + timeout
         result = _catt_info(device, timeout)
         if result is not None or not device.strip():
             return result
         # catt's own name lookup can fail where a verified address works.
-        route = self.refreshed_route(device)
-        if route == device:
+        if deadline - time.monotonic() < REDISCOVERY_BUDGET:
+            # No room for discovery plus a retry here; learn the route in the
+            # background so the next call (via catt_command) can use it.
+            if time.monotonic() - self._last_refresh.get(device, -1e9) >= 15.0:
+                threading.Thread(target=self.refreshed_route, args=(device,),
+                                 name="cast-route-refresh", daemon=True).start()
             return None
-        retried = _catt_info(route, timeout)
+        route = self.refreshed_route(device)
+        remaining = deadline - time.monotonic()
+        if route == device or remaining < 1.0:
+            return None
+        retried = _catt_info(route, remaining)
         if retried is not None:
             _info_failures.pop(device, None)
         return retried
