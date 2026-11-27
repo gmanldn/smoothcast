@@ -163,6 +163,7 @@ py-modules = [
     "join_slate_ui",
     "lan_guard",
     "lan_interfaces",
+    "lan_tls_policy",
     "language_prefs",
     "library_browse",
     "library_folders",
