@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 17679752624cfd36d8cbce07f08630afee5dd70e -->
+<!-- sc-changelog-through: d8c8b51eb17a243b268ec39eed5f7fea91245bfe -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:59:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:03:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:03:57 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d8c8b51eb17a`](https://github.com/gmanldn/smoothcast/commit/d8c8b51eb17a243b268ec39eed5f7fea91245bfe)
+
+- 🟪 **19:03:57 · CI** — ci: publish nightly develop health verdict (Refs #700) · [`07e2a292bb7c`](https://github.com/gmanldn/smoothcast/commit/07e2a292bb7ce847eba0b48fcf1b519b879d863a)
 
 - ⬜ **18:59:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`17679752624c`](https://github.com/gmanldn/smoothcast/commit/17679752624cfd36d8cbce07f08630afee5dd70e)
+
+- ⬜ **18:59:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`6dc79432597a`](https://github.com/gmanldn/smoothcast/commit/6dc79432597ad05b22be7c44aead1dbcefbe3e0d)
 
 - 🟥 **18:58:58 · Fix** — fix: roll back upload offsets after checkpoint failure (Refs #568) · [`dd08800bb76a`](https://github.com/gmanldn/smoothcast/commit/dd08800bb76ade8fb9264d7f3004291b8617438e)
 
