@@ -51,7 +51,9 @@ class Store:
         with self._lock:
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-                with tmp.open("w", encoding="utf-8") as handle:
+                # Owner-only: these files hold local state, never shared data.
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     handle.write(payload)
                     handle.flush()
                     os.fsync(handle.fileno())

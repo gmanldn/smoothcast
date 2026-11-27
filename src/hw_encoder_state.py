@@ -74,22 +74,10 @@ def is_known_bad(path: Path, key: dict[str, str], now: float | None = None) -> b
 
 def record_failure(path: Path, key: dict[str, str], now: float | None = None) -> bool:
     """Atomically persist a failure; returns False if it cannot be written."""
-    path = Path(path)
-    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump({"schema": _SCHEMA, "key": key,
-                       "failed_at": time.time() if now is None else now}, handle)
-        os.replace(temp, path)
-        return True
-    except OSError:
-        try:
-            temp.unlink()
-        except OSError:
-            pass
-        return False
+    import store
+
+    return store.Store(path, _SCHEMA).write(
+        {"schema": _SCHEMA, "key": key, "failed_at": time.time() if now is None else now})
 
 
 def clear(path: Path) -> bool:
