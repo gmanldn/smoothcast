@@ -13,6 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango
 
 import loudness
+import settings
 from cast_widgets import DEFAULTS, save_config
 import music_autogain
 
@@ -116,7 +117,7 @@ class SettingsCardMixin:
         gain_text.append(gain_title)
         gain_text.append(gain_sub)
         gain_adjustment = Gtk.Adjustment(
-            value=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+            value=settings.AudioSettings.from_config(self.cfg).gain,
             lower=0, upper=24, step_increment=1, page_increment=3,
         )
         self.gain_spin = Gtk.SpinButton(adjustment=gain_adjustment, digits=0, climb_rate=1.0)

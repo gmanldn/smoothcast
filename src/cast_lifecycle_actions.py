@@ -6,6 +6,7 @@ INV-011 read budget; the methods run on the same ``LifecycleMixin`` instance.
 """
 from __future__ import annotations
 
+import settings
 import shortcut_map
 import version
 from cast_widgets import APP_NAME, ICON_NAME
@@ -93,7 +94,7 @@ class LifecycleActionsMixin:
         spin = Gtk.SpinButton.new_with_range(0.25, 4.0, 0.05)
         spin.set_digits(2)
         spin.update_property([Gtk.AccessibleProperty.LABEL], ["Playback speed"])
-        spin.set_value(min(4.0, max(0.25, float(self.cfg.get("playback_speed", 1.0)))))
+        spin.set_value(settings.PlaybackSettings.from_config(self.cfg).speed)
         box.append(spin)
         apply = Gtk.Button(label="Apply")
         apply.add_css_class("suggested-action")
