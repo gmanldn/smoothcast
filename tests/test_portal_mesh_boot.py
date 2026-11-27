@@ -160,3 +160,63 @@ const response=()=>({ok:true,json:async()=>({nodes:[]})});
     result = subprocess.run(["node", "-"], input=harness + methods + scenario,
                             capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="requires Node.js")
+def test_mesh_heartbeat_and_events_are_fenced_to_current_room():
+    script = panel_html().split("<script>", 1)[1].split("</script>", 1)[0]
+    methods = script[script.index("  async function heartbeat(){"):script.index("  function cancelMeshRetry()")]
+    harness = r"""
+const assert=require("node:assert/strict");
+let csrf="one",meshSession="one",visible=true,beatRequest=null,beatTimer=null,es=null,backoff=3000;
+const dash={hidden:false};
+const profilesVisible=()=>visible&&!dash.hidden;
+const labels=[],messages=[],applied=[],pending=[],streams=[];
+let scheduled=0,timerId=0;
+const put=(id,value)=>labels.push([id,value]),markMesh=value=>messages.push(value),conn=()=>{};
+const heartbeatText=b=>b?.name||"unavailable",apply=value=>applied.push(value),schedule=()=>scheduled++;
+const setInterval=()=>++timerId,clearInterval=()=>{};
+const fetch=(url,opt)=>new Promise(resolve=>pending.push({resolve,signal:opt.signal}));
+class EventSource{
+  constructor(){streams.push(this)}
+  addEventListener(_,fn){this.event=fn}
+  close(){this.closed=true}
+}
+"""
+    scenario = r"""
+(async()=>{
+  syncHeartbeat();syncHeartbeat();
+  assert.equal(pending.length,1);
+  visible=false;syncHeartbeat();
+  assert.equal(pending[0].signal.aborted,true);
+  pending[0].resolve({ok:true,json:async()=>({heartbeat:{name:"obsolete"}})});
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(labels.length,0);
+  visible=true;syncHeartbeat();
+  const old=pending[1];
+  csrf="two";meshSession="two";stopHeartbeat();syncHeartbeat();
+  old.resolve({ok:true,json:async()=>({heartbeat:{name:"old"}})});
+  pending[2].resolve({ok:true,json:async()=>({heartbeat:{name:"current"}})});
+  for(let i=0;i<6;i++)await Promise.resolve();
+  assert.deepEqual(labels,[["meshHeartbeat","current"]]);
+  open();const first=streams[0];
+  first.event({data:'{"type":"snapshot"}'});
+  assert.equal(applied.length,1);
+  open();const second=streams[1];
+  assert.equal(first.closed,true);
+  first.event({data:'{"type":"delta"}'});
+  first.readyState=2;first.onerror();
+  assert.equal(applied.length,1);assert.equal(scheduled,0);
+  second.event({data:'{"type":"delta"}'});
+  assert.equal(applied.length,2);
+  csrf="three";
+  second.event({data:'{"type":"delta"}'});
+  second.readyState=2;second.onerror();
+  assert.equal(applied.length,2);assert.equal(scheduled,0);
+  dash.hidden=true;close();syncHeartbeat();
+  assert.equal(second.closed,true);
+})().catch(err=>{console.error(err);process.exitCode=1});
+"""
+    result = subprocess.run(["node", "-"], input=harness + methods + scenario,
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr

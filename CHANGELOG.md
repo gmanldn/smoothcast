@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 46abce9827cb6e6c6e12f051e83a335422404393 -->
+<!-- sc-changelog-through: 4d9bf74717c5b3bd9fd8d8508ce5b2e3ffd25d74 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:49:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **15:50:36 · Fix** — fix(web): fence mesh feed callbacks and stop hidden heartbeat polling (Refs #710) <!-- sc-changelog-pending -->
 
 - ⬜ **15:49:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`46abce9827cb`](https://github.com/gmanldn/smoothcast/commit/46abce9827cb6e6c6e12f051e83a335422404393)
+
+- ⬜ **15:49:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4d9bf74717c5`](https://github.com/gmanldn/smoothcast/commit/4d9bf74717c5b3bd9fd8d8508ce5b2e3ffd25d74)
 
 - ⬜ **15:49:16 · Maintenance** — chore(packaging): sync pyproject py-modules with src (diagnose\_bundle, media\_source) (Refs #690) · [`92b3ce16ae52`](https://github.com/gmanldn/smoothcast/commit/92b3ce16ae52e8be01b0a92c69f7fc8308204b72)
 

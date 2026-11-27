@@ -99,7 +99,7 @@ _PANEL = r"""
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
-  let beatTimer=null,beatBusy=false;
+  let beatTimer=null,beatRequest=null,meshSession=null;
   let bootRequest=null,bootEpoch=0;
   let profileRequest=null,profileSession=null,profileSignature=null,profileVisible=false,diagramGeneration=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
@@ -322,26 +322,40 @@ _PANEL = r"""
     return parts.join(" · ");
   }
   async function heartbeat(){
-    if(beatBusy||document.hidden||!dash||dash.hidden)return;
-    beatBusy=true;
+    if(beatRequest||!profilesVisible()||csrf!==meshSession)return;
+    const session=csrf,request=new AbortController();
+    beatRequest=request;
+    const current=()=>beatRequest===request&&!request.signal.aborted&&
+      csrf===session&&meshSession===session&&profilesVisible();
     try{
-      const r=await fetch("/api/mesh/heartbeat",{credentials:"same-origin",cache:"no-store"});
+      const r=await fetch("/api/mesh/heartbeat",{credentials:"same-origin",cache:"no-store",signal:request.signal});
+      if(!current())return;
       if(!r.ok){put("meshHeartbeat","Heartbeat unavailable");return}
-      const d=await r.json();put("meshHeartbeat",heartbeatText(d&&d.heartbeat));
-    }catch(_){put("meshHeartbeat","Heartbeat unavailable")}
-    finally{beatBusy=false}
+      const d=await r.json();
+      if(current())put("meshHeartbeat",heartbeatText(d&&d.heartbeat));
+    }catch(_){if(current())put("meshHeartbeat","Heartbeat unavailable")}
+    finally{if(beatRequest===request)beatRequest=null}
   }
   function startHeartbeat(){if(beatTimer===null&&typeof setInterval==="function"){heartbeat();beatTimer=setInterval(heartbeat,3000)}}
-  function stopHeartbeat(){if(beatTimer!==null){clearInterval(beatTimer);beatTimer=null}}
+  function stopHeartbeat(){
+    if(beatTimer!==null){clearInterval(beatTimer);beatTimer=null}
+    if(beatRequest){beatRequest.abort();beatRequest=null}
+  }
+  function syncHeartbeat(){
+    if(profilesVisible()&&csrf===meshSession)startHeartbeat();
+    else stopHeartbeat();
+  }
   function open(){
     close();
-    es=new EventSource("/api/mesh/events");
+    const session=csrf,source=new EventSource("/api/mesh/events");
+    es=source;
+    const current=()=>es===source&&meshSession===session&&csrf===session&&dash&&!dash.hidden;
     markMesh("Connecting live feed");
-    es.onopen=()=>{markMesh("Live feed connected");conn("")};
-    es.addEventListener("mesh",e=>{try{apply(JSON.parse(e.data));conn("");markMesh("Live feed connected");backoff=3000}catch(_){markMesh("Invalid update · last known state")}});
-    es.onerror=()=>{markMesh("Reconnecting · last known state");conn("Reconnecting to the room…");if(es&&es.readyState===2){close();schedule()}};
+    source.onopen=()=>{if(current()){markMesh("Live feed connected");conn("")}};
+    source.addEventListener("mesh",e=>{if(!current())return;try{apply(JSON.parse(e.data));conn("");markMesh("Live feed connected");backoff=3000}catch(_){markMesh("Invalid update · last known state")}});
+    source.onerror=()=>{if(!current())return;markMesh("Reconnecting · last known state");conn("Reconnecting to the room…");if(source.readyState===2){close();schedule()}};
   }
-  function close(){if(es){es.close();es=null}}
+  function close(){if(es){const source=es;es=null;source.close()}}
   function cancelMeshRetry(){if(retry!==null){clearTimeout(retry);retry=null}}
   function schedule(){cancelMeshRetry();retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
   function cancelMeshBoot(){
@@ -363,8 +377,8 @@ _PANEL = r"""
       const d=await r.json();
       if(!current())return;
       nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
-      panel.hidden=false;showNetworkNavigation(true);put("meshAvailability","Mesh service available · see network diagnostics below.");started=true;backoff=3000;lastMeshAt=Date.now();render();open();
-      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));startHeartbeat();syncProfiles();
+      meshSession=session;panel.hidden=false;showNetworkNavigation(true);put("meshAvailability","Mesh service available · see network diagnostics below.");started=true;backoff=3000;lastMeshAt=Date.now();render();open();
+      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));syncHeartbeat();syncProfiles();
     }catch(_){if(current()){put("meshAvailability","Mesh status unavailable · retrying.");schedule()}}
     finally{if(bootRequest===request)bootRequest=null}
   }
@@ -444,9 +458,9 @@ _PANEL = r"""
   setInterval(profiles,10000);
   document.addEventListener("visibilitychange",()=>{
     if(document.hidden){cancelMeshBoot();cancelMeshRetry();stopHeartbeat();cancelProfiles();profileVisible=false;hiddenTimer=setTimeout(()=>{close()},30000)}
-    else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}else{startHeartbeat();syncProfiles()}}
+    else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}else{syncHeartbeat();syncProfiles()}}
   });
-  setInterval(()=>{if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);put("meshAvailability","Checking mesh availability…");cancelMeshBoot();stopHeartbeat();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot();syncProfiles()},1500);
+  setInterval(()=>{if(dash&&(dash.hidden||(meshSession!==null&&meshSession!==csrf))){meshSession=null;panel.hidden=true;showNetworkNavigation(false);put("meshAvailability","Checking mesh availability…");cancelMeshBoot();stopHeartbeat();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot();syncHeartbeat();syncProfiles()},1500);
 })();
 </script>
 """
