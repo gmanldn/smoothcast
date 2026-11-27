@@ -231,6 +231,7 @@ py-modules = [
     "network_routes",
     "network_topology",
     "node_profile",
+    "node_trust",
     "notifications",
     "panel_ui",
     "participant_panel",
