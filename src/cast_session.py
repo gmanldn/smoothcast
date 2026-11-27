@@ -342,10 +342,10 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     learned.record(receiver_key, codec_key, "hls", True)
                 return session, media
             except Exception:
-                # Clean up failed startup processes.
+                # Preserve the startup failure; cleanup must not replace it.
                 try:
                     session.stop(device, send_stop=False)
-                except Exception:
+                except Exception:  # noqa: BLE001 - cleanup cannot mask startup failure
                     pass
                 raise
 
@@ -735,9 +735,10 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     picture_config=picture_config,
                 )
             except Exception:
+                # Preserve the startup failure; cleanup must not replace it.
                 try:
                     session.stop(device, send_stop=False)
-                except Exception:
+                except Exception:  # noqa: BLE001 - cleanup cannot mask startup failure
                     pass
                 raise
             if was_paused:
