@@ -10,6 +10,8 @@ SmoothCast is designed for a home network where everyone who has the Wi-Fi
 password is trusted. It does **not** try to defend the household against people
 on its own LAN; do not run it on shared office, dorm or public networks (or put
 it on its own VLAN). Full rationale: [docs/VISION.md](docs/VISION.md#trust-model-the-trusted-home-lan).
+The portal's authorization boundary, assets, actors and residual risks are
+documented in [docs/PORTAL_THREAT_MODEL.md](docs/PORTAL_THREAT_MODEL.md).
 
 In scope (please report):
 

@@ -943,6 +943,16 @@ def test_web_fine_transport_buttons_use_authoritative_fences():
     assert "void act(transportAction,undefined,envelope)" in text
 
 
+def test_web_chapter_jump_uses_the_fenced_seek_envelope():
+    page = room_html()
+    assert any(tag == "select" and attrs.get("id") == "chapterJump" and "disabled" in attrs
+               for tag, attrs in page.elements)
+    text = portal._HTML
+    assert "renderChapters(state)" in text
+    assert 'void act("seek",undefined,{client_id:extraTransportClient' in text
+    assert "expected_session_id:state.session_id,expected_revision:state.revision,payload:{value:start}" in text
+
+
 def test_extra_transport_envelope_bounds_and_capabilities():
     import shutil
     import subprocess

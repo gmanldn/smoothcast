@@ -6,6 +6,8 @@ or failed probe selects the conservative 720p/saver path, never a 1080p bet.
 """
 from __future__ import annotations
 
+import paths
+
 import hashlib
 import json
 import logging
@@ -33,8 +35,7 @@ _running = False
 
 
 def state_path() -> Path:
-    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-    return base / "cast-control" / "low-end-probe.json"
+    return paths.cache_dir() / "low-end-probe.json"
 
 
 def machine_key() -> str:

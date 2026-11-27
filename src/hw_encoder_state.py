@@ -18,22 +18,25 @@ import os
 from pathlib import Path
 import platform
 import time
-import media_tools
 
 STATE_NAME = "hw_encoder.json"
 MAX_AGE_SECONDS = 14 * 24 * 3600
 _SCHEMA = 1
 
 
-def ffmpeg_identity() -> str:
+def ffmpeg_identity(find=None) -> str:
     """Identify the ffmpeg build by its binary: path, size and mtime.
 
     Replacing ffmpeg (a package upgrade) changes this, so the record is
     re-probed. No process is spawned, so this is cheap and hermetic; it never
-    raises.
+    raises. ``find`` locates ffmpeg; the default is injected lazily so this core
+    module has no import-time dependency on the platform layer (#690).
     """
     try:
-        found = media_tools.find_media_tool("ffmpeg")
+        if find is None:
+            import media_tools
+            find = media_tools.find_media_tool
+        found = find("ffmpeg")
         if not found:
             return "missing"
         info = os.stat(found)
@@ -74,22 +77,10 @@ def is_known_bad(path: Path, key: dict[str, str], now: float | None = None) -> b
 
 def record_failure(path: Path, key: dict[str, str], now: float | None = None) -> bool:
     """Atomically persist a failure; returns False if it cannot be written."""
-    path = Path(path)
-    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump({"schema": _SCHEMA, "key": key,
-                       "failed_at": time.time() if now is None else now}, handle)
-        os.replace(temp, path)
-        return True
-    except OSError:
-        try:
-            temp.unlink()
-        except OSError:
-            pass
-        return False
+    import store
+
+    return store.Store(path, _SCHEMA).write(
+        {"schema": _SCHEMA, "key": key, "failed_at": time.time() if now is None else now})
 
 
 def clear(path: Path) -> bool:

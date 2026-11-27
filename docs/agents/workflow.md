@@ -14,9 +14,9 @@ to `main`. The owner manually decides when (and whether) to merge it.
   gh, curl or downloads first.
 - Network-enabled machines: use the native agent CLI below.
 - Both preserve claim arbitration, SHA-pinned changes, non-force develop
-  publication and truthful evidence. Connector progress cannot change SemVer or
-  close tickets; an owner-directed PATCH uses the
-  [guarded release lane](sandbox-network.md#explicit-owner-directed-patch-release).
+  publication and truthful evidence. Connector progress automatically attempts the next PATCH and cannot close
+  tickets; a standalone PATCH uses the
+  [guarded release lane](sandbox-network.md#guarded-patch-release).
 
 ## Many agents, one trunk
 
@@ -80,19 +80,31 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
 - Every `agent.py ship` has an immutable commit SHA; `src/version.py` is release
-  SemVer. Owner policy (26 Nov 2026): **make new versions in `develop`**, never
-  `main`. The old `--assign-patch` flag is ignored. The version-history guard runs
+  SemVer. Owner policy (27 Nov 2026): **each nonempty shipment should increment PATCH in `develop`**, never
+  `main`. Allocation failure alone does not block an unchanged valid version. MINOR and MAJOR remain owner-directed. The old `--assign-patch` flag is unnecessary. The version-history guard runs
   regardless of `--skip-checks`. If targeted checks already ran, use
   `--skip-checks` and record the evidence at finish; never claim unrun checks passed.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
 
+### Changelog and scope handback
+
+Every nonempty shipment records its commits in the root [CHANGELOG.md](../../CHANGELOG.md).
+Use clear conventional commit subjects describing the actual behaviour; the
+transport generates dated entries from Git history at the publication boundary.
+Never reserve or manually edit the changelog during feature development.
+Use `agent.py scope --files src/one.py` to drop unused production paths while
+keeping the issue lease. See [format and recovery](../CHANGELOG.md).
+
 ## Lazy, risk-weighted CI — never a develop merge gate
 
-**Development never waits for CI.** Push coherent changes immediately to
-`develop`; do not start long global pytest/GTK/native builds for every
-agent patch. A failed or unrun check is *not* a licence to say a ticket passed
+**Development never waits for CI or physical hardware qualification.** Push
+coherent changes immediately to `develop`; do not start long global
+pytest/GTK/native builds for every agent patch. Owner policy (27 Nov 2026):
+hardware/device tests are desirable but never gate shipment to `develop`.
+Record unrun hardware checks as UNVERIFIED; keep ticket acceptance and release
+qualification separate from shipping. A failed or unrun check is *not* a licence to say a ticket passed
 testing. Always describe actual evidence accurately.
 **Finish, then move on:** ship, record it untested, and test lazily to close tickets.
 

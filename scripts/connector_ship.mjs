@@ -1,5 +1,5 @@
-// Connector-only, develop-only progress and explicit owner release transport (#598, #631).
-// Per-ticket PATCH allocation is retired (owner policy, 25 Nov 2026).
+// Connector-only, develop-only progress and independently authorised PATCH release transport (#598, #631).
+// Every nonempty progress shipment receives a single PATCH, independent of issue closure.
 // versionBlob MUST come from offline
 // canonical AST validation of exact pinned bytes; the connector re-derives
 // the same proof from the served bytes and refuses mismatches.
@@ -94,7 +94,7 @@ function leaseCheck(rows,p,now){
   }
   const mine=live.get(p.issue+"/"+p.agent);
   check(mine&&mine.until>now,"own lease missing or expired");
-  const shared=new Set(["pyproject.toml","docs/complexity-baseline.json",".github/workflows/verify.yml","docs/a11y-baseline.json","docs/silent-except-baseline.json"]);
+  const shared=new Set(["CHANGELOG.md","pyproject.toml","docs/complexity-baseline.json",".github/workflows/verify.yml","docs/a11y-baseline.json","docs/silent-except-baseline.json"]);
   const production=p.changes.map(c=>c.path).filter(x=>!shared.has(x)&&!x.startsWith("docs/")&&!x.startsWith("tests/"));
   check(production.every(x=>mine.files.includes(x)),"lease scope incomplete");
   for(const c of live.values())if(c.until>now&&c.agent!==p.agent)check(c.issue!==p.issue&&!production.some(x=>c.files.includes(x)),"conflicting active lease");
@@ -171,6 +171,76 @@ function verifyTreeDelta(before,after,changes){
   }
 }
 
+function shipmentChanges(p,source){
+  if(p.kind==="release"||p.kind==="finalise")return p.changes;
+  const v=parseVersion(source);
+  check(v!==null,"invalid canonical version");
+  if(v.PATCH>=2147483647)return p.changes; // valid unchanged version; owner chooses next MINOR
+  const content=source.replace(VERSION_PART,(whole,key,eq,num,end)=>key==="PATCH"?key+eq+String(v.PATCH+1)+end:whole);
+  validateVersionBump(source,content);
+  return [...p.changes,{path:"src/version.py",old:p.versionBlob,content}];
+}
+
+
+// Changelog metadata is generated from a pinned ancestor and the planned
+// candidate subject, never leased or manually merged.
+const LOG_PATH="CHANGELOG.md", LOG_PENDING=" <!-- sc-changelog-pending -->";
+const LOG_MARK=/^<!-- sc-changelog-through: ([0-9a-f]{40}) -->$/gm;
+const LOG_DAY=/^## (\d{4}-\d{2}-\d{2}) · UTC$/;
+const LOG_CATEGORIES={feat:"🟩 Feature",fix:"🟥 Fix",perf:"🟦 Performance",refactor:"🟦 Refactor",test:"🟪 Tests",ci:"🟪 CI",docs:"🟨 Documentation"};
+function logAnchor(source){
+  const found=[...source.matchAll(LOG_MARK)];
+  check(found.length===1,"missing or ambiguous changelog anchor");
+  return found[0];
+}
+function logEntry(sha,stamp,subject){
+  check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(stamp)&&Number.isFinite(Date.parse(stamp)),"invalid changelog UTC timestamp");
+  const cat=LOG_CATEGORIES[subject.split(/[(:]/,1)[0]]||"⬜ Maintenance", i=cat.indexOf(" ");
+  const safe=subject.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/[\\\x60*_[\]]/g,ch=>"\\"+ch);
+  return "- "+cat.slice(0,i)+" **"+stamp.slice(11,19)+" · "+cat.slice(i+1)+"** — "+safe+
+    (sha?" · [\x60"+sha.slice(0,12)+"\x60](https://github.com/gmanldn/smoothcast/commit/"+sha+")":LOG_PENDING);
+}
+function renderChangelog(source,through,commits){
+  const mark=logAnchor(source), groups=new Map();let day=null;
+  check(isSha(through),"invalid changelog anchor");
+  for(const line of source.slice(mark.index+mark[0].length).split("\n")){
+    const m=line.match(LOG_DAY);
+    if(m){day=m[1];check(!groups.has(day),"duplicate changelog day");groups.set(day,[])}
+    else if(line.startsWith("- ")&&day!==null){if(!line.endsWith(LOG_PENDING))groups.get(day).push(line)}
+    else check(["","---"].includes(line.trim()),"unexpected changelog body");
+  }
+  for(const [sha,stamp,subject] of commits){const d=stamp.slice(0,10);if(!groups.has(d))groups.set(d,[]);groups.get(d).push(logEntry(sha,stamp,subject))}
+  const blocks=[...groups].sort((a,b)=>b[0].localeCompare(a[0])).filter(([,rows])=>rows.length)
+    .map(([d,rows])=>"## "+d+" · UTC\n\n"+rows.sort((a,b)=>b.split("**")[1].slice(0,8).localeCompare(a.split("**")[1].slice(0,8))).join("\n\n"));
+  return source.slice(0,mark.index)+"<!-- sc-changelog-through: "+through+" -->\n\n"+blocks.join("\n\n---\n\n")+"\n";
+}
+async function changelogChanges(api,p,entries,changes){
+  const entry=entries.get(LOG_PATH);
+  if(!entry)return changes; // bootstrap history predating changelog
+  check(!p.changes.some(c=>c.path===LOG_PATH),"CHANGELOG.md is generated; do not hand-edit");
+  check(typeof p.changelogDate==="string"&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(p.changelogDate),"pin changelogDate UTC in the shipment manifest");
+  const file=await api.file(p.base,LOG_PATH);
+  check(entry.mode==="100644"&&file.sha===entry.sha&&blobSha(file.content)===entry.sha,"changelog base bytes disagree");
+  const old=logAnchor(file.content)[1], rows=[],seen=new Set();let total=null;
+  if(old!==p.base){
+    for(let page=1;page<=10;page++){
+      const result=await api.get("/compare/"+old+"..."+p.base+"?per_page=100&page="+page);
+      check(result.behind_by===0&&result.merge_base_commit?.sha===old&&Number.isSafeInteger(result.total_commits)&&Array.isArray(result.commits)&&result.commits.length<=100,"incomplete changelog comparison");
+      if(total===null)total=result.total_commits;
+      check(total===result.total_commits,"changelog comparison changed");
+      for(const c of result.commits){
+        check(isSha(c.sha)&&!seen.has(c.sha)&&typeof c.commit?.message==="string"&&typeof c.commit?.committer?.date==="string","invalid changelog history");
+        seen.add(c.sha);rows.push([c.sha,c.commit.committer.date,c.commit.message.split("\n",1)[0]]);
+      }
+      if(rows.length===total)break;
+      check(result.commits.length===100,"truncated changelog comparison");
+    }
+    check(rows.length===total&&seen.has(p.base),"incomplete changelog history");
+  }
+  const content=renderChangelog(file.content,p.base,[[null,p.changelogDate,candidateMessage(p)],...rows]);
+  return [...changes,{path:LOG_PATH,old:entry.sha,content}];
+}
+
 async function checkBase(api,p){
   const b=await api.get("/git/commits/"+p.base);
   check(b.sha===p.base&&isSha(b.tree?.sha),"invalid base");
@@ -195,7 +265,7 @@ async function checkBase(api,p){
     const x=entries.get(c.path)??null;
     check(c.old===null?x===null:x?.sha===c.old&&x.type==="blob"&&x.mode==="100644","stale base blob or mode: "+c.path);
   }
-  return {sha:b.tree.sha,entries};
+  return {sha:b.tree.sha,entries,changes:await changelogChanges(api,p,entries,shipmentChanges(p,served.content))};
 }
 
 async function versionHistory(api,base){
@@ -251,12 +321,13 @@ async function verifyCandidate(api,p,candidate){
     validateVersionBump(baseVersion.content,newVersion.content);
     check(v?.mode==="100644"&&v.sha!==p.versionBlob,"finalise must replace the version blob");
   }else{
-    check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
+    const expected=before.changes.find(x=>x.path==="src/version.py");
+    check(v?.sha===(expected?blobSha(expected.content):p.versionBlob)&&v.mode==="100644","candidate PATCH mismatch");
   }
-  verifyTreeDelta(before.entries,after,p.changes);
-  for(const x of p.changes){
+  verifyTreeDelta(before.entries,after,before.changes);
+  for(const x of before.changes){
     const t=after.get(x.path), file=await api.file(candidate,x.path);
-    check(t?.mode==="100644"&&t.type==="blob"&&t.sha===file.sha&&file.content===x.content,"candidate content/mode mismatch: "+x.path);
+    check(t?.mode==="100644"&&t.type==="blob"&&t.sha===file.sha&&file.content===x.content&&(!["src/version.py",LOG_PATH].includes(x.path)||t.sha===blobSha(file.content)),"candidate content/mode mismatch: "+x.path);
   }
 }
 
@@ -293,7 +364,7 @@ async function createCandidate(api,p){
   checkPending(comments);
   check(await tip(api)===p.base,"stale base");
   const baseTree=await checkBase(api,p);
-  const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
+  const tree=await api.tree(baseTree.sha,baseTree.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
   check(isSha(tree),"invalid tree");
   const candidate=await api.commit(tree,p.base,candidateMessage(p));
   check(isSha(candidate),"invalid candidate");
@@ -354,7 +425,11 @@ async function recordHandover(api,p,candidate){
     // the original issue must contain the exact SHA/base delivery intent.
     const prefix="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent=";
     check(comments.some(c=>(c.body||"").includes(prefix)),"missing pending receipt for landed candidate");
-    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nFiles: "+p.changes.map(x=>x.path).join(", ")+"\n"+shipped);
+    const candidateVersion=await api.file(candidate,"src/version.py");
+    const fields=parseVersion(candidateVersion.content);
+    check(fields!==null,"invalid shipped version");
+    const versionChanged=candidateVersion.sha!==p.versionBlob;
+    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nVersion: "+[fields.MAJOR,fields.MINOR,fields.PATCH].join(".")+(versionChanged?" (incremented)":" (unchanged; allocation deferred)")+"\nFiles: "+[...p.changes.map(x=>x.path),...(p.kind!=="release"&&versionChanged?["src/version.py"]:[])].join(", ")+"\n"+shipped);
     check(Number.isSafeInteger(id),"handover not acknowledged; retry exact candidate");
     const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
     check(confirmed.some(c=>c.id===id&&(c.body||"").includes(shipped)),"handover not visible");
@@ -434,4 +509,4 @@ function connectorAdapter(tools){
   };
 }
 
-export {validateVersionBump,validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker,connectorAdapter,treeSnapshot,verifyTreeDelta};
+export {renderChangelog,validateVersionBump,validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker,connectorAdapter,treeSnapshot,verifyTreeDelta};

@@ -56,7 +56,7 @@ def require_supported_ffmpeg(*, run=None) -> tuple[int, int]:
             st = os.stat(real)
             key = (real, st.st_mtime_ns, st.st_size)
         except OSError:
-            pass
+            key = None  # unreadable binary: skip the cache
         if key in _verified:
             return _verified[key]
     try:

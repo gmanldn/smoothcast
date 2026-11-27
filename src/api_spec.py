@@ -82,6 +82,11 @@ PATHS: dict[str, dict] = {
     "/api/mesh/heartbeat": {"get": _op(
         "Dedicated primary-node heartbeat (coordinator, activities and counters)",
         tag="mesh")},
+    "/api/mesh/profiles": {"get": _op("Per-node hardware profiles for the mesh panel", tag="mesh")},
+    "/api/mesh/diagram.svg": {"get": _op("Rendered mesh diagram", content="image/svg+xml",
+                                         tag="mesh")},
+    "/api/update": {"get": _op("One-click update availability (host only)"),
+                    "post": _op("Start the one-click update (host only)", csrf=True)},
     "/api/uploads": {"post": _op("Start a resumable upload", csrf=True, method_body="UploadStart",
                                  tag="uploads")},
     "/api/uploads/{id}": {
@@ -125,6 +130,76 @@ PATHS: dict[str, dict] = {
                                     content="application/octet-stream", tag="mesh-library")},
     "/api/openapi.json": {"get": _op("This document", auth=False)},
 }
+
+# Capability required to call each route, declared beside the route table so a
+# test can fail any route that lacks one. ``None`` means the route is open to
+# anyone who reaches the LAN listener (no session, no capability). State-changing
+# routes additionally require the session cookie and CSRF token already declared
+# in ``PATHS``; this is the authorization layer on top of authentication.
+ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
+    # Public: open to any peer on the trusted home LAN.
+    ("/", "get"): None,
+    ("/api/config", "get"): None,
+    ("/api/login", "post"): None,
+    ("/api/openapi.json", "get"): None,
+    ("/silence.wav", "get"): None,
+    ("/screen", "get"): None,
+    ("/nodes", "get"): None,
+    # Mesh library reads are public and read-only.
+    ("/mesh/library/generation", "get"): None,
+    ("/mesh/library/changes", "get"): None,
+    ("/mesh/library/snapshot", "get"): None,
+    ("/mesh/library/search", "get"): None,
+    ("/mesh/file/{key}", "get"): None,
+    # Authenticated read: a paired session cookie.
+    ("/api/session", "get"): "room:read",
+    ("/api/status", "get"): "room:read",
+    ("/api/search", "get"): "room:read",
+    ("/api/search/stream", "get"): "room:read",
+    ("/api/events", "get"): "room:read",
+    ("/api/libraries", "get"): "room:read",
+    ("/api/libraries/{origin}/{folder}", "get"): "room:read",
+    ("/api/mesh", "get"): "mesh:read",
+    ("/api/mesh/events", "get"): "mesh:read",
+    ("/api/mesh/heartbeat", "get"): "mesh:read",
+    ("/api/mesh/profiles", "get"): "mesh:read",
+    ("/api/mesh/diagram.svg", "get"): "mesh:read",
+    ("/api/update", "get"): "room:read",
+    ("/api/screens", "get"): "room:read",
+    ("/api/screens/{id}", "get"): "room:read",
+    ("/api/screens/{id}/poll", "get"): "room:read",
+    ("/api/media/{id}", "get"): "media:read",
+    # State-changing: cookie plus CSRF token.
+    ("/api/profile", "post"): "room:write",
+    ("/api/action", "post"): "room:write",
+    ("/api/screens", "post"): "room:write",
+    ("/api/screens/{id}", "delete"): "room:write",
+    ("/api/screens/{id}/report", "post"): "room:write",
+    ("/api/screens/{id}/command", "post"): "room:write",
+    ("/api/update", "post"): "room:write",
+    # Uploads.
+    ("/api/uploads", "post"): "uploads:create",
+    ("/api/uploads/{id}", "put"): "uploads:manage",
+    ("/api/uploads/{id}", "delete"): "uploads:manage",
+    ("/api/uploads/{id}/complete", "post"): "uploads:manage",
+    # Link acquisition.
+    ("/api/link-jobs", "post"): "link:acquire",
+    ("/api/link-jobs/cancel", "post"): "link:acquire",
+    ("/api/link-jobs/retry", "post"): "link:acquire",
+    ("/api/search/youtube", "post"): "link:search",
+    ("/api/search/magnets", "post"): "link:search",
+}
+
+
+def required_capability(path: str, method: str) -> str | None:
+    """The capability a caller must hold to invoke ``method`` on ``path``.
+
+    ``None`` means the route is open to anyone who reaches the LAN listener
+    (no session, no capability). State-changing routes additionally require the
+    session cookie and CSRF token already declared in ``PATHS``.
+    """
+    return ROUTE_CAPABILITIES.get((path, method))
+
 
 SCHEMAS = {
     "Error": {"type": "object", "properties": {"ok": {"const": False}, "error": {"type": "string"}}},

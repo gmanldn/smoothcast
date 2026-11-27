@@ -190,7 +190,7 @@ def cmd_status(args: argparse.Namespace) -> dict:
         "playing": castctl.is_playing(info),
         "position": info.get("current_time"),
         "duration": info.get("duration"),
-        "title": playback_state.reported_title(info),
+        "title": playback_state.reported_title(dict(info)),
         "volume": castctl.volume_percent(info),
         "muted": castctl.volume_muted(info),
         "seekable": castctl.is_seekable(info),

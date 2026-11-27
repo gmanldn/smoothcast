@@ -14,10 +14,11 @@ automatic release PR or dependency on main's version or CI verdict.
 - `agent.py ship` refreshes `origin/develop`, checks claims and version
   integrity, rebases only unpublished code and fast-forward pushes. It never
   automatically promotes a release or writes to main.
-- Owner policy (26 Nov 2026): merging into `develop` and making new versions in
-  `develop` are normal owner-directed release work. The legacy
-  `ship --assign-patch` option is ignored; historical generated unpublished
-  version-only commits remain recoverable.
+- Owner policy (27 Nov 2026): strongly prefer one canonical PATCH increment per
+  nonempty shipment to `develop`, independent of ticket closure or release
+  qualification. Allocation failure alone must not block a valid unchanged-version
+  shipment; version-history integrity remains mandatory. MINOR and MAJOR are
+  owner-directed. Historical generated unpublished version-only commits remain recoverable.
 - Source checkout, downloaded, installed and running processes can differ;
   changing a file on disk does not activate a running build.
 

@@ -13,6 +13,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import os
 from position_tracker import PositionTracker
 import pathlib
+import settings
 import sys
 import threading
 import accent
@@ -386,49 +387,6 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         return False
 
 
-    def _show_stale_runtime_notice(self, window: MainWindow) -> None:
-        """Do not misrepresent an updated checkout as a restarted process.
-
-        Running Python modules remain from this launch; an on-disk version
-        change is only effective after an orderly quit and relaunch.
-        """
-        if window._closing:
-            return
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        disk = version.read_checkout_version(repo / "src" / "version.py")
-        disk_revision = version.read_checkout_revision(repo)
-        stale_version = disk is not None and disk != version.__version__
-        stale_revision = (self._run_revision is not None
-                          and disk_revision is not None
-                          and disk_revision != self._run_revision)
-        if not (stale_version or stale_revision):
-            # A checkout can be rolled back while this process remains alive.
-            # Do not keep a false restart warning after both identities match.
-            self._noticed_runtime_key = None
-            if getattr(window, "_installed_version_stale", False):
-                window._installed_version_stale = False
-                window.update_notice = None
-                window._update_header_subtitle()
-            return
-        key = (disk if stale_version else None,
-               disk_revision if stale_revision else None)
-        if key == self._noticed_runtime_key and getattr(
-                window, "_installed_version_stale", False):
-            return
-        self._noticed_runtime_key = key
-        if stale_version:
-            notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
-                      "Finish playback, then quit and reopen to use the installed version.")
-        else:
-            notice = (f"Installed build updated to {disk_revision[:8]}; this SmoothCast "
-                      f"process started at {self._run_revision[:8]}. Finish playback, "
-                      "then quit and reopen to load the new code.")
-        window._installed_version_stale = True
-        window.update_notice = notice
-        window._update_header_subtitle()
-        window.toast(notice, error=True)
-
-
     def do_activate(self) -> None:
         startup_timeline.mark("activate")
         window = self._window()
@@ -467,6 +425,10 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         startup_timeline.mark_idle()
         self._start_jank_monitor()
         self._run_interaction_benchmark()
+        import store
+        if store.QUARANTINED:  # say so once instead of silently resetting a setting
+            window.toast("A damaged settings file was set aside and defaults were used: "
+                         + ", ".join(store.QUARANTINED[:3]), error=True)
         GLib.idle_add(self._guard_glib(self._start_optional_services), window,
                       priority=GLib.PRIORITY_LOW)
         return False
@@ -490,7 +452,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         if self._mpris is not None:
             window._sync_ui_timers()
         if (not getattr(sys, "frozen", False)
-                and bool(window.cfg.get("check_release_updates", False))):
+                and settings.UpdateSettings.from_config(window.cfg).check_releases):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
@@ -526,11 +488,12 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         cfg = getattr(self.window, "cfg", None) or {}
         from update_control import check_release
 
+        update = settings.UpdateSettings.from_config(cfg)
         notice = check_release(
             pathlib.Path(__file__).resolve().parent.parent,
-            enabled=bool(cfg.get("check_release_updates", False)),
-            verify=bool(cfg.get("release_check_verify", True)),
-            channel=cfg.get("update_channel", "develop"),
+            enabled=update.check_releases,
+            verify=update.verify_release,
+            channel=update.channel,
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in

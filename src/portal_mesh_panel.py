@@ -64,7 +64,7 @@ _PANEL = r"""
 <div class="mesh-metric"><strong id="meshBusyCount">—</strong><span>Reported in use</span></div>
 <div class="mesh-metric"><strong id="meshUnavailableCount">—</strong><span>Stale / unreachable</span></div>
 </div>
-<section id="meshDiagramBox" aria-labelledby="meshDiagramHeading"><h3 id="meshDiagramHeading">Network diagram</h3><img id="meshDiagram" src="/api/mesh/diagram.svg" alt="Diagram of every device on the network, its receivers and connected clients" style="width:100%;max-width:640px;height:auto;background:var(--input);border:1px solid var(--line);border-radius:12px"><ul id="meshProfiles" aria-label="Detail for each device"></ul></section>
+<section id="meshDiagramBox" aria-labelledby="meshDiagramHeading"><h3 id="meshDiagramHeading">Network diagram</h3><p id="meshDiagramStatus" class="mesh-note" role="status" aria-live="polite">Waiting for device details…</p><img id="meshDiagram" hidden alt="Diagram of every device on the network, its receivers and connected clients" style="width:100%;max-width:640px;height:auto;background:var(--input);border:1px solid var(--line);border-radius:12px"><ul id="meshProfiles" aria-label="Detail for each device"></ul></section>
 <section id="meshReceiverInventory" aria-labelledby="meshTargetsHeading"><h3 id="meshTargetsHeading">Casting targets across the mesh</h3><p class="field-hint">Receiver observations, not a cast command. A ready report does not reserve a receiver.</p><ul id="meshTargets" aria-label="Playback targets"></ul><p id="meshNoTargets" class="muted" hidden>No receivers reported yet. Check whether your TV or speaker is awake.</p></section>
 <div class="mesh-room" aria-labelledby="meshRoomHeading"><h3 id="meshRoomHeading">This host · room control</h3>
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
@@ -99,8 +99,9 @@ _PANEL = r"""
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
-  let beatTimer=null,beatBusy=false;
+  let beatTimer=null,beatRequest=null,meshSession=null;
   let bootRequest=null,bootEpoch=0;
+  let profileRequest=null,profileSession=null,profileSignature=null,profileVisible=false,diagramGeneration=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const TEXT={self:"This device",alive:"Online",ready:"Reported ready",busy:"Reported in use",stale:"Not seen lately",unreachable:"Can't be reached"};
   const RANK={ready:0,busy:1,stale:2,unreachable:3};
@@ -113,6 +114,11 @@ _PANEL = r"""
   function updateFreshness(){if(lastMeshAt)put("meshFreshness","Last mesh change / snapshot received at "+new Date(lastMeshAt).toLocaleTimeString()+". Quiet meshes may have no changes.")}
   window.scRenderMeshRoom=function(state){
     if(!state||typeof state!=="object")return;
+    // The room snapshot carries a host-owned display label independently of the mesh.
+    const roomName=typeof state.room?.name==="string"&&state.room.name.trim()?state.room.name:"Your room";
+    put("homeHeading",roomName);
+    put("meshRoomHeading",roomName+" · room control");
+    put("localLiveHeading",roomName+" · live activity");
     put("meshRoomTitle",state.active?(state.title||"Media title unavailable"):"Nothing playing");
     put("meshRoomReceiver","Selected: "+(state.receiver||"No receiver selected")+" · "+(state.state_label||state.state||"State unavailable"));
     const queued=Array.isArray(state.queue)?state.queue.length:null;
@@ -316,26 +322,40 @@ _PANEL = r"""
     return parts.join(" · ");
   }
   async function heartbeat(){
-    if(beatBusy||document.hidden||!dash||dash.hidden)return;
-    beatBusy=true;
+    if(beatRequest||!profilesVisible()||csrf!==meshSession)return;
+    const session=csrf,request=new AbortController();
+    beatRequest=request;
+    const current=()=>beatRequest===request&&!request.signal.aborted&&
+      csrf===session&&meshSession===session&&profilesVisible();
     try{
-      const r=await fetch("/api/mesh/heartbeat",{credentials:"same-origin",cache:"no-store"});
+      const r=await fetch("/api/mesh/heartbeat",{credentials:"same-origin",cache:"no-store",signal:request.signal});
+      if(!current())return;
       if(!r.ok){put("meshHeartbeat","Heartbeat unavailable");return}
-      const d=await r.json();put("meshHeartbeat",heartbeatText(d&&d.heartbeat));
-    }catch(_){put("meshHeartbeat","Heartbeat unavailable")}
-    finally{beatBusy=false}
+      const d=await r.json();
+      if(current())put("meshHeartbeat",heartbeatText(d&&d.heartbeat));
+    }catch(_){if(current())put("meshHeartbeat","Heartbeat unavailable")}
+    finally{if(beatRequest===request)beatRequest=null}
   }
   function startHeartbeat(){if(beatTimer===null&&typeof setInterval==="function"){heartbeat();beatTimer=setInterval(heartbeat,3000)}}
-  function stopHeartbeat(){if(beatTimer!==null){clearInterval(beatTimer);beatTimer=null}}
+  function stopHeartbeat(){
+    if(beatTimer!==null){clearInterval(beatTimer);beatTimer=null}
+    if(beatRequest){beatRequest.abort();beatRequest=null}
+  }
+  function syncHeartbeat(){
+    if(profilesVisible()&&csrf===meshSession)startHeartbeat();
+    else stopHeartbeat();
+  }
   function open(){
     close();
-    es=new EventSource("/api/mesh/events");
+    const session=csrf,source=new EventSource("/api/mesh/events");
+    es=source;
+    const current=()=>es===source&&meshSession===session&&csrf===session&&dash&&!dash.hidden;
     markMesh("Connecting live feed");
-    es.onopen=()=>{markMesh("Live feed connected");conn("")};
-    es.addEventListener("mesh",e=>{try{apply(JSON.parse(e.data));conn("");markMesh("Live feed connected");backoff=3000}catch(_){markMesh("Invalid update · last known state")}});
-    es.onerror=()=>{markMesh("Reconnecting · last known state");conn("Reconnecting to the room…");if(es&&es.readyState===2){close();schedule()}};
+    source.onopen=()=>{if(current()){markMesh("Live feed connected");conn("")}};
+    source.addEventListener("mesh",e=>{if(!current())return;try{apply(JSON.parse(e.data));conn("");markMesh("Live feed connected");backoff=3000}catch(_){markMesh("Invalid update · last known state")}});
+    source.onerror=()=>{if(!current())return;markMesh("Reconnecting · last known state");conn("Reconnecting to the room…");if(source.readyState===2){close();schedule()}};
   }
-  function close(){if(es){es.close();es=null}}
+  function close(){if(es){const source=es;es=null;source.close()}}
   function cancelMeshRetry(){if(retry!==null){clearTimeout(retry);retry=null}}
   function schedule(){cancelMeshRetry();retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
   function cancelMeshBoot(){
@@ -357,18 +377,65 @@ _PANEL = r"""
       const d=await r.json();
       if(!current())return;
       nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
-      panel.hidden=false;showNetworkNavigation(true);put("meshAvailability","Mesh service available · see network diagnostics below.");started=true;backoff=3000;lastMeshAt=Date.now();render();open();
-      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));startHeartbeat();profiles();
+      meshSession=session;panel.hidden=false;showNetworkNavigation(true);put("meshAvailability","Mesh service available · see network diagnostics below.");started=true;backoff=3000;lastMeshAt=Date.now();render();open();
+      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));syncHeartbeat();syncProfiles();
     }catch(_){if(current()){put("meshAvailability","Mesh status unavailable · retrying.");schedule()}}
     finally{if(bootRequest===request)bootRequest=null}
   }
+  function profilesVisible(){
+    return !document.hidden&&started&&!panel.hidden&&dash&&!dash.hidden&&
+      dash.getAttribute?.("data-room-blade")==="meshPanel"&&typeof csrf!=="undefined"&&!!csrf;
+  }
+  function cancelProfiles(reset=false){
+    if(profileRequest){profileRequest.abort();profileRequest=null}
+    if(reset){
+      profileSession=null;profileSignature=null;profileVisible=false;diagramGeneration++;
+      put("meshDiagramStatus","Waiting for device details…");
+      const list=$("meshProfiles"),img=$("meshDiagram");
+      if(list)list.replaceChildren();
+      if(img){img.hidden=true;img.removeAttribute("src")}
+    }
+  }
+  function syncProfiles(){
+    if(typeof csrf==="undefined"||!csrf||!dash||dash.hidden){
+      if(profileSession!==null||profileRequest)cancelProfiles(true);
+      return;
+    }
+    if(profileSession!==null&&profileSession!==csrf)cancelProfiles(true);
+    const visible=profilesVisible();
+    if(!visible){profileVisible=false;cancelProfiles();return}
+    if(!profileVisible){profileVisible=true;profiles()}
+  }
+  function refreshDiagram(img,signature,session){
+    if(!img||signature===profileSignature)return;
+    // decode() is bound to this image request; do not let a late decode
+    // overwrite a subsequent room session or diagram generation.
+    const generation=++diagramGeneration;
+    const current=()=>generation===diagramGeneration&&profileSession===session&&csrf===session&&dash&&!dash.hidden;
+    profileSignature=signature;
+    put("meshDiagramStatus","Loading network diagram…");
+    img.src="/api/mesh/diagram.svg?t="+Date.now()+"-"+generation;
+    const ready=()=>{if(current()){img.hidden=false;put("meshDiagramStatus","")}};
+    const failed=()=>{if(current()){
+      img.hidden=true;profileSignature=null;
+      put("meshDiagramStatus","Diagram unavailable · will retry. Device details remain below.");
+    }};
+    if(typeof img.decode==="function")img.decode().then(ready,failed);
+    else {img.onload=ready;img.onerror=failed}
+  }
   async function profiles(){
     const list=document.getElementById("meshProfiles"),img=document.getElementById("meshDiagram");
-    if(!list)return;
+    if(!list||!profilesVisible()||profileRequest)return;
+    if(profileSession!==null&&profileSession!==csrf)cancelProfiles(true);
+    const session=csrf,request=new AbortController();
+    profileSession=session;profileRequest=request;
+    const current=()=>profileRequest===request&&!request.signal.aborted&&csrf===session&&profilesVisible();
     try{
-      const r=await fetch("/api/mesh/profiles",{credentials:"same-origin",cache:"no-store"});
-      if(!r.ok)return;
-      const d=await r.json(),keep=new Set();
+      const r=await fetch("/api/mesh/profiles",{credentials:"same-origin",cache:"no-store",signal:request.signal});
+      if(!r.ok||!current())return;
+      const d=await r.json();
+      if(!current())return;
+      const keep=new Set();
       for(const n of d.nodes||[]){
         keep.add(n.node_id);
         let li=list.querySelector('[data-node="'+n.node_id+'"]');
@@ -383,15 +450,17 @@ _PANEL = r"""
           for(const row of rows){const p=document.createElement("div");p.className="s";p.textContent=row;li.append(p)}}
       }
       for(const li of [...list.children])if(!keep.has(li.dataset.node))li.remove();
-      if(img)img.src="/api/mesh/diagram.svg?t="+Date.now();
+      const signature=JSON.stringify(d.nodes||[]);
+      refreshDiagram(img,signature,session);
     }catch(_){}
+    finally{if(profileRequest===request)profileRequest=null}
   }
-  setInterval(()=>{if(!document.hidden&&started&&panel&&!panel.hidden)profiles()},10000);
+  setInterval(profiles,10000);
   document.addEventListener("visibilitychange",()=>{
-    if(document.hidden){cancelMeshBoot();cancelMeshRetry();stopHeartbeat();hiddenTimer=setTimeout(()=>{close()},30000)}
-    else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
+    if(document.hidden){cancelMeshBoot();cancelMeshRetry();stopHeartbeat();cancelProfiles();profileVisible=false;hiddenTimer=setTimeout(()=>{close()},30000)}
+    else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}else{syncHeartbeat();syncProfiles()}}
   });
-  setInterval(()=>{if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);put("meshAvailability","Checking mesh availability…");cancelMeshBoot();stopHeartbeat();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{if(dash&&(dash.hidden||(meshSession!==null&&meshSession!==csrf))){meshSession=null;panel.hidden=true;showNetworkNavigation(false);put("meshAvailability","Checking mesh availability…");cancelMeshBoot();stopHeartbeat();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot();syncHeartbeat();syncProfiles()},1500);
 })();
 </script>
 """

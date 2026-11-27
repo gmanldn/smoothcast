@@ -31,6 +31,7 @@ import density
 import subtitle_style
 import language_prefs
 import library_folders
+from portal_room import clean_room_name
 import loudness
 import watch_history
 
@@ -96,6 +97,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                 cfg[key] = value
         elif key in picture_adjustments.DEFAULTS:
             cfg[key] = picture_adjustments.validated(key, value)
+        elif key == "room_name":
+            cfg[key] = clean_room_name(value)
         elif key == "watch_history":
             cfg[key] = watch_history.clean(value)
         elif key == "bookmarks":

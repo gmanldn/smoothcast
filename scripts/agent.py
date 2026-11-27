@@ -29,7 +29,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agent_network  # noqa: E402
 import ticket_digest as td  # noqa: E402
-from ci import ship_patch  # noqa: E402
+from ci import ship_patch, changelog  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "gmanldn/smoothcast"
@@ -40,7 +40,7 @@ SKIP_LABELS = {"epic", "icebox", "needs-human", "needs-split"}
 TIER_SCORE = {"now": 300, "next": 200, "later": 100}
 PRIORITY_SCORE = {"P0": 150, "P1": 50, "P2": 20, "P3": 0}
 # Merge-friendly shared files every agent touches: never a reason to avoid a ticket.
-SHARED = {"pyproject.toml", "docs/complexity-baseline.json", ".github/workflows/verify.yml",
+SHARED = {"CHANGELOG.md", "pyproject.toml", "docs/complexity-baseline.json", ".github/workflows/verify.yml",
           "docs/a11y-baseline.json", "docs/silent-except-baseline.json"}
 # Cheap static ratchets that a src/ or baseline change can silently trip (red heads so far).
 RATCHETS = ("tests/test_complexity_budget.py", "tests/test_a11y_inventory.py",
@@ -134,16 +134,22 @@ def active_claims(events: list[dict], now: datetime) -> list[dict]:
     return [e for e in live.values() if e["at"] + timedelta(minutes=e["ttl"]) > now]
 
 
+def lease_paths(files: set[str]) -> set[str]:
+    """Exclude generated and merge-friendly metadata even from explicit claims."""
+    return {f for f in files if f not in SHARED and not f.startswith(("docs/", "tests/"))}
+
+
 def conflicts(issue: int, files: set[str], me: str, claims: list[dict]) -> list[str]:
     """Reasons another live claim blocks this ticket (empty means free)."""
     reasons = []
+    files = lease_paths(files)
     for c in claims:
         if c["agent"] == me:
             continue
         if c["issue"] == issue:
             reasons.append(f"#{issue} already claimed by {c['agent']}")
-        elif files & c["files"]:
-            reasons.append(f"overlaps #{c['issue']} ({c['agent']}): {', '.join(sorted(files & c['files'])[:3])}")
+        elif files & lease_paths(c["files"]):
+            reasons.append(f"overlaps #{c['issue']} ({c['agent']}): {', '.join(sorted(files & lease_paths(c['files']))[:3])}")
     return reasons
 
 
@@ -605,7 +611,7 @@ def cmd_claim(a: argparse.Namespace) -> int:
     if issue.get("state", "open") != "open":
         print(f"issue #{a.number} is no longer open; refusing to claim stale work")
         return 3
-    files = set(a.files.split(",")) if a.files else predicted_files(issue["body"])
+    files = lease_paths(set(a.files.split(","))) if a.files else predicted_files(issue["body"])
     ttl = min(max(a.ttl, TTL_MIN), TTL_MAX)
 
     def check() -> list[str]:
@@ -634,7 +640,7 @@ def cmd_claim(a: argparse.Namespace) -> int:
         mine = [e for e in events if e["id"] == posted["id"] and e["kind"] == "claim"]
         rivals = [c for c in active_claims(events, utcnow())
                   if c["agent"] != me
-                  and (c["issue"] == a.number or files & c["files"])
+                  and (c["issue"] == a.number or files & lease_paths(c["files"]))
                   and c["id"] < posted["id"]]
         if not mine or rivals:
             if rivals:
@@ -688,6 +694,11 @@ def ensure_live_task_claim(task: dict) -> bool:
         return False
     mine = [c for c in live if c["issue"] == number and c["agent"] == me]
     if mine:
+        if not lease_paths(files) <= lease_paths(mine[-1]["files"]):
+            # Private task metadata may lag a confirmed scope change. Reclaim
+            # missing paths with normal race arbitration; never assume coverage.
+            return cmd_claim(argparse.Namespace(number=number, files=",".join(sorted(files)),
+                                                ttl=90)) == 0
         remaining = (mine[-1]["at"] + timedelta(minutes=mine[-1]["ttl"]) - utcnow()).total_seconds()
         if remaining < 900:
             return cmd_heartbeat(argparse.Namespace(number=number)) == 0
@@ -706,9 +717,7 @@ def ensure_task_scope(task: dict, changed: list[str]) -> bool:
     could already own that file on a different issue. A new comment is
     race-arbitrated before updating the private, untracked worktree marker.
     """
-    scoped = {f for f in changed
-              if f not in SHARED and f.startswith(
-                  ("src/", "scripts/", "setup/", "packaging/", "fakecast/"))}
+    scoped = lease_paths(set(changed))
     owned = set(task.get("files") or [])
     missing = scoped - owned
     if not missing:
@@ -735,6 +744,38 @@ def ensure_task_scope(task: dict, changed: list[str]) -> bool:
         return False
     task["files"] = combined
     return True
+
+
+def cmd_scope(a: argparse.Namespace) -> int:
+    """Narrow a live private task without abandoning its issue or dirty work."""
+    task = private_task()
+    if task is None:
+        print("scope requires a private agent worktree")
+        return 2
+    wanted = set(p.strip() for p in a.files.split(",") if p.strip())
+    owned = lease_paths(set(task.get("files") or []))
+    if not wanted or not wanted <= owned:
+        print("scope must be a nonempty subset of the current production lease")
+        return 2
+    if wanted == owned:
+        return 0
+    changed = set(git("diff", "--name-only", "origin/develop...HEAD").splitlines())
+    changed.update(git("diff", "--name-only", "HEAD").splitlines())
+    changed.update(git("ls-files", "--others", "--exclude-standard").splitlines())
+    if changed & (owned - wanted):
+        print("cannot relinquish paths with unpublished edits")
+        return 3
+    if not ensure_live_task_claim(task):
+        return 3
+    if cmd_claim(argparse.Namespace(number=task["issue"], files=",".join(sorted(wanted)), ttl=a.ttl)):
+        return 3
+    newer = dict(task, files=sorted(wanted))
+    if not persist_private_task(newer):
+        print("scope changed remotely but private metadata could not be persisted; reconcile before shipping")
+        return 3
+    task.update(newer)
+    print("scope narrowed: " + ", ".join(sorted(wanted)))
+    return 0
 
 
 def cmd_progress(a: argparse.Namespace) -> int:
@@ -911,6 +952,17 @@ def failing_ids(output: str) -> list[str]:
     return sorted(ids)
 
 
+def unquarantined(ids: list[str]) -> list[str]:
+    """Failing ids with no live entry in tests/quarantine.json (#700): red nobody owns."""
+    import datetime
+    try:
+        entries = json.loads((ROOT / "tests" / "quarantine.json").read_text())["entries"]
+    except (OSError, ValueError, KeyError):
+        entries = {}
+    today = datetime.date.today().isoformat()
+    return [i for i in ids if str(entries.get(i, {}).get("expires", "")) < today]
+
+
 def failing_on_develop(ids: list[str]) -> set[str]:
     """Which of these tests also fail on a pristine origin/develop (not your regression)."""
     import tempfile
@@ -956,6 +1008,22 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     if staged.returncode:
         print("staging failed: " + staged.stderr.strip()[:500])
         return 2
+    loose = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--", "src", "tests", "scripts"],
+                           cwd=ROOT, capture_output=True, text=True).stdout.split()
+    if loose:
+        print("untracked file(s) would be left out of this commit and break importers "
+              f"(#700); name them with --files or delete them: {', '.join(loose)[:400]}")
+        return 2
+    # A module added to or removed from src/ must appear in pyproject py-modules (#690).
+    moved = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=AD", "--", "src"],
+                           cwd=ROOT, capture_output=True, text=True).stdout.split()
+    if any(m.startswith("src/") and m.endswith(".py") and "/" not in m[4:] for m in moved):
+        sync = subprocess.run([sys.executable, "scripts/ci/sync_pyproject.py"],
+                              cwd=ROOT, capture_output=True, text=True)
+        if sync.returncode == 0:
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=ROOT, capture_output=True, text=True)
+        else:
+            print("WARNING: could not sync pyproject py-modules: " + (sync.stderr or sync.stdout).strip()[:200])
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
     if diff.returncode == 0:
         print("no changes to commit; shipping any existing unpublished commits")
@@ -1113,8 +1181,6 @@ def primary_checkout_refusal() -> str:
 
 
 def cmd_ship(a: argparse.Namespace) -> int:
-    if a.assign_patch:
-        print("--assign-patch is deprecated and ignored; development uses Git SHA identity")
     if refusal := primary_checkout_refusal():
         print(refusal)
         return 2
@@ -1162,9 +1228,10 @@ def cmd_ship(a: argparse.Namespace) -> int:
         # Remove ONLY that verified generated commit before rebasing the code.
         if task is not None:
             try:
+                changelog.recover(ROOT, remote_before)
                 ship_patch.recover_private_patch(ROOT, remote_before)
-            except ship_patch.PatchAllocationError as exc:
-                print(f"PATCH RECOVERY REFUSED: {exc}")
+            except (ship_patch.PatchAllocationError, changelog.ChangelogError) as exc:
+                print(f"GENERATED METADATA RECOVERY REFUSED: {exc}")
                 return 6
         before = git("rev-parse", "HEAD").strip()
         r = subprocess.run(["git", "-c", "rebase.autoStash=false", "rebase", "origin/develop"], cwd=ROOT, capture_output=True, text=True)
@@ -1183,6 +1250,23 @@ def cmd_ship(a: argparse.Namespace) -> int:
             return 0
         if task is not None and not ensure_task_scope(task, changed):
             return 3
+        if task is not None:
+            try:
+                if ship_patch.assign_private_patch(ROOT, remote_before):
+                    changed = sorted(set(changed) | {ship_patch.VERSION_PATH})
+            except ship_patch.PatchAllocationError as exc:
+                # A release number is best effort; never bypass the history guard.
+                if git("status", "--porcelain", "--untracked-files=no").strip():
+                    print(f"PATCH allocation left tracked changes; preserve work: {exc}")
+                    return 6
+                print(f"PATCH deferred: {exc}; shipping unchanged valid version if guard passes")
+        if task is not None:
+            try:
+                if changelog.refresh(ROOT, remote_before):
+                    changed = sorted(set(changed) | {"CHANGELOG.md"})
+            except changelog.ChangelogError as exc:
+                print(f"CHANGELOG REFUSED: {exc}; preserve worktree")
+                return 6
         rebased = git("rev-parse", "HEAD").strip() != before
         # Mandatory even with --skip-checks: a concurrent agent must never
         # regress, skip or silently overwrite a canonical version increment.
@@ -1200,6 +1284,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
         recheck = True
         if checked_base:  # a contended push: re-test only if the newcomers touched our files
             incoming = set(git("diff", "--name-only", checked_base, "origin/develop").split())
+            incoming.discard("CHANGELOG.md")  # generated journal cannot affect code checks
             recheck = bool(incoming & (set(changed) | SHARED))
             if not recheck:
                 print(f"  {len(incoming)} incoming file(s) do not touch yours; reusing the earlier checks")
@@ -1225,6 +1310,10 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         return 1
                     print(f"  NOT yours: {len(ids)} test(s) already fail on "
                           f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
+                    orphan = unquarantined(ids)
+                    if orphan:
+                        print("  WARNING: red with no owner/expiry; add to tests/quarantine.json "
+                              f"or fix (#700): {', '.join(orphan)[:300]}")
                 else:
                     checks_run.append(label)
             checked_base = git("rev-parse", "origin/develop").strip()
@@ -1562,6 +1651,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--files", default="", help="comma-separated files you will edit (default: from the ticket)")
     c.add_argument("--ttl", type=int, default=90, help="lease minutes (30-180)")
     c.set_defaults(fn=cmd_claim)
+    scope = sub.add_parser("scope", help="relinquish unused production paths in a private task")
+    scope.add_argument("--files", required=True, help="comma-separated subset of current paths")
+    scope.add_argument("--ttl", type=int, default=30, help="remaining short-lived lease minutes")
+    scope.set_defaults(fn=cmd_scope)
     progress = sub.add_parser("progress", help="post durable work evidence and next steps")
     progress.add_argument("number", type=int)
     progress.add_argument("--done", required=True, help="what was actually completed")
@@ -1584,7 +1677,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
     s.add_argument("--next", default="", help="durable next-action handover after a successful push")
     s.add_argument("--assign-patch", action="store_true",
-                   help="deprecated compatibility flag; ignored (make new versions in develop)")
+                   help="compatibility flag; PATCH is allocated automatically on shipment")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)

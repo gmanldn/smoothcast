@@ -1,0 +1,4 @@
+{
+  "_doc": "Known-red tests (ARCH-12, #700). Entries only shrink; expired entries stop being excused. Fields: owner, ticket, expires (YYYY-MM-DD).",
+  "entries": {}
+}

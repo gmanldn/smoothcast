@@ -284,11 +284,8 @@ class ReceiverMemory:
 
 def default_path() -> Path:
     """Follow GLib's XDG config base, with APPDATA fallback on Windows."""
-    base = os.environ.get("XDG_CONFIG_HOME")
-    if not base and os.name == "nt":
-        base = os.environ.get("APPDATA")
-    return Path(base) / "cast-control" / STATE_NAME if base else (
-        Path.home() / ".config" / "cast-control" / STATE_NAME)
+    import paths
+    return paths.config_dir() / STATE_NAME
 
 
 def main(argv: list[str] | None = None) -> int:

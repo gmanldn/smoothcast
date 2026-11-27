@@ -6,6 +6,7 @@ import command_trace
 import ipaddress
 import json
 import pathlib
+import re
 import shutil
 import math
 import os
@@ -194,9 +195,14 @@ def last_info_failure(device: str) -> str:
     return _info_failures.get(device, "")
 
 
+_TIMEOUT_VALUE = re.compile(r" after [0-9.]+s\b")
+
+
 def _info_failed(device: str, reason: str) -> None:
-    # Log only when the reason changes so a 40 s poll cannot flood errors.log.
-    if _info_failures.get(device) != reason:
+    # Log only when the kind of failure changes so a 40 s poll cannot flood
+    # errors.log; callers use different timeouts, which must not count.
+    previous = _info_failures.get(device)
+    if previous is None or _TIMEOUT_VALUE.sub("", previous) != _TIMEOUT_VALUE.sub("", reason):
         log_backend_failure(f"Receiver status unavailable for {device!r}: {reason}")
     _info_failures[device] = reason
 
@@ -367,11 +373,17 @@ class CattBackend:
         # The whole call, retry included, stays within the caller's budget:
         # pollers such as the 40 s cast confirmation depend on it.
         deadline = time.monotonic() + timeout
+        if timeout < 0.5:
+            if device.strip():
+                _info_failed(device, "status read exhausted its timeout budget")
+            return None
         # Once a direct connection proved itself for this receiver, answer from
         # it: its pushed status is current and costs no helper start-up.
+        failed_host = None
         host = self._mirror_routes.get(device)
         if host is not None:
             if self._mirror.connected(host):
+                failed_host = host
                 status = self._mirror.info(host, min(timeout, 2.0))
                 if status:
                     _info_failures.pop(device, None)
@@ -381,14 +393,25 @@ class CattBackend:
         # catt's start-up alone can take most of the budget on a loaded host,
         # leaving the fallback below no time to prove the direct route. Try a
         # known safe address first with a bounded slice, then catt (#712).
-        host = self._direct_host(device) if device.strip() else None
-        if host is not None:
-            status = self._mirror.info(host, min(4.0, max(0.5, timeout / 2)))
+        remaining = deadline - time.monotonic()
+        host = None
+        if remaining >= 0.5 and device.strip():
+            # Verifying a discovered name may itself take two seconds.
+            if remaining >= 2.5 or _private_ipv4(device) is not None:
+                host = self._direct_host(device)
+        remaining = deadline - time.monotonic()
+        if host is not None and host != failed_host and remaining >= 0.5:
+            status = self._mirror.info(host, min(remaining, 4.0, max(0.5, timeout / 2)))
             if status:
                 _info_failures.pop(device, None)
                 self._mirror_routes[device] = host
                 return status
-        result = _catt_info(device, max(0.5, deadline - time.monotonic()))
+        remaining = deadline - time.monotonic()
+        if remaining < 0.5:
+            if device.strip():
+                _info_failed(device, "status read exhausted its timeout budget")
+            return None
+        result = _catt_info(device, remaining)
         if result is not None or not device.strip():
             return result
         # catt's own name lookup can fail where a verified address works.
@@ -473,13 +496,14 @@ class _StatusMirror:
             import pychromecast
             from pychromecast_backend import PyChromecastBackend
 
+            # Creating the object opens no socket (wait() does), so do it under
+            # the lock: concurrent pollers must share one connection, not leak one.
             with self._lock:
                 chromecast = self._casts.get(host)
-            if chromecast is None:
-                chromecast = pychromecast.get_chromecast_from_host(
-                    (host, 8009, None, None, None), tries=1,
-                    timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
-                with self._lock:
+                if chromecast is None:
+                    chromecast = pychromecast.get_chromecast_from_host(
+                        (host, 8009, None, None, None), tries=1,
+                        timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
                     self._casts[host] = chromecast
             cc = cast(Any, chromecast)
             cc.wait(timeout=max(0.1, deadline - time.monotonic()))
@@ -490,8 +514,8 @@ class _StatusMirror:
                 # A freshly joined app reports its media session shortly after.
                 try:
                     media.update_status()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log_backend_failure(f"media status refresh failed: {exc}")
                 wait_until = min(deadline, time.monotonic() + 1.5)
                 while (time.monotonic() < wait_until
                        and getattr(media.status, "media_session_id", None) is None):
@@ -536,8 +560,8 @@ class _StatusMirror:
         if chromecast is not None:
             try:
                 cast(Any, chromecast).disconnect(timeout=1)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_backend_failure(f"receiver disconnect failed: {exc}")
 
     def close(self) -> None:
         with self._lock:

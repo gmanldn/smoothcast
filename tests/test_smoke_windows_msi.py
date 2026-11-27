@@ -55,3 +55,40 @@ class LifecyclePreflightTests(unittest.TestCase):
             [], 0, stdout=expected + "\n", stderr=""
         )):
             smoke.cli_check(Path("SmoothCastCLI.exe"), ["--version"], expected, {}, Path("."))
+
+    def test_installed_legal_files_and_artwork_are_bound_to_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            (source / "packaging").mkdir(parents=True)
+            icon = source / "src" / "smoothcast_assets" / "local.cast-control.png"
+            icon.parent.mkdir(parents=True)
+            icon.write_bytes(b"original artwork")
+            (source / "LICENSE").write_bytes(b"original licence")
+            (source / "packaging" / "SmoothCast-NOTICE.txt").write_bytes(b"original notice")
+            cli = root / "installed" / "SmoothCastCLI.exe"
+            legal = cli.parent / "_internal" / "legal"
+            legal.mkdir(parents=True)
+            (legal / "LICENSE").write_bytes(b"original licence")
+            (legal / "SmoothCast-NOTICE.txt").write_bytes(b"original notice")
+            expected = hashlib.sha256(b"original artwork").hexdigest()
+            with patch.object(smoke, "cli_check") as check:
+                smoke.check_installed_package(cli, "2.1.6", {}, root, source)
+                self.assertEqual(check.call_count, 2)
+                check.assert_any_call(cli, ["--version"], "SmoothCast v2.1.6", {}, root)
+                check.assert_any_call(cli, ["--_smoothcast-package-check"], expected, {}, root)
+            for filename in ("LICENSE", "SmoothCast-NOTICE.txt"):
+                target = legal / filename
+                original = target.read_bytes()
+                for changed in (None, b"modified"):
+                    with self.subTest(filename=filename, changed=changed), patch.object(
+                        smoke, "cli_check"
+                    ) as check:
+                        if changed is None:
+                            target.unlink()
+                        else:
+                            target.write_bytes(changed)
+                        with self.assertRaisesRegex(smoke.InstallerError, filename):
+                            smoke.check_installed_package(cli, "2.1.6", {}, root, source)
+                        check.assert_not_called()
+                        target.write_bytes(original)

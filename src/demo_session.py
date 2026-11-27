@@ -6,6 +6,7 @@ only discovery before using this profile.
 """
 from __future__ import annotations
 
+import paths
 from contextlib import contextmanager
 from dataclasses import dataclass
 import json
@@ -40,7 +41,7 @@ class DemoSession:
 
     @property
     def config_file(self) -> Path:
-        return self.config_home / "cast-control" / "config.json"
+        return self.config_home / paths.APP_DIR / "config.json"
 
 
 @contextmanager

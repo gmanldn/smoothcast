@@ -8,9 +8,14 @@ instance.
 from __future__ import annotations
 
 import os
+import pathlib
+from typing import TYPE_CHECKING
 
 import error_banner_ui
 import version
+
+if TYPE_CHECKING:
+    from cast_control import MainWindow
 
 
 class AppLifecycleMixin:
@@ -73,3 +78,54 @@ class AppLifecycleMixin:
             window._console(notice)
             window.toast(notice)
         return False
+
+
+    def _show_stale_runtime_notice(self, window: MainWindow) -> None:
+        """Do not misrepresent an updated checkout as a restarted process.
+
+        Running Python modules remain from this launch; an on-disk version
+        change is only effective after an orderly quit and relaunch.
+        """
+        if window._closing:
+            return
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        disk = version.read_checkout_version(repo / "src" / "version.py")
+        disk_revision = version.read_checkout_revision(repo)
+        # The installed copy can remain unchanged after a pull in its source checkout.
+        source = version.registered_checkout(repo)
+        if source is not None:
+            candidate = version.read_checkout_version(source / "src" / "version.py")
+            candidate_revision = version.read_checkout_revision(source)
+            if (candidate is not None and disk is not None and candidate_revision
+                    and tuple(map(int, candidate.split("."))) > tuple(map(int, disk.split(".")))):
+                disk, disk_revision = candidate, candidate_revision
+        stale_version = disk is not None and disk != version.__version__
+        stale_revision = (self._run_revision is not None
+                          and disk_revision is not None
+                          and disk_revision != self._run_revision)
+        if not (stale_version or stale_revision):
+            # A checkout can be rolled back while this process remains alive.
+            # Do not keep a false restart warning after both identities match.
+            self._noticed_runtime_key = None
+            if getattr(window, "_installed_version_stale", False):
+                window._installed_version_stale = False
+                window.update_notice = None
+                window._update_header_subtitle()
+            return
+        key = (disk if stale_version else None,
+               disk_revision if stale_revision else None)
+        if key == self._noticed_runtime_key and getattr(
+                window, "_installed_version_stale", False):
+            return
+        self._noticed_runtime_key = key
+        if stale_version:
+            notice = (f"Available local SmoothCast v{disk}; running v{version.__version__}. "
+                      "Finish playback, then quit and reopen to apply the available build.")
+        else:
+            notice = (f"Installed build updated to {disk_revision[:8]}; this SmoothCast "
+                      f"process started at {self._run_revision[:8]}. Finish playback, "
+                      "then quit and reopen to load the new code.")
+        window._installed_version_stale = True
+        window.update_notice = notice
+        window._update_header_subtitle()
+        window.toast(notice, error=True)

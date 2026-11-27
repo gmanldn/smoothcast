@@ -16,6 +16,7 @@ name the tracking issue.
 | Timing and seek | `src/cast_ui.py::SeekBar(` | `#seek` `#progress` `#elapsed` | present |
 | Picture and video adjustments | `src/preferences_picture_ui.py` | none | gap (#635) |
 | Audio tracks, delay and volume | `src/cast_audio_sync.py::_adjust_audio_delay` | `#volume` | partial (#635) |
+| Chapters | `src/cast_ui.py::_build_chapters_menu` | `#chapterJump` | present |
 | Queue / Up Next | `src/cast_queue.py::queue_list` | `#queuePanel` `#queue` | present |
 | Local preview | `src/cast_ui.py::PreviewScreen()` | none | gap (#635) |
 | Host settings and display name | `src/preferences_ui.py` | `#advancedPanel` | partial (#635) |

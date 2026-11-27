@@ -51,6 +51,20 @@ class InstalledBuildIdentityTests(unittest.TestCase):
             self.assertEqual(version.read_checkout_commit_date(self.target, sha),
                              expected_date)
 
+    def test_registered_checkout_matches_installer_provenance(self):
+        with install_location.installed_sources(self.source, self.target):
+            self.assertEqual(version.registered_checkout(self.target), self.source.resolve())
+            marker = self.target / "src" / install_location.SOURCE_MARKER
+            marker.write_text('"relative/path"', encoding="utf-8")
+            self.assertIsNone(version.registered_checkout(self.target))
+            marker.write_text("x" * 16385, encoding="utf-8")
+            self.assertIsNone(version.registered_checkout(self.target))
+
+    def test_registered_checkout_rejects_unrelated_repository(self):
+        with install_location.installed_sources(self.source, self.target):
+            (self.source / "pyproject.toml").write_text('name = "other"')
+            self.assertIsNone(version.registered_checkout(self.target))
+
     def test_dirty_and_untracked_source_do_not_claim_clean_commit(self):
         for path in ("src/player.py", "src/new.py"):
             (self.source / path).write_text("dirty\n")

@@ -6,6 +6,8 @@ a network, GTK or FFmpeg. Nothing here changes the system; fixes are only ever
 """
 from __future__ import annotations
 
+import paths
+
 import json
 import shutil
 import socket
@@ -95,6 +97,38 @@ def listener(bind: Callable = socket.socket) -> Result:
     return Result("listener", PASS, "Local server socket can be opened")
 
 
+def multicast(bind: Callable = socket.socket) -> Result:
+    """Can this host join the SSDP multicast group (DLNA/Cast discovery)? No packets are sent."""
+    import struct
+
+    try:
+        with bind(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                            struct.pack("4s4s", socket.inet_aton("239.255.255.250"),
+                                        socket.inet_aton("0.0.0.0")))
+    except OSError as exc:
+        return Result("multicast", WARN,
+                      f"Cannot join the discovery multicast group ({exc.__class__.__name__})",
+                      "Check the network has a default route and that a VPN or firewall allows "
+                      "multicast; you can still add a receiver by IP.")
+    return Result("multicast", PASS, "Discovery multicast group can be joined")
+
+
+def default_route(connect: Callable = socket.socket) -> Result:
+    """Is there a LAN route out? UDP connect sends nothing; it only selects an interface."""
+    try:
+        with connect(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 9))
+            address = sock.getsockname()[0]
+    except OSError as exc:
+        return Result("network", FAIL, f"No usable network route ({exc.__class__.__name__})",
+                      "Connect to the same Wi-Fi or Ethernet network as your TV.")
+    if address.startswith("127."):
+        return Result("network", FAIL, "Only a loopback address is available",
+                      "Connect to the same Wi-Fi or Ethernet network as your TV.")
+    return Result("network", PASS, f"Network route found via {address}")
+
+
 def clock(now: Callable[[], float] = time.time) -> Result:
     if now() < MIN_SANE_EPOCH:
         return Result("clock", WARN, "System clock looks wrong", "Enable automatic time sync.")
@@ -123,3 +157,31 @@ def to_json(results: list[Result]) -> str:
 
 def exit_code(results: list[Result]) -> int:
     return {PASS: 0, WARN: 1, FAIL: 2}[overall(results)]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``smoothcast doctor [--json] [--receiver HOST]``: read-only, headless."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="smoothcast doctor",
+                                     description="Read-only environment checks with remediation.")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--receiver", metavar="HOST", help="also check this receiver is reachable")
+    args = parser.parse_args(argv)
+    cache = paths.cache_dir()
+    checks: list[Callable[[], Result]] = [
+        python_version, ffmpeg, lambda: disk_space(cache), temp_writable, listener,
+        default_route, multicast, clock]
+    if args.receiver:
+        checks.append(lambda: receiver(args.receiver))
+    results = run(checks)
+    if args.json:
+        print(to_json(results))
+    else:
+        mark = {PASS: "ok  ", WARN: "warn", FAIL: "FAIL"}
+        for r in results:
+            print(f"[{mark.get(r.status, r.status)}] {r.name}: {r.detail}")
+            if r.fix and r.status != PASS:
+                print(f"       fix: {r.fix}")
+        print(f"overall: {overall(results)}")
+    return exit_code(results)

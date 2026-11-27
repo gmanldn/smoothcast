@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import command_trace
 import portal_commands
 import peer_discovery_ui
+import paths
 import portal_uploads
 import portal_status
 from gui_source import main_window_methods
@@ -67,7 +68,7 @@ def _build_window(tmp_path, *, idle_add=None):
         "save_config": lambda cfg: saved.append(dict(cfg)),
         "pathlib": pathlib, "os": os, "stat": stat, "time": time,
         "PORTAL_CAST_GRACE_SECONDS": 5.0,
-        "threading": threading,
+        "threading": threading, "paths": paths,
         "GLib": SimpleNamespace(
             idle_add=idle_add or (lambda fn, *args: idle.append((fn, args)))),
     }
@@ -94,6 +95,10 @@ def _build_window(tmp_path, *, idle_add=None):
     uploads = portal_uploads.UploadManager(tmp_path / "uploads")
     window._portal = SimpleNamespace(uploads=uploads,
                                      server=SimpleNamespace(uploads=uploads))
+    # Retry consent is covered by test_portal_recovery_target.py; here the
+    # confirmed receiver is unchanged so the retry path itself is exercised.
+    uploads.recovery_target = lambda upload_id, path: "confirmed"
+    window._portal_upload_target = lambda: {"target_id": "confirmed"}
     window.saved_configs = saved
     window._portal_fence = portal_commands.CommandFence()
     window._device = lambda: "TV"

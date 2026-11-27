@@ -131,7 +131,11 @@ class NetworkPopover:
                                      ["Diagram of every device, receiver and client on the network"])
         self.details = Gtk.Label(xalign=0.0, wrap=True, selectable=True)
         self.details.add_css_class("caption")
-        expander = Gtk.Expander(label="Network diagram and device detail")
+        expander = self._profile_expander = Gtk.Expander(label="Network diagram and device detail")
+        self._pending_profiles = ()
+        self._rendered_profiles = None
+        expander.connect("notify::expanded", self._render_profiles)
+        expander.connect("map", self._render_profiles)
         holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         holder.append(self.diagram)
         holder.append(self.details)
@@ -200,8 +204,22 @@ class NetworkPopover:
             self.sync_switches()  # not applied: show the truth, not the click
 
     def show_profiles(self, profiles) -> None:
-        """Draw the connection diagram and spell out each device (full detail, owner view)."""
-        profiles = list(profiles)
+        """Store the latest immutable profiles, even when details are hidden."""
+        self._pending_profiles = tuple(profiles)
+        self._render_profiles()
+
+    def _render_profiles(self, *_args) -> None:
+        # No SVG encoding/decoding while the popover is hidden or collapsed.
+        if not self._profile_expander.get_mapped() or not self._profile_expander.get_expanded():
+            return
+        profiles = self._pending_profiles
+        if profiles == self._rendered_profiles:
+            return
+        self._paint_profiles(profiles)
+        self._rendered_profiles = profiles
+
+    def _paint_profiles(self, profiles) -> None:
+        """Decode a changed snapshot only; textual detail remains on failure."""
         try:
             from gi.repository import Gdk
             svg = mesh_diagram.render(profiles).encode("utf-8")
@@ -227,6 +245,8 @@ class NetworkPopover:
         self.button.set_visible(model is not None)
         if model is None:
             self.model = None
+            self._pending_profiles = ()
+            self._rendered_profiles = None
             return
         if self.model is not None and vm.diff_rows(self.model.all_rows(), model.all_rows()).empty \
                 and self.model.summary == model.summary and self.model.empty_hint == model.empty_hint:

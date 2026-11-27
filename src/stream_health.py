@@ -6,7 +6,9 @@ was measured: anything never observed is ``None``/"unknown", never inferred OK.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
 import statistics
 import time
 from collections import deque
@@ -72,3 +74,32 @@ class StreamHealth:
                 "failure_rate": (self.segments_failed / total) if total else None,
                 "recoveries": self.recoveries,
                 "recent_events": [{"t": t, "kind": k, "detail": d} for t, k, d in list(self._events)[-10:]]}
+
+
+SNAPSHOT_NAME = "stream_health.json"
+SNAPSHOT_MAX_AGE = 15.0     # seconds; older data is stale, not "healthy"
+
+
+def write_snapshot(directory, snapshot: dict, *, now: float | None = None) -> None:
+    """Best-effort atomic publish for another process; never raises."""
+    try:
+        target = os.path.join(os.fspath(directory), SNAPSHOT_NAME)
+        tmp = f"{target}.{os.getpid()}.tmp"
+        payload = {"at": time.time() if now is None else now, "snapshot": snapshot}
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        os.replace(tmp, target)
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def read_snapshot(directory, *, now: float | None = None) -> dict | None:
+    """Fresh published snapshot, or None when missing, corrupt or stale."""
+    try:
+        with open(os.path.join(os.fspath(directory), SNAPSHOT_NAME), encoding="utf-8") as handle:
+            data = json.load(handle)
+        age = (time.time() if now is None else now) - float(data["at"])
+        snap = data["snapshot"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return snap if isinstance(snap, dict) and 0 <= age <= SNAPSHOT_MAX_AGE else None

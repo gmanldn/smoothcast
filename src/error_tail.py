@@ -26,6 +26,7 @@ import time
 from typing import Callable
 
 import errors
+import store
 
 MAX_TAIL_CHARS = 2000
 MAX_READ_BYTES = 256 * 1024
@@ -361,16 +362,9 @@ def rate_limit_reason(state_path: Path, *, now: float, interval: int) -> str | N
 
 def record_publish(state_path: Path, snapshot: dict, *, now: float) -> None:
     """Atomically remember the last successful publication for rate limiting."""
-    path = Path(state_path)
     payload = {"published_at": now, "build": snapshot.get("build"),
                "observed_at": snapshot.get("observed_at")}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    store.Store(state_path).write(payload)  # atomic, owner-only; failure is non-fatal (#701)
 
 
 def acquire_publisher_lock(lock_path: Path, *, now: float, stale_after: int) -> bool:

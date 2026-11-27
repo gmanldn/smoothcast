@@ -1,4 +1,5 @@
 """Exercise MSI matrix control flow without starting Windows Installer."""
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -43,6 +44,8 @@ def test_matrix_really_uninstalls_and_checks_registration(tmp_path, monkeypatch)
     a, b = tmp_path / "a.msi", tmp_path / "b.msi"
     a.write_bytes(b"fixture A")
     b.write_bytes(b"fixture B")
+    for fixture in (a, b):
+        write_checksum(fixture)
     calls = []
     registrations = iter(["", "2.0.40", "2.0.41", "2.0.41", ""])
 
@@ -61,3 +64,25 @@ def test_matrix_really_uninstalls_and_checks_registration(tmp_path, monkeypatch)
     assert result["ok"]
     assert calls == ["/i", "/i", "/i", "/x"]
     assert next(registrations, None) is None
+
+
+def write_checksum(path):
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n", encoding="ascii")
+    return digest
+
+
+def test_fixture_requires_builder_checksum(tmp_path):
+    fixture = tmp_path / "a.msi"
+    fixture.write_bytes(b"fixture A")
+    with pytest.raises(matrix.InstallerError, match="missing"):
+        matrix._fixture_digest(fixture)
+    digest = write_checksum(fixture)
+    assert matrix._fixture_digest(fixture) == digest
+    fixture.write_bytes(b"tampered")
+    with pytest.raises(matrix.InstallerError, match="SHA-256 mismatch"):
+        matrix._fixture_digest(fixture)
+    fixture.write_bytes(b"fixture A")
+    fixture.with_name(fixture.name + ".sha256").write_text(f"{digest}  wrong.msi\n", encoding="ascii")
+    with pytest.raises(matrix.InstallerError, match="filename mismatch"):
+        matrix._fixture_digest(fixture)

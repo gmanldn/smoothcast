@@ -120,6 +120,21 @@ def test_symlink_partial_is_rejected_without_reading_target(tmp_path):
     uploads.close()
 
 
+def test_busy_host_rearms_early_cast_on_the_next_chunk_then_gives_up(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mkv", 80, "192.168.1.5")
+    uid = created["id"]
+    for n in range(portal_uploads.EARLY_CAST_MAX_RETRIES):
+        got = uploads.append("owner", uid, f"bytes {n}-{n}/80", 1, BytesIO(b"x"))
+        assert got["ready_to_cast"] is True
+        uploads.mark_early_cast(uid, accepted=False, transient=True)
+    got = uploads.append("owner", uid, "bytes 6-6/80", 1, BytesIO(b"x"))
+    assert got["ready_to_cast"] is True
+    uploads.mark_early_cast(uid, accepted=False, transient=True)
+    assert uploads.append("owner", uid, "bytes 7-7/80", 1, BytesIO(b"x"))["ready_to_cast"] is False
+    uploads.close()
+
+
 def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tmp_path):
     uploads = manager(tmp_path, early_cast_min_bytes=1)
     created = uploads.create("owner", "film.mkv", 6, "192.168.1.5")
@@ -289,7 +304,8 @@ def test_can_cancel_staged_upload_after_cast_rejection(tmp_path):
 
 
 def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
-    """One 8 MiB chunk replaces four 2 MiB requests without weakening ACK."""
+    """One 8 MiB chunk streams in bounded reads; fsync deferred to the
+    16 MiB coalesced checkpoint, not per chunk."""
     uploads = manager(tmp_path)
     size = portal_uploads.CHUNK_SIZE
     assert size == 8 * 1024 * 1024
@@ -309,9 +325,12 @@ def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
     with patch("portal_uploads.os.fsync", wraps=os.fsync) as synced:
         result = uploads.append("owner", created["id"], f"bytes 0-{size - 1}/{size}",
                                 size, source)
-    assert result["received"] == size
-    assert len(source.reads) == size // portal_uploads.READ_SIZE
-    assert synced.call_count == 1
+        assert result["received"] == size
+        assert len(source.reads) == size // portal_uploads.READ_SIZE
+        assert synced.call_count == 0  # below 16 MiB checkpoint threshold
+        # finalize flushes the remaining durable bytes (file + directory).
+        uploads.finalize("owner", created["id"])
+        assert synced.call_count == 2
     uploads.close()
 
 

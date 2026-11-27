@@ -1,7 +1,6 @@
 """Design tokens for the web remote (issue #447, slice 1). GTK-free.
 
-One table of semantic colours per scheme. The dark values are exactly the
-colours the page used before, so dark mode is unchanged; the light values follow
+One branded semantic palette per scheme. The light values follow
 the browser's ``prefers-color-scheme``, and ``prefers-contrast: more`` pushes
 secondary text and borders to full contrast. ``contrast_ratio`` is the WCAG 2.x
 formula, used by tests to keep every text pair readable.
@@ -11,28 +10,66 @@ from __future__ import annotations
 import accent
 
 DARK = {
-    "bg": "#101722", "card": "#1c2735", "text": "#f4f7fb", "muted": "#b7c3d0", "dim": "#8394aa",
-    "accent": "#4d9de0", "on_accent": "#081522", "input": "#121b27", "border": "#718096",
-    "line": "#ffffff10", "chip_line": "#ffffff12", "header_line": "#425264",
-    "secondary": "#36475d", "on_secondary": "#ffffff", "danger": "#ffb4a9", "focus": "#ffd166",
-    "vote": "#1c3555", "vote_line": "#4d9de066", "on_vote": "#cfe6ff", "vote_on": "#2e6fae",
-    "nav": "#26364a", "nav_hover": "#364b65", "on_nav": "#e2edff",
-    "qr_paper": "#ffffff",
-    # Video overlays stay legible independently of the browser theme.
-    "media_surface": "#101722", "media_text": "#f4f7fb",
-    "scrim": "#000b", "shadow": "#0002", "avatar_text": "#08101a",
+    "bg": "#0B1220",
+    "card": "#151F30",
+    "text": "#F4F7FB",
+    "muted": "#B7C4D6",
+    "dim": "#9AACC3",
+    "accent": "#76C7FF",
+    "on_accent": "#0B1220",
+    "input": "#101A2A",
+    "border": "#74859E",
+    "line": "#FFFFFF14",
+    "chip_line": "#FFFFFF18",
+    "header_line": "#40516A",
+    "secondary": "#293B52",
+    "on_secondary": "#F4F7FB",
+    "danger": "#FFB4A9",
+    "focus": "#FFD166",
+    "vote": "#203951",
+    "vote_line": "#76C7FF66",
+    "on_vote": "#D9EDFF",
+    "vote_on": "#245F93",
+    "nav": "#202F44",
+    "nav_hover": "#30445F",
+    "on_nav": "#F4F7FB",
+    "qr_paper": "#FFFFFF",
+    "media_surface": "#0B1220",
+    "media_text": "#F4F7FB",
+    "scrim": "#000B",
+    "shadow": "#0002",
+    "avatar_text": "#08101A",
 }
 LIGHT = {
-    "bg": "#f4f7fb", "card": "#ffffff", "text": "#101722", "muted": "#475569", "dim": "#5b6b80",
-    "accent": "#1d6fb8", "on_accent": "#ffffff", "input": "#eef2f7", "border": "#64748b",
-    "line": "#0f172a1a", "chip_line": "#0f172a1f", "header_line": "#cbd5e1",
-    "secondary": "#e2e8f0", "on_secondary": "#1e293b", "danger": "#b42318", "focus": "#b45309",
-    "vote": "#dbeafe", "vote_line": "#1d6fb866", "on_vote": "#1e3a8a", "vote_on": "#1d6fb8",
-    "nav": "#e2e8f0", "nav_hover": "#cbd5e1", "on_nav": "#1e293b",
-    "qr_paper": "#ffffff",
-    # Video overlays stay legible independently of the browser theme.
-    "media_surface": "#101722", "media_text": "#f4f7fb",
-    "scrim": "#000b", "shadow": "#0f172a1a", "avatar_text": "#08101a",
+    "bg": "#F4F7FB",
+    "card": "#FFFFFF",
+    "text": "#0B1220",
+    "muted": "#475569",
+    "dim": "#52637B",
+    "accent": "#126397",
+    "on_accent": "#FFFFFF",
+    "input": "#EAF0F6",
+    "border": "#64748B",
+    "line": "#0F172A1A",
+    "chip_line": "#0F172A1F",
+    "header_line": "#CBD5E1",
+    "secondary": "#E1E9F2",
+    "on_secondary": "#18263A",
+    "danger": "#B42318",
+    "focus": "#9A490A",
+    "vote": "#DBEAFE",
+    "vote_line": "#12639766",
+    "on_vote": "#153D62",
+    "vote_on": "#126397",
+    "nav": "#E1E9F2",
+    "nav_hover": "#CBD9E8",
+    "on_nav": "#18263A",
+    "qr_paper": "#FFFFFF",
+    "media_surface": "#0B1220",
+    "media_text": "#F4F7FB",
+    "scrim": "#000B",
+    "shadow": "#0F172A1A",
+    "avatar_text": "#08101A",
 }
 SCHEMES = {"dark": DARK, "light": LIGHT}
 # Overrides applied on top of the active scheme for prefers-contrast: more.

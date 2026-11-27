@@ -49,6 +49,70 @@ def test_every_documented_route_still_exists_in_the_source():
     assert not missing, f"documented but not routed: {missing}"
 
 
+def test_every_route_declares_a_capability():
+    undeclared = [
+        (path, method)
+        for path, methods in api_spec.PATHS.items()
+        for method in methods
+        if (path, method) not in api_spec.ROUTE_CAPABILITIES
+    ]
+    assert not undeclared, (
+        "declare a capability for these routes in src/api_spec.py: "
+        + ", ".join(f"{method.upper()} {path}" for path, method in sorted(undeclared))
+    )
+
+
+def test_no_capability_for_an_undocumented_route():
+    unknown = [
+        (path, method)
+        for (path, method) in api_spec.ROUTE_CAPABILITIES
+        if path not in api_spec.PATHS or method not in api_spec.PATHS[path]
+    ]
+    assert not unknown, (
+        "capability declared for a route that does not exist: "
+        + ", ".join(f"{method.upper()} {path}" for path, method in sorted(unknown))
+    )
+
+
+def test_required_capability_lookups():
+    assert api_spec.required_capability("/", "get") is None
+    assert api_spec.required_capability("/api/login", "post") is None
+    assert api_spec.required_capability("/api/status", "get") == "room:read"
+    assert api_spec.required_capability("/api/action", "post") == "room:write"
+    assert api_spec.required_capability("/api/uploads", "post") == "uploads:create"
+    assert api_spec.required_capability("/api/mesh", "get") == "mesh:read"
+    assert api_spec.required_capability("/api/media/{id}", "get") == "media:read"
+    assert api_spec.required_capability("/api/missing", "get") is None
+
+
+def test_public_routes_are_exactly_the_capability_none_routes():
+    """Every route that needs no session declares no capability, and vice versa."""
+    public = set()
+    authed = set()
+    for path, methods in api_spec.PATHS.items():
+        for method, op in methods.items():
+            is_public = op["security"] == [{}]
+            (public if is_public else authed).add(path)
+    capability_none = {
+        path for (path, _method), cap in api_spec.ROUTE_CAPABILITIES.items() if cap is None
+    }
+    capability_required = {
+        path
+        for (path, _method), cap in api_spec.ROUTE_CAPABILITIES.items()
+        if cap is not None
+    }
+    assert public == capability_none, (
+        f"public routes differ from capability-None routes: "
+        f"public-only={sorted(public - capability_none)}, "
+        f"capability-only={sorted(capability_none - public)}"
+    )
+    assert authed == capability_required, (
+        f"authenticated routes differ from capability-required routes: "
+        f"authed-only={sorted(authed - capability_required)}, "
+        f"capability-only={sorted(capability_required - authed)}"
+    )
+
+
 def test_spec_is_well_formed():
     spec = api_spec.spec()
     assert spec["openapi"].startswith("3.1") and spec["info"]["version"] == api_spec.API_VERSION
@@ -76,5 +140,70 @@ def test_portal_serves_the_document_without_a_session():
     try:
         status, body, _ = harness.request("GET", "/api/openapi.json")
         assert status == 200 and body == json.loads(api_spec.dumps())
+    finally:
+        harness.close()
+
+
+def test_unauthenticated_status_is_rejected():
+    """GET /api/status requires a session (room:read capability)."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("GET", "/api/status")
+        assert status in (401, 403), f"expected 401/403, got {status}: {body}"
+    finally:
+        harness.close()
+
+
+def test_authenticated_status_succeeds():
+    """Authenticated GET /api/status returns 200 (all participants hold room:read)."""
+    harness = RoomHarness(count=1)
+    try:
+        client = harness.login("alice")
+        status, body, _ = client.status()
+        assert status == 200
+    finally:
+        harness.close()
+
+
+def test_unauthenticated_action_is_rejected():
+    """POST /api/action requires a session (room:write capability)."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("POST", "/api/action",
+                                          {"action": "play_pause"})
+        assert status in (401, 403), f"expected 401/403, got {status}: {body}"
+    finally:
+        harness.close()
+
+
+def test_authenticated_action_succeeds():
+    """Authenticated POST /api/action returns 202 (all participants hold room:write)."""
+    harness = RoomHarness(count=1)
+    try:
+        client = harness.login("alice")
+        status, body, _ = client.action({"action": "play_pause"})
+        assert status == 202
+    finally:
+        harness.close()
+
+
+def test_public_route_without_session_succeeds():
+    """GET /api/config is public (no capability) and works without a session."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("GET", "/api/config")
+        assert status == 200
+        assert "pin_required" in body
+    finally:
+        harness.close()
+
+
+def test_unauthenticated_upload_is_rejected():
+    """POST /api/uploads requires a session (uploads:create capability)."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("POST", "/api/uploads",
+                                          {"name": "film.mp4", "size": 100})
+        assert status in (401, 403), f"expected 401/403, got {status}: {body}"
     finally:
         harness.close()

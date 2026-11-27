@@ -208,6 +208,15 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
 - Try:
   1. Set subtitles to Off.
 
+<a id="errors-portal-missing-capability"></a>
+## `portal.missing_capability`
+
+- Severity: warning; retryable: no
+- Message: This action needs a permission you do not have. Choose another action.
+- Try:
+  1. Try a different action.
+  2. Ask the room owner for access.
+
 <a id="errors-cast-no-supported-format"></a>
 ## `cast.no_supported_format`
 

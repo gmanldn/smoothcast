@@ -5,6 +5,8 @@ INV-011 read budget; the methods run on the same ``PortalMixin`` instance.
 """
 from __future__ import annotations
 
+import paths
+
 import hashlib
 
 import portal
@@ -87,11 +89,32 @@ class PortalRoomMixin:
             return self._portal_dispatch("command", {"envelope": envelope})
         except portal.PortalRequestError as exc:
             raise portal_commands.CommandError(exc.status, exc.message) from exc
+    def _rename_portal_room(self, value: object) -> None:
+        """Rename the existing room without restarting its services."""
+        from portal_room import clean_room_name
+
+        name = clean_room_name(value)
+        if self.cfg.get("room_name") != name:
+            self.cfg["room_name"] = name
+            save_config(self.cfg)
+            self._publish_portal_status()
+            self.toast("Room name updated")
+
     def _publish_portal_status(self) -> None:
         """Publish GTK-owned status for HTTP threads without dispatch waits."""
+        from portal_room import clean_room_name
+
+        label = getattr(self, "portal_room_name_label", None)
+        name = clean_room_name(self.cfg.get("room_name"))
+        if label is not None and label.get_text() != name:
+            label.set_text(name)
         snapshot = getattr(self, "_portal_status", None)
         if snapshot is None or self._closing:
             return
+        current = getattr(self, "_portal", None)
+        room = getattr(getattr(current, "server", None), "room", None)
+        if room is not None:
+            room.set_name(self.cfg.get("room_name"))
         try:
             state = self._portal_handle("status", {})
         except Exception as exc:
@@ -100,6 +123,17 @@ class PortalRoomMixin:
                 console(f"Could not publish room status: {exc}")
             return
         if isinstance(state, dict):
+            import stream_health
+
+            # Tiny bounded file written by the HLS server process (#49).
+            measured = stream_health.read_snapshot(paths.cache_dir())
+            if measured is not None:
+                state["stream_health"] = measured
+            chapters = getattr(getattr(self, "media", None), "chapters", ()) or ()
+            if chapters and not self.external:
+                # Same chapters the desktop menu shows, so the web room can jump to them (#39).
+                state["chapters"] = [{"start": round(float(c.start), 2), "title": str(c.title)[:80]}
+                                     for c in chapters[:128]]
             if self.external:
                 from playback_state import external_details, external_media_labels
 

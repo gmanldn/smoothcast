@@ -6,7 +6,6 @@ status. 503 until the app attaches an ``UpdateRunner`` as ``server.update_runner
 """
 from __future__ import annotations
 
-import threading
 
 PATHS = {"/api/update"}
 
@@ -36,7 +35,9 @@ def route(handler, method: str, path: str) -> bool:
         return True
     body = handler._body()
     if body.get("action") == "check":
-        threading.Thread(target=runner.check, daemon=True, name="update-check").start()
+        import task_runtime
+        rt = task_runtime.shared()
+        rt.submit("network", rt.scope(deadline=120.0), lambda _s: runner.check())
         handler._send(202, {"ok": True, **runner.snapshot()})
         return True
     result = runner.apply(confirmed=body.get("confirmed") is True)

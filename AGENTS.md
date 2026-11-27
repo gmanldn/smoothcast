@@ -1,64 +1,60 @@
 # SmoothCast — agent essentials
 
-Python 3.10+, GTK4/libadwaita, Chromecast/DLNA. Read only the relevant
-[handbook](docs/agents/README.md) topic. Use
-`python3 scripts/agent_context.py route <task-or-path>`.
-The [archive](docs/AGENT_REFERENCE.md) is historical, not policy.
+Python 3.10+, GTK4/libadwaita, Cast/DLNA. Route tasks via
+`python3 scripts/agent_context.py route <task-or-path>` and the
+[handbook](docs/agents/README.md). [Archive](docs/AGENT_REFERENCE.md) is history,
+not policy. [Issues](docs/ISSUES.md) are authoritative.
 
-## Hosted ChatGPT containers: connector-first (P0)
+## Transport and lifecycle (P0)
 
-**Treat hosted ChatGPT execution containers as offline** for native Git, gh,
-curl and dependency downloads — an environment limit, not a runtime networking
-bug. Use the GitHub connector from the outset for reads, claims,
-commits and guarded `develop` pushes per the
-[connector shipment rules](docs/agents/sandbox-network.md); report unrun checks
-as UNVERIFIED. Native Git stays preferred where access works.
-
-## Fast agent lifecycle (P0)
-
-**Only develop receives agent code. Main is manually promoted by the owner.**
-Never push/merge/promote/tag main. Never reset another agent's work or force-push.
-Edit only in a private detached worktree, never the owner checkout.
+Hosted ChatGPT containers: assume offline for native Git/gh/curl/downloads.
+Use the GitHub connector first, with the [guarded transport](docs/agents/sandbox-network.md).
+Native Git remains preferred on connected machines.
+Only `develop` receives agent changes; `main` is owner-controlled. Never
+force-push, reset another agent's work, auto-promote, tag or publish main.
 
 ```sh
-python3 scripts/agent.py start              # choose the next available ticket
-# cd into the printed worktree; read its task brief
+python3 scripts/agent.py start
+# cd into the printed worktree; read the task brief
 python3 scripts/agent.py ship --message "fix: concrete result"
-python3 scripts/agent.py finish --done "landed implementation" --next "remaining tests" --verification "not run (unverified)"
+python3 scripts/agent.py finish --done "landed" --next "remaining checks" --verification "not run (unverified)"
 ```
 
-`start` refreshes `develop`, claims a 90m lease and opens a private worktree;
-`ship` commits tracked edits (`--files` for new files), reconciles leases,
-checks version integrity and pushes non-force (after exit 5/7 rerun `ship` in
-the same worktree). `finish` records evidence and releases the lease. See
-[coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
-GitHub Issues ([docs/ISSUES.md](docs/ISSUES.md)) are authoritative; the read-only
-`scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
+Work only in private detached worktrees, not the owner checkout. Claim only
+production files edited, prefer 30-minute slices and release promptly with
+durable SHA, checks and next action. Use `agent.py scope --files src/one.py`
+to relinquish unused scope. Never bypass overlapping live leases. Stage named
+files; ship non-force. On exit 5/7 rerun ship in the same worktree to reconcile.
+See [workflow](docs/agents/workflow.md) and [coordination](docs/COORDINATION.md).
+Close only with demonstrated acceptance. `ticket_digest.py --next` is not
+claim-aware.
 
-## Product rule: effortless UX (P0)
+## Version and journal (P0)
 
-- User experience is paramount. SmoothCast handles discovery, routing,
-  workers, recovery and cleanup; users choose media and targets.
-- Keep the happy path fast; disclose diagnostics progressively. Never fake
-  readiness or success, hide a real failure, or weaken consent/security.
-- Keep GTK/browser interaction responsive: bounded off-thread I/O, coalesced
-  updates, no duplicate pollers or needless redraws. Preserve input and playback.
-  See [UX and orchestration](docs/agents/preferences.md#ux-and-orchestration).
+`src/version.py` is canonical (`--version`); Git commit SHA identifies every
+build. Strongly prefer automatic +1 PATCH per nonempty develop shipment, not
+per ticket, without owner approval. MINOR/MAJOR remain owner-directed. If PATCH
+allocation alone fails, ship at unchanged valid version. Never bypass history
+integrity, even with `--skip-checks`. No release qualification blocks a
+coherent develop push. Every shipment generates the root
+[CHANGELOG.md](CHANGELOG.md) from fresh history; never hand-edit or lease it.
+See [journal rules](docs/CHANGELOG.md). Packaging: `packaging/SmoothCast.spec`.
 
-## Quality and safety
+## Product and quality (P0)
 
-- Small, complete, well-scoped patches; explain real evidence. Tests are
-  deferred on `develop`: ship work, test lazily; never claim unrun checks passed.
-- **Never launch the real GUI** or control real receivers during tests. See
-  [testing](docs/agents/testing.md); use `scripts/test_gui_isolated.py`; full
-  suite: `python3 -m pytest -q tests`.
-- Respect playback ownership, privacy, compatibility and errors; see
-  [architecture](docs/agents/architecture.md).
-- **Token discipline:** [Ponytail](.kilo/skills/ponytail/SKILL.md) for the
-  smallest complete diff, [Caveman](.kilo/skills/caveman/SKILL.md) for terse
-  evidence; see [efficiency](docs/agents/efficiency.md). Correctness wins.
-- Owner policy (26 Nov 2026): **make new versions in `develop`**, never on
-  `main`; bump `src/version.py` (`smoothcast --version`) as an owner-directed
-  release commit. Git commit SHA identifies every build; version-history checks
-  run on every ship, even with `--skip-checks`. No auto main merge/tag/publish.
-  Packaging: `packaging/SmoothCast.spec`.
+UX first: users choose media and targets; SmoothCast handles discovery, routing,
+workers, recovery and cleanup. Keep GTK/browser controls responsive: bounded
+off-thread I/O, coalesced updates, no redundant polls/redraws. Preserve input,
+playback, ownership, privacy and consent. Never fake readiness, hide failure or
+weaken security. [UX](docs/agents/preferences.md#ux-and-orchestration) and
+[architecture](docs/agents/architecture.md).
+
+Ship small complete slices promptly. Test lazily; hardware/device qualification
+is desirable but never blocks develop. Record skipped checks UNVERIFIED;
+ticket acceptance and release qualification are distinct. Lease, non-force
+and version-integrity guards still apply. **Never launch the real GUI** or
+control real receivers in tests. Use `scripts/test_gui_isolated.py`; full suite
+`python3 -m pytest -q tests`. See [testing](docs/agents/testing.md).
+Follow [Ponytail](.kilo/skills/ponytail/SKILL.md) and
+[Caveman](.kilo/skills/caveman/SKILL.md); [efficiency](docs/agents/efficiency.md).
+Smallest correct diff, terse evidence; correctness wins.

@@ -38,6 +38,7 @@ refused) or 503 (receiver unreachable).
 """
 from __future__ import annotations
 
+import paths
 import argparse
 import hmac
 import ipaddress
@@ -87,7 +88,7 @@ class RequestError(Exception):
 
 def default_token_path() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "cast-control" / "control_api_token"
+    return Path(base) / paths.APP_DIR / "control_api_token"
 
 
 def validate_bind(address: str) -> str:

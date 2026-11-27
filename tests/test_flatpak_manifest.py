@@ -37,6 +37,15 @@ class FlatpakManifestTests(unittest.TestCase):
         self.assertIn("libx264", build)
         self.assertIn("gi.require_version", build)
 
+    def test_installed_portal_and_artwork_are_checked_outside_checkout(self):
+        commands = self.app_module()["build-commands"]
+        probe = next(c for c in commands if c.startswith("cd /tmp && python3 -I"))
+        for name in ("portal", "portal_room", "portal_screen_page", "portal_uploads",
+                     "portal_mesh_panel", "smoothcast_assets", "icon_path"):
+            self.assertIn(name, probe)
+        self.assertIn('is_relative_to("/app")', probe)
+        self.assertIn("find_spec", probe)
+
     def test_permissions_are_lan_focused_without_broad_host_control(self):
         args = self.manifest["finish-args"]
         self.assertEqual(len(args), len(set(args)))

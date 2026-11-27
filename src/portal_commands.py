@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 import guest_messages
 import hashlib
 import json
-import math
 import re
 import secrets
 import threading
@@ -125,7 +124,9 @@ def _payload(action: str, value: object) -> dict:
         position = value.get("value")
         if isinstance(position, bool) or not isinstance(position, (int, float)):
             raise CommandError(400, "Seek position must be a number")
-        if not math.isfinite(float(position)) or not 0 <= float(position) <= 24 * 60 * 60:
+        # Check bounds before converting: an oversized JSON integer can
+        # overflow float(), and a NaN fails the chained comparison.
+        if not 0 <= position <= 24 * 60 * 60:
             raise CommandError(400, guest_messages.SEEK_OUT_OF_RANGE)
         return {"value": float(position)}
     if action == "volume":

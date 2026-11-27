@@ -9,6 +9,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import GLib, Gtk
 import pathlib
+import paths
 import threading
 import castctl
 import config_control
@@ -24,7 +25,7 @@ import async_jobs
 
 APP_ID = "local.cast-control"
 APP_NAME = "SmoothCast"
-CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
+CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / paths.APP_DIR
 CONFIG_FILE = CONFIG_DIR / "config.json"
 ROOM_CHECKPOINT_FILE = CONFIG_DIR / "room-checkpoint.json"
 ICON_NAME = APP_ID
@@ -59,6 +60,7 @@ DEFAULTS: dict = {
     "portal_screens": True,
     "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,
+    "room_name": "Your room",  # Host display label; does not change joining or receiver identity.
     # Normal media capabilities; qualified workers and per-request consent still apply.
     "acquisition_defaults_applied": True,
     "portal_link_youtube": True,

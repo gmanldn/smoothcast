@@ -162,19 +162,29 @@ def page_build() -> str:
     ).hexdigest()[:12]
 
 
-def _page() -> bytes:
+def _page(*, room_name: object = None, pin_required: bool | None = None) -> bytes:
     # Keep optional panels inside #dashboard: their grid placement and login
     # visibility must follow the rest of the authenticated room controls.
     dashboard_close = '</div>\n<dialog id="shortcutsHelp"'
     markup = _HTML.replace("<!--SC_MESH_DETAILS-->", portal_mesh_panel.panel_html(), 1)
     markup = markup.replace(dashboard_close, portal_screen_page.panel_html() + dashboard_close, 1)
-    return (markup.replace("__SC_BUILD__", page_build())
+    markup = (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_VERSION__", version.identity_label())
             .replace("<!--SC_DEMO-->", _demo_badge())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
             .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
-            ).encode("utf-8")
+            )
+    if pin_required is not None:
+        markup = markup.replace("__PIN_REQUIRED__", "1" if pin_required else "0")
+    # Insert user text last, after build/PIN substitutions. It is text in HTML,
+    # never script source, an attribute, or a DNS identity.
+    from html import escape
+
+    name = portal_room.clean_room_name(room_name)
+    title = "Join the house" if name == portal_room.DEFAULT_ROOM_NAME else f"Join {name}"
+    return markup.replace('<h2 id="joinTitle">Join the house</h2>',
+                          f'<h2 id="joinTitle">{escape(title)}</h2>', 1).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -458,6 +468,16 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 return None
             self._sessions.move_to_end(key)
             return session.participant_id
+
+    def participant_capabilities(self, participant_id: str) -> set[str]:
+        """Every capability a participant holds.
+
+        On the trusted home LAN every authenticated participant holds every
+        capability. Return the declared capability set so a future role model
+        can restrict per-participant access without changing the caller.
+        """
+        del participant_id  # All participants hold all capabilities in this model.
+        return {cap for cap in api_spec.ROUTE_CAPABILITIES.values() if cap is not None}
 
     def resume_session(self, token: str | None) -> tuple[str, portal_room.Participant] | None:
         """Return the existing CSRF token and participant for a valid cookie."""
@@ -761,8 +781,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _libraries(self) -> None:
         """Libraries on the network: nodes and their shared folders, browsable by path (#413)."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized(self.path, "GET"):
+            return
         browser = getattr(self.server, "library_browser", None)
         if browser is None:
             return self._send(200, {"origins": []})
@@ -865,8 +885,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _events(self) -> None:
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized("/api/events", "GET"):
+            return
         participant_id = self.server.session_participant(self._cookie_token())
         if participant_id is None:
             return self._error(401, "Session expired")
@@ -930,8 +950,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _search_stream(self) -> None:
         """Server-sent events: cached results at once, late origins as they answer."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized("/api/search/stream", "GET"):
+            return
         stream = getattr(self.server, "library_search_stream", None)
         text = (parse_qs(urlsplit(self.path).query).get("q") or [""])[0]
         if not text.strip():
@@ -954,8 +974,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _search(self) -> None:
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized("/api/search", "GET"):
+            return
         if self._throttle("read"):
             return
         engine = getattr(self.server, "library_search", None)
@@ -1021,6 +1041,38 @@ class _Handler(BaseHTTPRequestHandler):
             return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
         return True
 
+    def _authorized(self, path: str, method: str, *, csrf: bool = False) -> bool:
+        """Authorize a request against the route's declared capability.
+
+        Combines authentication (session cookie + CSRF when required) with the
+        capability check from ``src/api_spec.py``. Every authenticated participant
+        on the trusted home LAN holds every capability; the check is enforced at
+        dispatch so a future role model can restrict per-participant access.
+        Returns True when authorized; sends 401/403 and returns False otherwise.
+        """
+        if not self._authenticated(csrf=csrf):
+            self._session_rejected(csrf)
+            return False
+        capability = api_spec.required_capability(path, method)
+        if capability is not None:
+            participant = self.server.session_participant(self._cookie_token())
+            if participant is None:
+                self._session_rejected(csrf)
+                return False
+            if capability not in self.server.participant_capabilities(participant):
+                self._error(403, f"This action requires the {capability} capability",
+                            code="portal.missing_capability")
+                return False
+        return True
+
+    def _session_rejected(self, csrf: bool) -> None:
+        # Reads keep 401; a rejected mutation tells the guest to rejoin (403),
+        # as every route did before central authorization (#702).
+        if csrf:
+            self._error(403, guest_messages.SESSION_ENDED)
+        else:
+            self._error(401, "Session expired")
+
     def _throttle(self, route_class: str) -> bool:
         """Bound authenticated traffic; internal desktop callbacks bypass HTTP."""
         participant = self.server.session_participant(self._cookie_token())
@@ -1066,8 +1118,7 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/silence.wav":
             return self._send(200, SILENT_WAV, content_type="audio/wav")
         if path in {"/", "/index.html"}:
-            page = _page().replace(
-                b"__PIN_REQUIRED__", b"1" if self.server.pin_required else b"0")
+            page = _page(room_name=self.server.room.name, pin_required=self.server.pin_required)
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
@@ -1103,8 +1154,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/events":
             return self._events()
         if path == "/api/status":
-            if not self._authenticated():
-                return self._error(401, "Enter the PIN shown in SmoothCast")
+            if not self._authorized(path, "GET"):
+                return
             if self._throttle("read"):
                 return
             participant_id = self.server.session_participant(self._cookie_token())
@@ -1116,7 +1167,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._error(exc.status, exc.message)
             return self._send(200, payload)
         upload_id = self._upload_route(path)
-        if upload_id and self._authenticated():
+        if upload_id:
+            if not self._authorized(path, "GET"):
+                return
             if self._throttle("upload"):
                 return
             if self.server.uploads is None:
@@ -1126,8 +1179,6 @@ class _Handler(BaseHTTPRequestHandler):
                     self._cookie_token() or "", upload_id)})
             except portal_uploads.UploadError as exc:
                 return self._exception_error(exc)
-        if upload_id:
-            return self._error(401, "Enter the PIN shown in SmoothCast")
         return self._error(404, "Not found")
 
     def do_POST(self) -> None:  # noqa: N802
@@ -1141,7 +1192,9 @@ class _Handler(BaseHTTPRequestHandler):
         if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
-            if self._authenticated(csrf=True) and self._throttle(
+            if not self._authorized(path, "POST", csrf=True):
+                return
+            if self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
                 return
         if portal_update_http.route(self, "POST", path):
@@ -1149,8 +1202,8 @@ class _Handler(BaseHTTPRequestHandler):
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads/target":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/uploads/target", "POST", csrf=True):
+                return
             try:
                 self._body()
                 target = self.server.dispatch("upload_target", {
@@ -1160,8 +1213,8 @@ class _Handler(BaseHTTPRequestHandler):
             except PortalRequestError as exc:
                 return self._exception_error(exc)
         if path == "/api/uploads/announce":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/uploads/announce", "POST", csrf=True):
+                return
             try:
                 if self.server.uploads is None:
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
@@ -1171,8 +1224,8 @@ class _Handler(BaseHTTPRequestHandler):
             except (PortalRequestError, portal_uploads.UploadError) as exc:
                 return self._exception_error(exc)
         if path == "/api/uploads":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/uploads", "POST", csrf=True):
+                return
             try:
                 if self.server.uploads is None:
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
@@ -1207,8 +1260,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(201, {"ok": True, **created})
         upload_id = self._upload_complete_route(path)
         if upload_id:
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized(path, "POST", csrf=True):
+                return
             try:
                 if self.server.uploads is None:
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
@@ -1289,8 +1342,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
         if path == "/api/search/magnets":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/search/magnets", "POST", csrf=True):
+                return
             jobs = self.server.link_jobs
             if jobs is None or not callable(getattr(jobs, "search_magnets", None)):
                 return self._error(503, "Archive search is unavailable in this room.")
@@ -1300,8 +1353,8 @@ class _Handler(BaseHTTPRequestHandler):
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path == "/api/search/youtube":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/search/youtube", "POST", csrf=True):
+                return
             jobs = self.server.link_jobs
             if jobs is None:
                 return self._error(503, guest_messages.YOUTUBE_OFF)
@@ -1311,8 +1364,8 @@ class _Handler(BaseHTTPRequestHandler):
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path in {"/api/link-jobs", "/api/link-jobs/cancel", "/api/link-jobs/retry"}:
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized(path, "POST", csrf=True):
+                return
             jobs = self.server.link_jobs
             if jobs is None:
                 return self._error(503, guest_messages.LINK_DOWNLOADS_OFF)
@@ -1333,8 +1386,8 @@ class _Handler(BaseHTTPRequestHandler):
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path == "/api/profile":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/profile", "POST", csrf=True):
+                return
             name = body.get("name")
             if not isinstance(name, str):
                 return self._error(400, "Your name must be text")
@@ -1348,8 +1401,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True,
                                     "participant": participant.public(self.server.clock())})
         if path == "/api/action":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/action", "POST", csrf=True):
+                return
             action = body.get("action")
             envelope: portal_commands.MutationEnvelope | None = None
             participant_id: str | None = None
@@ -1503,17 +1556,18 @@ class _Handler(BaseHTTPRequestHandler):
                 "client": result.get("client", ""),
                 "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
-            accepted = True
-        except Exception:
+            accepted, transient = True, False
+        except Exception as exc:
             accepted = False
-        self.server.uploads.mark_early_cast(upload_id, accepted=accepted)
+            transient = isinstance(exc, PortalRequestError) and exc.status in (409, 503)
+        self.server.uploads.mark_early_cast(upload_id, accepted=accepted, transient=transient)
         return accepted
 
     def do_PUT(self) -> None:  # noqa: N802
         if self._path().startswith("/api/uploads") and not self._client_compatible():
             return
-        if not self._authenticated(csrf=True):
-            return self._error(403, guest_messages.SESSION_ENDED)
+        if not self._authorized(self._path(), "PUT", csrf=True):
+            return
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
@@ -1556,8 +1610,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if portal_screens_http.route(self, "DELETE", self._path()):
             return
-        if not self._authenticated(csrf=True):
-            return self._error(403, guest_messages.SESSION_ENDED)
+        if not self._authorized(self._path(), "DELETE", csrf=True):
+            return
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
@@ -2094,7 +2148,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #castEntry{padding:0;margin-top:0;background:transparent;border:0}
 body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePanel"])) #roomInvite{display:none}
 @media(min-width:720px){#homePanel .home-actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
-/* GTK parity (#708): the Now Playing card is the same hero card as the desktop app. */
+/* GTK parity (ticket 708): the Now Playing card is the same hero card as the desktop app. */
 #playback{padding:22px;background-image:linear-gradient(160deg,color-mix(in srgb,var(--accent) 10%,transparent),transparent 48%)}
 #playback #playbackHeading{color:var(--accent);font-size:.8rem;font-weight:800;letter-spacing:1px;text-transform:uppercase}
 #playback #state{font-size:.85rem;font-weight:700;border-radius:99px;padding:4px 10px;background:color-mix(in srgb,currentColor 9%,transparent)}
@@ -2121,7 +2175,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
-<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
+<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
 <div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <h2 id="quickCastHeading">Cast from this device</h2>
@@ -2136,7 +2190,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking needs a connected TV or speaker and a known length.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
 <div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
+<div id="chapterRow" hidden><label for="chapterJump">Chapter</label><select id="chapterJump" disabled title="Jump to a chapter of the current film"></select></div><div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
 <label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the volume on the TV or speaker, not this device.</span>
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
@@ -2240,7 +2294,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form></section>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">To rename the shared room, use Room → Rename on the computer running SmoothCast.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
@@ -2296,7 +2350,7 @@ $("roomLinkCopy").addEventListener("click",async()=>{
 async function post(path,body){
   if(stalePage)throw Error("Reload required");
   // A missing action response must not indefinitely block every room control.
-  const controller=path==="/api/action"?new AbortController():null;
+  const controller=["/api/action","/api/profile"].includes(path)?new AbortController():null;
   const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
   try{
     const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
@@ -2306,7 +2360,7 @@ async function post(path,body){
     if(!r.ok)throw Error(d.error||"Request failed");
     return d;
   }catch(error){
-    if(controller?.signal.aborted)throw Error("Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
     throw error;
   }finally{if(deadline!==null)clearTimeout(deadline)}
 }
@@ -2411,6 +2465,7 @@ $("loginForm").addEventListener("submit",async e=>{
 function expireSession(){
   stopPlayhead();playhead=null;
   csrf="";
+  resetProfileEdit();
   roomEvents.stop();
   void syncRemoteWakeLock();
   shortcutState=null;
@@ -3025,7 +3080,14 @@ function renderGlance(room){
   const online=people.filter(p=>p.online).length;
   set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
 }
-function renderRoom(room){lastRoom=room;renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+function renderRoomIdentity(room){
+  if(typeof room?.name!=="string"||!room.name.trim())return;
+  const name=room.name;
+  const title=name==="Your room"?"Join the house":"Join "+name;
+  const join=$("joinTitle");
+  if(join&&join.textContent!==title)join.textContent=title;
+}
+function renderRoom(room){lastRoom=room;renderRoomIdentity(room);renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
 if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
@@ -3126,12 +3188,33 @@ function extraTransportEnvelope(action,state,seek,volume){
 }
 const extraTransportControls=[["seekBackTen","seek_back"],["seekForwardTen","seek_forward"],["toggleMute","mute"]];
 function renderExtraTransport(state){
+  renderChapters(state);
   const valid=state&&typeof state.session_id==="string"&&/^[a-f0-9]{32}$/.test(state.session_id)&&
     Number.isSafeInteger(state.revision)&&state.revision>=0;
   for(const [id,action] of extraTransportControls){
     const button=$(id);if(button)button.disabled=!valid||!shortcutCommand(action,state,0,0);
   }
 }
+function renderChapters(state){
+  const row=$("chapterRow"),pick=$("chapterJump");if(!row||!pick)return;
+  const list=state&&state.active&&state.can_seek&&Array.isArray(state.chapters)?state.chapters.filter(c=>c&&Number.isFinite(c.start)&&c.start>=0):[];
+  row.hidden=!list.length;if(!list.length)return;
+  if(pick===document.activeElement&&pick.options.length===list.length)return;
+  const sig=JSON.stringify(list);
+  if(pick.dataset.sig!==sig){
+    pick.dataset.sig=sig;pick.textContent="";
+    list.forEach((c,i)=>{const o=document.createElement("option");o.value=String(c.start);o.textContent=(i+1)+". "+(c.title||"Chapter")+" · "+clock(c.start);pick.append(o)});
+  }
+  const pos=Number(state.position)||0;let at=0;list.forEach((c,i)=>{if(c.start<=pos+0.5)at=i});pick.selectedIndex=at;
+  pick.disabled=!shortcutCommand("seek_forward",state,0,0);
+}
+$("chapterJump")?.addEventListener("change",()=>{
+  const pick=$("chapterJump"),state=shortcutState;
+  if(busy||stalePage||!csrf||!state||!pick||pick.disabled||typeof state.session_id!=="string"||!Number.isSafeInteger(state.revision))return;
+  const start=Number(pick.value);if(!Number.isFinite(start)||start<0)return;
+  void act("seek",undefined,{client_id:extraTransportClient,command_id:"control-"+(++extraTransportSequence),
+    expected_session_id:state.session_id,expected_revision:state.revision,payload:{value:start}});
+});
 for(const [id,action] of extraTransportControls){
   $(id)?.addEventListener("click",()=>{
     if(busy||stalePage||!csrf||editingControls.has("seek"))return;
@@ -3283,7 +3366,34 @@ $("volume").addEventListener("change",()=>{
   editingControls.delete("volume");
   queueVolume(Number($("volume").value));
 });
-$("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showJoinedName(d.participant.name);showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
+let profileEdit=null;
+function resetProfileEdit(){
+  profileEdit=null;
+  $("saveDisplayName").disabled=false;
+  $("profileStatus").textContent="";
+}
+async function saveProfileName(event){
+  event.preventDefault();
+  if(!csrf||stalePage||profileEdit?.session===csrf)return;
+  const input=$("displayName"),button=$("saveDisplayName"),feedback=$("profileStatus");
+  const submitted=input.value,request={session:csrf};
+  profileEdit=request;button.disabled=true;feedback.textContent="Updating name…";
+  const current=()=>profileEdit===request&&csrf===request.session&&!stalePage;
+  try{
+    const data=await post("/api/profile",{name:submitted});
+    if(!current())return;
+    const confirmed=data.participant?.name;
+    if(typeof confirmed!=="string"||!confirmed.trim())throw Error("Host did not confirm the name");
+    // Preserve edits made while this request was in flight.
+    if(input.value===submitted)input.value=confirmed;
+    showJoinedName(confirmed);
+    try{localStorage.setItem("sc_name",confirmed)}catch(_){}
+    feedback.textContent="Display name updated.";
+    refresh();
+  }catch(error){if(current())feedback.textContent=error.message||"Could not update name. Try again."}
+  finally{if(profileEdit===request){profileEdit=null;button.disabled=false}}
+}
+$("nameForm").addEventListener("submit",saveProfileName);
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.
@@ -3802,8 +3912,8 @@ $("uploadButton").addEventListener("click",async()=>{
         transferView("transfer",state.received,file.size,"",queueOnly);
         if(state.ready_to_cast&&!casting){
           if(state.early_cast_accepted===false){
-            monitorText("transferDelivery","Early cast declined — retry after upload");
-            transferEvent("Early playback declined; continuing the upload");
+            monitorText("transferDelivery","Early cast not started yet — will retry, otherwise plays when the upload finishes");
+            transferEvent("Early playback not started yet; continuing the upload");
           }else{
             casting=true;
             monitorText("transferDelivery","Early playback requested — not confirmed");

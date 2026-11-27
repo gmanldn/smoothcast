@@ -20,8 +20,8 @@ BELOW_NORMAL_PRIORITY_CLASS = 0x00004000  # Windows process creation flag.
 
 
 def config_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "cast-control" / "config.json"
+    import paths  # one place decides where config lives (#701)
+    return paths.config_dir() / "config.json"
 
 
 def enabled(path: Path | None = None) -> bool:

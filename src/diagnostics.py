@@ -8,6 +8,8 @@ to run without GTK, a display or a prepared virtual environment.
 """
 from __future__ import annotations
 
+import paths
+
 import command_trace
 import jank_watchdog
 
@@ -169,7 +171,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
     config_home = (Path(home_value) / ".config" if home is not None else
                    Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"))
     learning_path = (Path(receiver_learning) if receiver_learning is not None else
-                     config_home / "cast-control" / receiver_memory.STATE_NAME)
+                     config_home / paths.APP_DIR / receiver_memory.STATE_NAME)
     payload: dict = {
         "smoothcast": {"version": __version__, "label": label()},
         "generated": int(time.time()),
@@ -241,15 +243,15 @@ def write_bundle(destination, payload: dict, *, max_bytes: int = MAX_BUNDLE_BYTE
 
 
 def default_error_log_path() -> Path:
-    return Path.home() / ".config" / "cast-control" / "errors.log"
+    return paths.config_dir() / "errors.log"
 
 
 def default_server_log_path() -> Path:
-    return Path.home() / ".cache" / "cast-control" / "server.log"
+    return paths.cache_dir() / "server.log"
 
 
 def default_path(*, directory=None, now: float | None = None) -> Path:
-    base = Path(directory) if directory else Path.home() / ".config" / "cast-control"
+    base = Path(directory) if directory else paths.config_dir()
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now))
     return base / f"diagnostics-{stamp}.json"
 

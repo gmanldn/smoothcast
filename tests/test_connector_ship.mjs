@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import {validateVersionBump,validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker} from "../scripts/connector_ship.mjs";
+import {renderChangelog,validateVersionBump,validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker} from "../scripts/connector_ship.mjs";
 const blobSha=c=>{const b=Buffer.from(c,"utf8");return crypto.createHash("sha1").update("blob "+b.length+"\0").update(b).digest("hex")};
 const VERSION38="MAJOR=2\nMINOR=0\nPATCH=38\n", VERSION39="MAJOR=2\nMINOR=0\nPATCH=39\n";
 const baseBlob=blobSha(VERSION38), newVersionBlob=blobSha(VERSION39);
@@ -67,15 +67,15 @@ function transport(){
       if(path==="/git/commits/"+p.base)return {sha:p.base,tree:{sha:baseTree}};
       if(path==="/git/commits/"+candidate)return {sha:candidate,tree:{sha:newTree},parents:state.parents,message:state.message};
       if(path==="/git/trees/"+baseTree+"?recursive=1")return {sha:baseTree,truncated:false,tree:[leaf("src/version.py",baseBlob)]};
-      if(path==="/git/trees/"+newTree+"?recursive=1")return {sha:newTree,truncated:false,tree:[leaf("src/version.py",baseBlob),leaf("src/foo.py","f")]};
+      if(path==="/git/trees/"+newTree+"?recursive=1")return {sha:newTree,truncated:false,tree:[leaf("src/version.py",newVersionBlob),leaf("src/foo.py","f")]};
       if(path.startsWith("/compare/"+candidate+"..."))return {status:"behind",behind_by:1};
       throw Error("unexpected GET "+path);
     },
     file:async(ref,path)=>{
-      if(path==="src/version.py"){assert.equal(ref,p.base);return {sha:baseBlob,content:VERSION38}}
+      if(path==="src/version.py"){if(ref===candidate)return {sha:newVersionBlob,content:VERSION39};assert.equal(ref,p.base);return {sha:baseBlob,content:VERSION38}}
       assert.equal(ref,candidate);assert.equal(path,"src/foo.py");return {sha:newBlob,content:p.changes[0].content}
     },
-    tree:async(base,changes)=>{assert.equal(base,baseTree);assert.deepEqual(changes,[{path:"src/foo.py",mode:"100644",type:"blob",content:"pass\n"}]);counters.trees++;return newTree},
+    tree:async(base,changes)=>{assert.equal(base,baseTree);assert.deepEqual(changes,[{path:"src/foo.py",mode:"100644",type:"blob",content:"pass\n"},{path:"src/version.py",mode:"100644",type:"blob",content:VERSION39}]);counters.trees++;return newTree},
     commit:async(tree,parent,message)=>{assert.equal(tree,newTree);assert.equal(parent,p.base);assert.equal(message,"fix (Refs #598)");counters.commits++;return candidate},
     update:async(base,sha)=>{
       counters.updates++;assert.equal(base,p.base);assert.equal(sha,candidate);
@@ -104,6 +104,7 @@ test("prepare and ship verify candidate, persist receipt, and replay without dup
   await ship(t.api,p,c);
   assert.deepEqual(t.counters,{trees:1,commits:1,updates:1});
   assert.equal(t.comments.length,3);
+  assert.match(t.comments.at(-1).body,/Version: 2\.0\.39 \(incremented\)/);
 });
 test("stale base prevents immutable object creation",async()=>{
   const t=transport();t.state.head=id("9");
@@ -434,4 +435,13 @@ test("release rejects tampered candidate and competing branch movement",async()=
   t.api.file=file;t.state.head=id("9");
   await assert.rejects(publishPending(t.api,releasePlan,c),/base moved/);
   assert.equal(t.counters.updates,0);
+});
+
+test("changelog escapes Markdown punctuation without altering the subject",()=>{
+  const source="# Changelog\n\n<!-- sc-changelog-through: "+id("a")+" -->\n";
+  const subject="fix: [a_b] *bold* "+String.fromCharCode(96)+"code"+String.fromCharCode(96)+" \\ <tag> &";
+  const expected="fix: \\[a\\_b\\] \\*bold\\* \\"+String.fromCharCode(96)+"code\\"+String.fromCharCode(96)+" \\\\ &lt;tag&gt; &amp;";
+  const out=renderChangelog(source,id("b"),[[id("b"),"2026-11-27T05:00:00Z",subject]]);
+  assert.ok(out.includes(expected),out);
+  assert.ok(!out.includes("async function checkBase"));
 });

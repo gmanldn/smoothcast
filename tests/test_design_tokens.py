@@ -1,4 +1,4 @@
-"""Web remote design tokens (#447): dark unchanged, light and high contrast readable."""
+"""Web remote design tokens (#447): shared brand, light and high contrast readable."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,9 +21,9 @@ def test_schemes_define_the_same_tokens():
     assert set(dt.DARK) == set(dt.LIGHT)
 
 
-def test_dark_values_are_the_colours_the_page_always_used():
-    golden = {"bg": "#101722", "card": "#1c2735", "accent": "#4d9de0", "muted": "#b7c3d0",
-              "text": "#f4f7fb", "input": "#121b27", "danger": "#ffb4a9", "focus": "#ffd166"}
+def test_dark_values_match_smoothcast_brand():
+    golden = {"bg": "#0B1220", "card": "#151F30", "accent": "#76C7FF", "muted": "#B7C4D6",
+              "text": "#F4F7FB", "input": "#101A2A", "danger": "#FFB4A9", "focus": "#FFD166"}
     assert {k: dt.DARK[k] for k in golden} == golden
 
 
@@ -83,9 +83,9 @@ def test_dark_gtk_and_web_tokens_golden_parity():
     """#525 acceptance: golden parity test connecting dark GTK colors and web tokens."""
     import accent
     import ui_theme
-    assert dt.DARK["bg"] == "#101722"
-    assert dt.DARK["card"] == "#1c2735"
-    assert dt.DARK["text"] == "#f4f7fb"
+    assert dt.DARK["bg"] == "#0B1220"
+    assert dt.DARK["card"] == "#151F30"
+    assert dt.DARK["text"] == "#F4F7FB"
     default_accent = accent.accent_hex(accent.DEFAULT_ID)
     assert default_accent == "#79baff"
     web_presets = dt.web_accents()
@@ -107,3 +107,11 @@ def test_custom_accent_presets_meet_text_contrast_on_room_surfaces(scheme):
         assert dt.contrast_ratio(pair["on_accent"], pair["accent"]) >= 4.5, (preset, scheme)
         for surface in ("bg", "card", "input"):
             assert dt.contrast_ratio(pair["accent"], colours[surface]) >= 4.5, (preset, scheme, surface)
+
+
+@pytest.mark.parametrize("scheme", ["dark", "light"])
+def test_brand_primary_and_selected_vote_contrast(scheme):
+    colours = dt.SCHEMES[scheme]
+    for surface in ("bg", "card", "input"):
+        assert dt.contrast_ratio(colours["accent"], colours[surface]) >= 4.5
+    assert dt.contrast_ratio("#ffffff", colours["vote_on"]) >= 4.5
