@@ -8,6 +8,7 @@ from unittest import mock
 import screenshot
 import picture_adjustments
 from gui_source import main_window_methods
+from video_settings import VideoSettings
 
 
 def test_sparse_cache_reuses_bins_and_bounds_memory_and_generation():
@@ -78,6 +79,7 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
                                  Error=ValueError, timeout_add=lambda *_: 1),
         "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=lambda data: data)),
         "picture_adjustments": picture_adjustments,
+        "VideoSettings": VideoSettings,
     }
     methods = main_window_methods()
     source = "\n\n".join(methods[name] for name in
