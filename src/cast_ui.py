@@ -22,6 +22,7 @@ import action_state
 
 import async_jobs
 import buffer_health
+import stream_health
 import notifications
 import state_labels
 import playback_state
@@ -832,7 +833,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self.detail_labels: dict[str, Gtk.Label] = {}
         rows = [
             ("state", "State"), ("mode", "Mode"), ("encoder", "Encoder"),
-            ("position", "Position"), ("buffer", "Buffer health"), ("segments", "Segments"),
+            ("position", "Position"), ("buffer", "Buffer health"), ("segments", "Segments"), ("health", "Receiver (measured)"),
             ("resolution", "Video"), ("audio", "Audio"),
             ("subs", "Subtitles"), ("file", "File"), ("url", "Stream URL"),
         ]
@@ -875,6 +876,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         body.append(grid)
         self._buffer_health = buffer_health.BufferHealth()
         self._last_stall_count = 0
+        self._stream_health = stream_health.StreamHealth()
+        self._health_restarts = 0
         self.buffer_graph = BufferHealthGraph()
         body.append(self.buffer_graph)
         heading = Gtk.Label(label="PYTHON THREADS", xalign=0.0)
@@ -891,6 +894,25 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self._thread_status_at = float("-inf")
         return card
 
+
+    def _measured_health_text(self, session, seg_count: int) -> str:
+        """Only what was observed: the receiver's reported state and our restarts."""
+        if session is None:
+            self._stream_health.decoder_state("unknown")
+            return "—"
+        health = self._stream_health
+        state = (self.device_state or "").lower()
+        health.decoder_state({"playing": "playing", "paused": "paused", "buffering": "buffering",
+                              "idle": "idle", "error": "error"}.get(state, "unknown"))
+        restarts = getattr(self._stream_watchdog, "restarts", 0)
+        while self._health_restarts < restarts:
+            health.recovered("encoder restart")
+            self._health_restarts += 1
+        snap = health.snapshot()
+        text = f"{snap['decoder']}"
+        if snap["recoveries"]:
+            text += f" · {snap['recoveries']} recover{'y' if snap['recoveries'] == 1 else 'ies'}"
+        return text
 
     def _build_mesh_heartbeat_card(self) -> Gtk.Box:
         import mesh_heartbeat_ui
@@ -1221,6 +1243,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         else:
             self._buffer_health.clear()
         self.buffer_graph.set_health(self._buffer_health)
+        health_text = self._measured_health_text(session, seg_count)
         subtitle_text = "—"
         if session and session.state:
             if session.state.embedded_subtitle_index >= 0:
@@ -1263,6 +1286,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             "position": position_text,
             "buffer": buffer_text,
             "segments": segments_text,
+            "health": health_text,
             "resolution": media_text,
             "audio": audio_text,
             "subs": subtitle_text,
