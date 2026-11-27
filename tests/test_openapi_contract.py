@@ -49,6 +49,31 @@ def test_every_documented_route_still_exists_in_the_source():
     assert not missing, f"documented but not routed: {missing}"
 
 
+def test_every_route_declares_a_capability():
+    undeclared = [
+        (path, method)
+        for path, methods in api_spec.PATHS.items()
+        for method in methods
+        if (path, method) not in api_spec.ROUTE_CAPABILITIES
+    ]
+    assert not undeclared, (
+        "declare a capability for these routes in src/api_spec.py: "
+        + ", ".join(f"{method.upper()} {path}" for path, method in sorted(undeclared))
+    )
+
+
+def test_no_capability_for_an_undocumented_route():
+    unknown = [
+        (path, method)
+        for (path, method) in api_spec.ROUTE_CAPABILITIES
+        if path not in api_spec.PATHS or method not in api_spec.PATHS[path]
+    ]
+    assert not unknown, (
+        "capability declared for a route that does not exist: "
+        + ", ".join(f"{method.upper()} {path}" for path, method in sorted(unknown))
+    )
+
+
 def test_spec_is_well_formed():
     spec = api_spec.spec()
     assert spec["openapi"].startswith("3.1") and spec["info"]["version"] == api_spec.API_VERSION

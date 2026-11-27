@@ -126,6 +126,61 @@ PATHS: dict[str, dict] = {
     "/api/openapi.json": {"get": _op("This document", auth=False)},
 }
 
+# Capability required to call each route, declared beside the route table so a
+# test can fail any route that lacks one. ``None`` means the route is open to
+# anyone who reaches the LAN listener (no session, no capability). State-changing
+# routes additionally require the session cookie and CSRF token already declared
+# in ``PATHS``; this is the authorization layer on top of authentication.
+ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
+    # Public: open to any peer on the trusted home LAN.
+    ("/", "get"): None,
+    ("/api/config", "get"): None,
+    ("/api/login", "post"): None,
+    ("/api/openapi.json", "get"): None,
+    ("/silence.wav", "get"): None,
+    ("/screen", "get"): None,
+    ("/nodes", "get"): None,
+    # Mesh library reads are public and read-only.
+    ("/mesh/library/generation", "get"): None,
+    ("/mesh/library/changes", "get"): None,
+    ("/mesh/library/snapshot", "get"): None,
+    ("/mesh/library/search", "get"): None,
+    ("/mesh/file/{key}", "get"): None,
+    # Authenticated read: a paired session cookie.
+    ("/api/session", "get"): "room:read",
+    ("/api/status", "get"): "room:read",
+    ("/api/search", "get"): "room:read",
+    ("/api/search/stream", "get"): "room:read",
+    ("/api/events", "get"): "room:read",
+    ("/api/libraries", "get"): "room:read",
+    ("/api/libraries/{origin}/{folder}", "get"): "room:read",
+    ("/api/mesh", "get"): "mesh:read",
+    ("/api/mesh/events", "get"): "mesh:read",
+    ("/api/mesh/heartbeat", "get"): "mesh:read",
+    ("/api/screens", "get"): "room:read",
+    ("/api/screens/{id}", "get"): "room:read",
+    ("/api/screens/{id}/poll", "get"): "room:read",
+    ("/api/media/{id}", "get"): "media:read",
+    # State-changing: cookie plus CSRF token.
+    ("/api/profile", "post"): "room:write",
+    ("/api/action", "post"): "room:write",
+    ("/api/screens", "post"): "room:write",
+    ("/api/screens/{id}", "delete"): "room:write",
+    ("/api/screens/{id}/report", "post"): "room:write",
+    ("/api/screens/{id}/command", "post"): "room:write",
+    # Uploads.
+    ("/api/uploads", "post"): "uploads:create",
+    ("/api/uploads/{id}", "put"): "uploads:manage",
+    ("/api/uploads/{id}", "delete"): "uploads:manage",
+    ("/api/uploads/{id}/complete", "post"): "uploads:manage",
+    # Link acquisition.
+    ("/api/link-jobs", "post"): "link:acquire",
+    ("/api/link-jobs/cancel", "post"): "link:acquire",
+    ("/api/link-jobs/retry", "post"): "link:acquire",
+    ("/api/search/youtube", "post"): "link:search",
+    ("/api/search/magnets", "post"): "link:search",
+}
+
 SCHEMAS = {
     "Error": {"type": "object", "properties": {"ok": {"const": False}, "error": {"type": "string"}}},
     "Login": {"type": "object", "properties": {
