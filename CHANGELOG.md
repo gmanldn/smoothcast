@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f45f9e97f12af77daeac37a15dc925e31889cffe -->
+<!-- sc-changelog-through: bfe40c70605dd285a45119adde4093d45246ace0 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:00:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:00:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:00:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bfe40c70605d`](https://github.com/gmanldn/smoothcast/commit/bfe40c70605dd285a45119adde4093d45246ace0)
+
+- 🟥 **16:00:41 · Fix** — fix: clear develop mypy errors in queue\_crdt, server, cli\_control (Refs #698) · [`c66c73a05baa`](https://github.com/gmanldn/smoothcast/commit/c66c73a05baadd7c6f1d77a551d2ddcf39f6e979)
+
+- 🟥 **16:00:16 · Fix** — fix(upload): early-cast wording says 'not started yet' since a busy host now retries (Refs #686) · [`9ca5264348be`](https://github.com/gmanldn/smoothcast/commit/9ca5264348be16a63c091ba5c39f48f187a421bd)
+
+- ⬜ **16:00:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d6fc80b9b19d`](https://github.com/gmanldn/smoothcast/commit/d6fc80b9b19dc2d8513f9ed6889a2a0c3566c8df)
 
 - ⬜ **16:00:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f45f9e97f12a`](https://github.com/gmanldn/smoothcast/commit/f45f9e97f12af77daeac37a15dc925e31889cffe)
 
