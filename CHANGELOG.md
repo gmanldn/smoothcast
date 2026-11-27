@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: fea1b3442501d277cd7a02a339b6e6212a3dcccb -->
+<!-- sc-changelog-through: 3d21204b8e28bac06f24af287c4d9d5b1bdf7413 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:10:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:13:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:13:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3d21204b8e28`](https://github.com/gmanldn/smoothcast/commit/3d21204b8e28bac06f24af287c4d9d5b1bdf7413)
+
+- 🟥 **18:13:14 · Fix** — fix: keep Network profiles usable when uptime is unavailable (Refs #710) · [`0da01f9349ae`](https://github.com/gmanldn/smoothcast/commit/0da01f9349aeb30c9513348c645323272012d88d)
 
 - ⬜ **18:10:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fea1b3442501`](https://github.com/gmanldn/smoothcast/commit/fea1b3442501d277cd7a02a339b6e6212a3dcccb)
+
+- ⬜ **18:10:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a74b6f88725c`](https://github.com/gmanldn/smoothcast/commit/a74b6f88725c3b20de94873bdea00c6966376f45)
 
 - ⬜ **18:10:50 · Maintenance** — style: polish the web Home player and quick actions (Refs #709) · [`064ecfe85539`](https://github.com/gmanldn/smoothcast/commit/064ecfe8553991ab7c82b5557f230363941b6660)
 
