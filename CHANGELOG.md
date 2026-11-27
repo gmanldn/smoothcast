@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 60c595b7eaf9c19534be158f2db2042fde78822a -->
+<!-- sc-changelog-through: f923251f9eef6a022732ef889db619a6723ac086 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:32:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:32:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:32:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f923251f9eef`](https://github.com/gmanldn/smoothcast/commit/f923251f9eef6a022732ef889db619a6723ac086)
+
+- 🟪 **07:32:45 · Tests** — test(arch): import-cycle ratchet ignores TYPE\_CHECKING imports; zero module-level cycles remain (Refs #690) · [`3e9ed8499a4a`](https://github.com/gmanldn/smoothcast/commit/3e9ed8499a4ad3a3b71a05a103a034e64f4dc597)
 
 - ⬜ **07:32:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`60c595b7eaf9`](https://github.com/gmanldn/smoothcast/commit/60c595b7eaf9c19534be158f2db2042fde78822a)
+
+- ⬜ **07:32:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0898c21f6bb1`](https://github.com/gmanldn/smoothcast/commit/0898c21f6bb1ae839161914094dc8e7da528307c)
 
 - 🟩 **07:32:20 · Feature** — feat(web): publish source chapters in the room status so the web room can show and jump to them (Refs #39) (Refs #325) · [`8275cbd73763`](https://github.com/gmanldn/smoothcast/commit/8275cbd737633bc1638a3688c38dba7f3259497f)
 
