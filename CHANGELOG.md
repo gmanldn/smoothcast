@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3ecb41e8a57516c6273d02ae879ea6b828e333a3 -->
+<!-- sc-changelog-through: 4cd260f04ce6eefb0bd89a954bd2db0ac9d73256 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:56:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:56:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:56:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4cd260f04ce6`](https://github.com/gmanldn/smoothcast/commit/4cd260f04ce6eefb0bd89a954bd2db0ac9d73256)
+
+- 🟩 **15:56:36 · Feature** — feat(store): lossless idempotent legacy-directory migration helper (Refs #701) (Refs #325) · [`2c92c828e611`](https://github.com/gmanldn/smoothcast/commit/2c92c828e61169f23c3f2d931edea8b3d6f0b5c0)
+
+- ⬜ **15:56:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`33ea1029fe43`](https://github.com/gmanldn/smoothcast/commit/33ea1029fe439e5518358477fa75562017b7faf8)
 
 - ⬜ **15:56:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3ecb41e8a575`](https://github.com/gmanldn/smoothcast/commit/3ecb41e8a57516c6273d02ae879ea6b828e333a3)
 
