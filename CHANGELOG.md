@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bd17d1909c60241a1cae549ade66bd9dbd2eea3f -->
+<!-- sc-changelog-through: 7f3aeb9d1f92b0757201748e927e7f9b2a77567e -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:29:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:29:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:29:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`7f3aeb9d1f92`](https://github.com/gmanldn/smoothcast/commit/7f3aeb9d1f92b0757201748e927e7f9b2a77567e)
+
+- 🟩 **07:29:53 · Feature** — feat(persist): tell the user once at start-up when a damaged settings file was set aside (Refs #701) (Refs #325) · [`67bd4999dc3f`](https://github.com/gmanldn/smoothcast/commit/67bd4999dc3fc4743c6bf7564f21343318546b0b)
+
+- ⬜ **07:29:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`edc9c5926e88`](https://github.com/gmanldn/smoothcast/commit/edc9c5926e88f31f59442428a91ee3d6e1776606)
 
 - ⬜ **07:29:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd17d1909c60`](https://github.com/gmanldn/smoothcast/commit/bd17d1909c60241a1cae549ade66bd9dbd2eea3f)
 
