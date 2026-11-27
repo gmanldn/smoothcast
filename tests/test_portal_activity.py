@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import command_trace
 import portal_commands
 import peer_discovery_ui
+import paths
 import portal_uploads
 import portal_status
 from gui_source import main_window_methods
@@ -67,7 +68,7 @@ def _build_window(tmp_path, *, idle_add=None):
         "save_config": lambda cfg: saved.append(dict(cfg)),
         "pathlib": pathlib, "os": os, "stat": stat, "time": time,
         "PORTAL_CAST_GRACE_SECONDS": 5.0,
-        "threading": threading,
+        "threading": threading, "paths": paths,
         "GLib": SimpleNamespace(
             idle_add=idle_add or (lambda fn, *args: idle.append((fn, args)))),
     }

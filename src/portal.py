@@ -1051,19 +1051,27 @@ class _Handler(BaseHTTPRequestHandler):
         Returns True when authorized; sends 401/403 and returns False otherwise.
         """
         if not self._authenticated(csrf=csrf):
-            self._error(401, "Session expired")
+            self._session_rejected(csrf)
             return False
         capability = api_spec.required_capability(path, method)
         if capability is not None:
             participant = self.server.session_participant(self._cookie_token())
             if participant is None:
-                self._error(401, "Session expired")
+                self._session_rejected(csrf)
                 return False
             if capability not in self.server.participant_capabilities(participant):
                 self._error(403, f"This action requires the {capability} capability",
                             code="portal.missing_capability")
                 return False
         return True
+
+    def _session_rejected(self, csrf: bool) -> None:
+        # Reads keep 401; a rejected mutation tells the guest to rejoin (403),
+        # as every route did before central authorization (#702).
+        if csrf:
+            self._error(403, guest_messages.SESSION_ENDED)
+        else:
+            self._error(401, "Session expired")
 
     def _throttle(self, route_class: str) -> bool:
         """Bound authenticated traffic; internal desktop callbacks bypass HTTP."""
