@@ -1160,6 +1160,14 @@ class _Handler(BaseHTTPRequestHandler):
         "config": _public_config,
     }
 
+    _ROUTED_GET = {
+        "libraries": lambda self, path: self._libraries(),
+        "search_stream": lambda self, path: self._search_stream(),
+        "search": lambda self, path: self._search(),
+        "mesh_library": lambda self, path: self._mesh_library(path),
+        "mesh_file": lambda self, path: self._mesh_file(path, head=False),
+    }
+
     def do_GET(self) -> None:  # noqa: N802
         path = self._path()
         if not self._safe_origin(required=False):
@@ -1175,16 +1183,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if portal_mesh_http.route(self, "GET", path):
             return
-        if path == "/api/libraries" or path.startswith("/api/libraries/"):
-            return self._libraries()
-        if path == "/api/search/stream":
-            return self._search_stream()
-        if path == "/api/search":
-            return self._search()
-        if path.startswith("/mesh/library/"):
-            return self._mesh_library(path)
-        if path.startswith("/mesh/file/"):
-            return self._mesh_file(path, head=False)
+        route = portal_routing.match("GET", path)
+        handler = self._ROUTED_GET.get(route.handler) if route is not None else None
+        if handler is not None:
+            return handler(self, path)
         if path == "/api/session":
             resumed = self.server.resume_session(self._cookie_token())
             if resumed is None:
