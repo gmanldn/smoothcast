@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import textwrap
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -20,7 +21,7 @@ def lifecycle_type():
         textwrap.indent(textwrap.dedent(METHODS[name]), "    ") for name in names
     )
     namespace = {
-        "threading": threading, "save_config": lambda _: None,
+        "threading": threading, "time": time, "save_config": lambda _: None,
         "flush_config": lambda: True,
         "reliability_metrics": reliability_metrics, "Async": mock.Mock(),
         "peer_discovery_ui": mock.Mock(),
@@ -147,6 +148,62 @@ class GuardTests(unittest.TestCase):
                     session.stop.assert_called_once_with("Test TV")
                 else:
                     session.stop.assert_not_called()
+
+    def test_portal_quit_overlaps_goodbyes_and_joins_worker(self):
+        obj = window()
+        obj._closing = True
+        obj._entry_name = mock.Mock()
+        obj._portal = mock.Mock()
+        together = threading.Barrier(2, timeout=1)
+        entry_done = threading.Event()
+
+        def close_entry():
+            together.wait()
+            entry_done.set()
+
+        obj._entry_name.close.side_effect = close_entry
+        obj._portal.stop.side_effect = together.wait
+        with mock.patch("cast_mesh.stop"):
+            obj._stop_portal()
+        self.assertTrue(entry_done.is_set())
+        self.assertIsNone(obj._entry_name)
+        self.assertIsNone(obj._portal)
+
+    def test_portal_rebind_closes_entry_before_stopping_server(self):
+        obj = window()
+        order = []
+        obj._entry_name = mock.Mock()
+        obj._portal = mock.Mock()
+        obj._entry_name.close.side_effect = lambda: order.append("entry")
+        obj._portal.stop.side_effect = lambda: order.append("portal")
+        with mock.patch("cast_mesh.stop"):
+            obj._stop_portal()
+        self.assertEqual(order, ["entry", "portal"])
+
+    def test_portal_quit_does_not_wait_indefinitely_for_entry(self):
+        obj = window()
+        obj._closing = True
+        obj._entry_name = mock.Mock()
+        obj._portal = mock.Mock()
+        release = threading.Event()
+        finished = threading.Event()
+
+        def close_entry():
+            try:
+                release.wait(3)
+            finally:
+                finished.set()
+
+        obj._entry_name.close.side_effect = close_entry
+        started = time.monotonic()
+        try:
+            with mock.patch("cast_mesh.stop"), mock.patch("builtins.print") as log:
+                obj._stop_portal()
+            self.assertLess(time.monotonic() - started, 1.0)
+            log.assert_any_call("SmoothCast entry-name shutdown timed out", flush=True)
+        finally:
+            release.set()
+            self.assertTrue(finished.wait(1))
 
     def test_cast_startup_clears_guard_in_both_callbacks(self):
         cast = METHODS["_cast_path"]

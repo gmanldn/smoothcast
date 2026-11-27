@@ -119,10 +119,24 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
         import cast_mesh
         cast_mesh.stop(self)
         entry, self._entry_name = getattr(self, "_entry_name", None), None
-        if entry is not None:
-            # Release the stable address synchronously so no stale A record lingers.
-            entry.close()
         current, self._portal = getattr(self, "_portal", None), None
+        goodbye = None
+        deadline = 0.0
+        if entry is not None:
+            if current is not None and getattr(self, "_closing", False):
+                # Separate Zeroconf instances: overlap their goodbye broadcasts
+                # on quit, but never race a new registration on LAN rebind.
+                def close_entry():
+                    try:
+                        entry.close()
+                    except Exception as exc:
+                        print(f"SmoothCast entry-name shutdown failed: {type(exc).__name__}", flush=True)
+
+                deadline = time.monotonic() + 0.3
+                goodbye = threading.Thread(target=close_entry, name="smoothcast-entry-goodbye", daemon=True)
+                goodbye.start()
+            else:
+                entry.close()
         self._portal_ip = None
         self._portal_qr_url = None
         timer = getattr(self, "_portal_activity_timer", None)
@@ -133,8 +147,14 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                 pass
             self._portal_activity_timer = None
         self._portal_activity_period = None
-        if current is not None:
-            current.stop()
+        try:
+            if current is not None:
+                current.stop()
+        finally:
+            if goodbye is not None:
+                goodbye.join(max(0.0, deadline - time.monotonic()))
+                if goodbye.is_alive():
+                    print("SmoothCast entry-name shutdown timed out", flush=True)
         if hasattr(self, "portal_url_label"):
             self.portal_status_label.set_text("Portal stopped")
             self.portal_copy_button.set_sensitive(False)
