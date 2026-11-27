@@ -86,6 +86,15 @@ marked so two launchers can never bounce between each other.
 - **`--demo` and test runs** (`--self-test`, `SMOOTHCAST_TEST_CONTEXT=1`) are
   handled before any hand-off so they never touch a real installation.
 
+### Fresh start: `sc.py --fresh`
+
+`python3 sc.py --fresh` stops every SmoothCast window and helper owned by you
+(identity-checked, TERM then KILL), removes stale stream files and the saved
+session, then starts clean. Use it when casting stops responding. A plain
+`sc.py` launch also replaces an instance that is running but no longer answers
+its D-Bus activation (two 20 s probes), and keeps any live stream. Other users'
+processes and the receivers themselves are never touched.
+
 ## Dependency inventory
 
 | Layer | Required |
