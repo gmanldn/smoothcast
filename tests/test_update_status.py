@@ -246,13 +246,21 @@ def test_check_now_reports_notice_or_honest_not_found(tmp_path, monkeypatch):
     seen = {}
     def fake(root, **kw):
         seen.update(kw)
-        return seen.get("notice")
-    monkeypatch.setattr(uc, "check_release", fake)
+        return None
+    monkeypatch.setattr(uc, "find_candidate", fake)
     assert uf.check_now({"update_channel": "bogus"}, tmp_path) == uf.NOT_FOUND
     assert seen["enabled"] is True and seen["channel"] == "develop" and seen["verify"] is True
-    monkeypatch.setattr(uc, "check_release", lambda *a, **k: "SmoothCast v9 is available")
-    assert uf.check_now({}, tmp_path).startswith("SmoothCast v9")
+    new = "d" * 40
+    monkeypatch.setattr(uf, "facts_for_preferences", lambda cfg, root, **k: us.UpdateFacts(
+        running_version="2.2.8", running_commit="a" * 40, channel="develop"))
+    monkeypatch.setattr(uc, "find_candidate", lambda *a, **k: (new, "9.9.9", True))
+    text = uf.check_now({}, tmp_path)
+    assert text.startswith("Update available.") and "9.9.9" in text and "ddddddd" in text
+    monkeypatch.setattr(uc, "find_candidate", lambda *a, **k: (new, "9.9.9", False))
+    assert uf.check_now({}, tmp_path).startswith("Update not trusted.")
+    monkeypatch.setattr(uc, "find_candidate", lambda *a, **k: ("a" * 40, "2.2.8", True))
+    assert "up to date" in uf.check_now({}, tmp_path)
     def boom(*a, **k):
         raise RuntimeError("x")
-    monkeypatch.setattr(uc, "check_release", boom)
+    monkeypatch.setattr(uc, "find_candidate", boom)
     assert "failed" in uf.check_now({}, tmp_path)

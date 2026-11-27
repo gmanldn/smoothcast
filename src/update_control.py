@@ -120,14 +120,15 @@ def _fetch_branch(repo: Path, branch: str, timeout: int) -> str | None:
     return sha
 
 
-def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
-                  verify: bool = True, channel: str = "main") -> str | None:
-    """Opt-in read-only update check. Never merges/pulls/restarts the running app.
+def find_candidate(repo: Path, timeout: int = 8, *, enabled: bool = False,
+                   verify: bool = True, channel: str = "main"
+                   ) -> tuple[str, str, bool | None] | None:
+    """Read-only check: ``(candidate_sha, release_version, signed)`` or None.
 
-    The only network operation is a bounded fetch of one release branch (and
-    tags only when signature verification is requested). A failed or malformed
-    probe is not reported as an installed update. Frozen/installed packages do
-    not attempt source checkout updates.
+    ``signed`` is None when verification was not requested. The only network
+    operation is a bounded fetch of one release branch (and tags only when
+    verifying). A failed or malformed probe, or an installed/frozen package,
+    yields None rather than a claim of an update.
     """
     if (not enabled or not isinstance(channel, str) or channel not in UPDATE_CHANNELS
             or is_installed_build() or not (repo / ".git").exists()):
@@ -159,14 +160,26 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     if (_semver(release) < _semver(version.__version__)
             or (channel == "main" and _semver(release) == _semver(version.__version__))):
         return None
+    signed: bool | None = None
     if verify:
         # Tag signatures are checked against the pinned candidate SHA, never a
         # mutable FETCH_HEAD or a tag that targets a different commit.
         _git(repo, ["fetch", "--quiet", "--tags", "origin"], timeout)
-        if not _signature_ok(repo, candidate, timeout):
-            return (f"SmoothCast v{release} may be available, but its signature "
-                    "could not be verified. No files were changed. Use a trusted "
-                    "installer or review your update-signing keys.")
+        signed = _signature_ok(repo, candidate, timeout)
+    return candidate, release, signed
+
+
+def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
+                  verify: bool = True, channel: str = "main") -> str | None:
+    """Opt-in read-only update notice. Never merges/pulls/restarts the running app."""
+    found = find_candidate(repo, timeout, enabled=enabled, verify=verify, channel=channel)
+    if found is None:
+        return None
+    candidate, release, signed = found
+    if signed is False:
+        return (f"SmoothCast v{release} may be available, but its signature "
+                "could not be verified. No files were changed. Use a trusted "
+                "installer or review your update-signing keys.")
     return (f"SmoothCast v{release} is available on {channel} ({candidate[:12]}); "
             f"running v{version.__version__}. No files were changed. "
             "Safe staged installation is not yet available.")

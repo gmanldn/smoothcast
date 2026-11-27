@@ -57,15 +57,25 @@ def check_now(cfg: dict, root) -> str:
     preference. Never changes files; an unchecked/ineligible install is said so
     rather than reported as up to date.
     """
+    import dataclasses
     import update_control
+    import update_status
     channel = cfg.get("update_channel")
+    channel = channel if channel in update_control.UPDATE_CHANNELS else "develop"
+    verify = cfg.get("release_check_verify") is not False
     try:
-        notice = update_control.check_release(
-            root, enabled=True, verify=cfg.get("release_check_verify") is not False,
-            channel=channel if channel in update_control.UPDATE_CHANNELS else "develop")
+        found = update_control.find_candidate(root, enabled=True, verify=verify, channel=channel)
     except Exception:
         return "The update check failed. Check your network connection and try again."
-    return notice or NOT_FOUND
+    if found is None:
+        return NOT_FOUND
+    candidate, release, signed = found
+    # An unsigned candidate is reported as untrusted, never as available.
+    facts = dataclasses.replace(
+        facts_for_preferences(cfg, root=root), channel=channel, checks_enabled=True,
+        candidate=candidate, candidate_signed=signed)
+    status = update_status.describe(facts)
+    return f"{status.headline}. {status.detail} Version {release}. No files were changed."
 
 
 def start_check(cfg: dict, root, on_done) -> None:
