@@ -179,5 +179,7 @@ jobs:
         if: always()
         with:
           name: windows-msi-lifecycle
-          path: dist/windows-msi-test-results.json
+          path: |
+            dist/windows-msi-test-results.json
+            dist/*.log
           if-no-files-found: warn
