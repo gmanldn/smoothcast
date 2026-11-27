@@ -157,6 +157,7 @@ py-modules = [
     "link_provision",
     "link_sandbox_probe",
     "link_setup",
+    "local_api",
     "local_playback",
     "log_jsonl",
     "loudness",
