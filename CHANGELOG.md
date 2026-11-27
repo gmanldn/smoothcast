@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 84f31d5914416bfd44c6893cb10e410125244dd9 -->
+<!-- sc-changelog-through: 95637c71f28917598a2037a611c936de91d57759 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:46:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:46:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:46:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`95637c71f289`](https://github.com/gmanldn/smoothcast/commit/95637c71f28917598a2037a611c936de91d57759)
+
+- 🟦 **15:46:42 · Refactor** — refactor(settings): PortalSettings.house\_pin; portal PIN and guest-screens reads go through the typed settings (Refs #693) (Refs #325) · [`91741cf9104a`](https://github.com/gmanldn/smoothcast/commit/91741cf9104aa880ca8092ec2e2c6878cefbb1ec)
 
 - ⬜ **15:46:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`84f31d591441`](https://github.com/gmanldn/smoothcast/commit/84f31d5914416bfd44c6893cb10e410125244dd9)
 
 - 🟩 **15:46:21 · Feature** — feat(diagnose): redacted local diagnostics bundle writer (Refs #698) · [`46df44f5fe95`](https://github.com/gmanldn/smoothcast/commit/46df44f5fe9565495f52ab82959af3556431f664)
+
+- ⬜ **15:46:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b7684a460916`](https://github.com/gmanldn/smoothcast/commit/b7684a4609165510521eaf7562d38616573bc314)
 
 - 🟥 **15:44:13 · Fix** — fix(upload): a busy host (409/503) re-arms early cast on the next chunk, up to 6 times, instead of permanently declining it, so large browser uploads start playing before they finish (Refs #686) · [`bc9dc93d8927`](https://github.com/gmanldn/smoothcast/commit/bc9dc93d89277b7b965bc325810273f788e64d1d)
 
