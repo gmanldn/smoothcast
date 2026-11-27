@@ -48,11 +48,11 @@ def decide(*, head: str | None, target: str | None, dirty: bool | None,
         if ancestor is not True:
             return "refuse", "This checkout has diverged from the latest build; not overwriting it."
         return ("defer" if running else "update"), (
-            f"Update ready ({target[:12]}); waiting for the running SmoothCast to close. "
+            f"Update ready ({target[:12]}); waiting for the running SmoothCast or playback to finish. "
             "Playback is untouched." if running else f"Updating to {target[:12]}.")
     if running:
         return ("defer" if restart else "noop"), (
-            "Already on the latest build; restart it from SmoothCast when playback ends."
+            "Already on the latest build; restart it when playback ends."
             if restart else f"Already running the latest build ({head[:12]}).")
     return "start", f"Already on the latest build ({head[:12]}); starting SmoothCast."
 
@@ -63,6 +63,17 @@ def _launch() -> None:
 
 
 def _running() -> bool:
+    # A saved session can outlive its GUI process (for example during a crash
+    # or a delayed shutdown callback). Its receiver/worker ownership may still
+    # be live, so never treat an unaccounted session as permission to update.
+    # The normal stop path removes this file; stale or unreadable state is a
+    # safe defer, not a reason to kill a stream whose owner is uncertain.
+    try:
+        session = Path.home() / ".cache" / "cast-control" / "session.json"
+        if session.exists():
+            return True
+    except (OSError, RuntimeError):
+        return True
     sys.path.insert(0, str(ROOT / "setup"))
     sys.path.insert(0, str(ROOT / "src"))
     try:
