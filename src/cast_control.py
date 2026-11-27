@@ -13,6 +13,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import os
 from position_tracker import PositionTracker
 import pathlib
+import settings
 import sys
 import threading
 import accent
@@ -451,7 +452,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         if self._mpris is not None:
             window._sync_ui_timers()
         if (not getattr(sys, "frozen", False)
-                and bool(window.cfg.get("check_release_updates", False))):
+                and settings.UpdateSettings.from_config(window.cfg).check_releases):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
@@ -487,11 +488,12 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         cfg = getattr(self.window, "cfg", None) or {}
         from update_control import check_release
 
+        update = settings.UpdateSettings.from_config(cfg)
         notice = check_release(
             pathlib.Path(__file__).resolve().parent.parent,
-            enabled=bool(cfg.get("check_release_updates", False)),
-            verify=bool(cfg.get("release_check_verify", True)),
-            channel=cfg.get("update_channel", "develop"),
+            enabled=update.check_releases,
+            verify=update.verify_release,
+            channel=update.channel,
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in
