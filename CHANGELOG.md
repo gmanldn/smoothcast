@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 13557b1a572eea6c3a78f9b21b37eacca8b74811 -->
+<!-- sc-changelog-through: f0a2d173d275fd962d4ceba6e856758596dd5d6d -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:40:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:42:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:42:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0a2d173d275`](https://github.com/gmanldn/smoothcast/commit/f0a2d173d275fd962d4ceba6e856758596dd5d6d)
+
+- 🟥 **19:42:25 · Fix** — fix: publish external cast length labels (Refs #704) · [`15595858c540`](https://github.com/gmanldn/smoothcast/commit/15595858c540de0469be9b7310d060f8a46cecd9)
 
 - ⬜ **19:40:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`13557b1a572e`](https://github.com/gmanldn/smoothcast/commit/13557b1a572eea6c3a78f9b21b37eacca8b74811)
 
 - 🟪 **19:40:06 · Tests** — test: cover concurrent guest queue contributions (Refs #325) · [`1dffa2c7e84d`](https://github.com/gmanldn/smoothcast/commit/1dffa2c7e84d3a8955c860f36b24eb26475a6db5)
+
+- ⬜ **19:40:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1dddab208c84`](https://github.com/gmanldn/smoothcast/commit/1dddab208c841a02ef2068eaeccd28278f9df0ba)
 
 - ⬜ **19:39:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4e4fe6709c43`](https://github.com/gmanldn/smoothcast/commit/4e4fe6709c433880434803d47eead660feef2ffa)
 
