@@ -25,7 +25,7 @@ def test_profile_keeps_every_attachment():
 def test_failing_and_never_reached_links_say_why():
     r = rec(edges=(mm.EdgeObservation("node", "y" * 32, None, None, "timeout"),
                    mm.EdgeObservation("target", "t", None)))
-    texts = {l.peer: (l.healthy, l.text) for l in node_profile.profile(r).links}
+    texts = {link.peer: (link.healthy, link.text) for link in node_profile.profile(r).links}
     assert texts["y" * 32] == (False, "failing: timeout") and texts["t"] == (False, "never reached")
 
 
@@ -52,7 +52,6 @@ def test_redact_strips_private_fields():
 
 
 def test_panel_references_diagram_routes():
-    import portal_mesh_http
     import portal_mesh_panel
     html = portal_mesh_panel.panel_html()
     assert "/api/mesh/diagram.svg" in html and "/api/mesh/profiles" in html
@@ -60,7 +59,7 @@ def test_panel_references_diagram_routes():
 
 def test_gtk_popover_describes_every_node_fact():
     import pytest
-    gi = pytest.importorskip("gi")
+    pytest.importorskip("gi")
     mesh_ui = pytest.importorskip("mesh_ui")
     r = rec(addresses=("192.168.1.5",), mesh_port=7001, targets=(mm.TargetObservation("t1", "cast", "TV"),),
             edges=(mm.EdgeObservation("node", "z" * 32, 1, 7),))
@@ -120,7 +119,8 @@ def test_gtk_profiles_render_only_visible_changed_snapshots():
         _paint_profiles=calls.append,
     )
     owner._render_profiles = lambda *args: ns["_render_profiles"](owner, *args)
-    show = lambda profiles: ns["show_profiles"](owner, profiles)
+    def show(profiles):
+        ns["show_profiles"](owner, profiles)
     show(["old"])
     show(["latest"])
     assert calls == []
