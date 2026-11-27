@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8c734835d60bb3b0c2f05b04fc910ecb13d56100 -->
+<!-- sc-changelog-through: da24af847baa55028c659748a05fc2dc32f2bb7b -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:17:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:17:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:17:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`da24af847baa`](https://github.com/gmanldn/smoothcast/commit/da24af847baa55028c659748a05fc2dc32f2bb7b)
+
+- 🟦 **16:17:53 · Refactor** — refactor(settings): speed and gain controls read AudioSettings/PlaybackSettings (Refs #693) · [`d79d2cc65c3d`](https://github.com/gmanldn/smoothcast/commit/d79d2cc65c3dbe7751b6618293e0bc5038cbde20)
 
 - ⬜ **16:17:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8c734835d60b`](https://github.com/gmanldn/smoothcast/commit/8c734835d60bb3b0c2f05b04fc910ecb13d56100)
+
+- ⬜ **16:17:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7d466e0ea9c3`](https://github.com/gmanldn/smoothcast/commit/7d466e0ea9c3eebff5fcdafc19f8920f3e11ef0b)
 
 - ⬜ **16:17:34 · Maintenance** — chore: rebaseline update\_managed.py complexity 26-&gt;41; #690 moved setup-module loading into it to drop sys.path mutation (Refs #706) · [`b94e6b37cb1c`](https://github.com/gmanldn/smoothcast/commit/b94e6b37cb1c94aa0bd10279f849570e9eaee7f2)
 
