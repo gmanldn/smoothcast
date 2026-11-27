@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ee36b0d96b76dccf04e12830dde3304c4229f510 -->
+<!-- sc-changelog-through: 5aa73ce73f5460c604c459118c2fd6898437d1ca -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:50:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:51:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:51:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5aa73ce73f54`](https://github.com/gmanldn/smoothcast/commit/5aa73ce73f5460c604c459118c2fd6898437d1ca)
+
+- 🟩 **07:51:09 · Feature** — feat(arch): PortalService adapter so the portal runs under the Supervisor (Refs #692) · [`352138071991`](https://github.com/gmanldn/smoothcast/commit/3521380719914dfb8869e1e8df7d055f76985799)
+
+- 🟩 **07:50:45 · Feature** — feat(history): shared house history store with retention, private-room and guest filters (Refs #433) · [`62ec96b58cb0`](https://github.com/gmanldn/smoothcast/commit/62ec96b58cb06b506cb6b04f3861deaf3eb2565b)
 
 - ⬜ **07:50:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ee36b0d96b76`](https://github.com/gmanldn/smoothcast/commit/ee36b0d96b76dccf04e12830dde3304c4229f510)
+
+- ⬜ **07:50:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`78e0236ce729`](https://github.com/gmanldn/smoothcast/commit/78e0236ce729bda59461295ac6d1421a6b995efe)
 
 - 🟪 **07:50:00 · Tests** — test(arch): ratchet freezes sys.path mutation in src and setup at 3 (Refs #690) · [`aba08883f4ca`](https://github.com/gmanldn/smoothcast/commit/aba08883f4caeec6661560799f023c7632fddecd)
 
