@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: dfae87c9bc0057079a975426b483683c703f4551 -->
+<!-- sc-changelog-through: 4c9361b1e77f19e53d8b68a66962cc3e0aa8b557 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:39:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:41:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:41:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4c9361b1e77f`](https://github.com/gmanldn/smoothcast/commit/4c9361b1e77f19e53d8b68a66962cc3e0aa8b557)
+
+- 🟦 **17:41:20 · Refactor** — refactor(errors): justify castctl boundary catches (Refs #694) · [`221c8aef1d00`](https://github.com/gmanldn/smoothcast/commit/221c8aef1d0058f3a141f8e01e52487d4f102881)
 
 - ⬜ **17:39:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dfae87c9bc00`](https://github.com/gmanldn/smoothcast/commit/dfae87c9bc0057079a975426b483683c703f4551)
 
 - 🟦 **17:39:23 · Refactor** — refactor(errors): justify cli\_control boundary catch (Refs #694) · [`524dc74b2f87`](https://github.com/gmanldn/smoothcast/commit/524dc74b2f8779e1332270d79e9bbf004e355582)
+
+- ⬜ **17:39:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8423dc30e54a`](https://github.com/gmanldn/smoothcast/commit/8423dc30e54a66b91cdab09c06d91c8ebb62a9b2)
 
 - 🟪 **17:38:58 · Tests** — test(update): settings test checks UpdateSettings behaviour instead of source text that moved; baseline shrinks (Refs #711) · [`27d8766e9cb1`](https://github.com/gmanldn/smoothcast/commit/27d8766e9cb1e497feea39d1f340ddfb2623ca9f)
 
