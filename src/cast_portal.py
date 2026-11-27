@@ -15,6 +15,7 @@ import lan_interfaces
 import portal
 import portal_status
 import portal_commands
+import settings
 import command_trace
 import peer_discovery_ui
 import network_activity
@@ -57,7 +58,7 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                                          status_peek=snapshot.peek,
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
-                                         preferred_port=int(self.cfg.get("portal_port", 0)),
+                                         preferred_port=settings.PortalSettings.from_config(self.cfg).port,
                                          link_sources=tuple(kind for kind in ("youtube", "magnet")
                                                             if self.cfg.get("portal_link_" + kind) is True))
         except (OSError, portal.PortalError):
