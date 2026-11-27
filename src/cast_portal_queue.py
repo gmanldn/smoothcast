@@ -10,13 +10,14 @@ import guest_messages
 import hashlib
 import os
 import pathlib
-import stat
 import secrets
+import stat
 
 import settings
 import portal
 import portal_uploads
 import queue_metadata
+import media_source
 
 
 def portal_queue_id(path: str) -> str:
@@ -117,16 +118,10 @@ class PortalQueueMixin:
         root = getattr(upload_root, "root", None)
         if root is None:
             raise portal.PortalRequestError(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
-        path = pathlib.Path(payload.get("path", ""))
         try:
-            root = pathlib.Path(root).resolve(strict=True)
-            path = path.resolve(strict=True)
-            path.relative_to(root)
-            info = path.stat()
-        except (OSError, RuntimeError, ValueError):
+            path = media_source.resolve_under(root, payload.get("path", ""))
+        except media_source.SourceError:
             raise portal.PortalRequestError(400, "Uploaded media is unavailable") from None
-        if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
-            raise portal.PortalRequestError(400, "Uploaded media is unavailable")
         return path
 
     def _portal_library_path(self, key: object) -> pathlib.Path:
@@ -138,7 +133,10 @@ class PortalQueueMixin:
         path = indexer.resolve_path(key)
         if path is None:
             raise portal.PortalRequestError(404, "That file is no longer available.")
-        return path
+        try:
+            return media_source.library_source(indexer.shared_roots(), path)
+        except media_source.SourceError:
+            raise portal.PortalRequestError(404, "That file is no longer available.") from None
 
     def _portal_run_async(self, work, done, failed) -> None:
         from cast_widgets import Async

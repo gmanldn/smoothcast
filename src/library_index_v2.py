@@ -184,6 +184,11 @@ class LibraryIndexer:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0])
 
+    def shared_roots(self) -> list[Path]:
+        """Current folders whose files may be exposed to room guests."""
+        with self._lock:
+            return [Path(folder.path) for folder in self._folders if folder.shared]
+
     def _is_shared(self, folder_id: str) -> bool:
         folder = next((f for f in self._folders if f.id == folder_id), None)
         return bool(folder and folder.shared)
