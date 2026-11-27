@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 61bc7d5ee1b317deaad814b0353f97922ee70abd -->
+<!-- sc-changelog-through: 4c028b9b81ef445117856c2a2a06cee017019519 -->
 
 ## 2026-11-27 · UTC
 
-- 🟩 **05:05:38 · Feature** — feat(agents): establish readable changelog and reduce file lease contention (Refs #715) <!-- sc-changelog-pending -->
+- 🟩 **05:30:00 · Feature** — feat(room): add direct desktop rename control (Refs #709) <!-- sc-changelog-pending -->
+
+- 🟩 **05:05:41 · Feature** — feat(agents): establish readable changelog and reduce file lease contention (Refs #715) · [`4c028b9b81ef`](https://github.com/gmanldn/smoothcast/commit/4c028b9b81ef445117856c2a2a06cee017019519)
 
 - 🟥 **05:04:50 · Fix** — fix(version): validate registered checkout provenance and cover malformed source markers · [`61bc7d5ee1b3`](https://github.com/gmanldn/smoothcast/commit/61bc7d5ee1b317deaad814b0353f97922ee70abd)
 

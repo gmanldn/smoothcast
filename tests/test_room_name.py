@@ -34,3 +34,28 @@ def test_access_reset_does_not_reset_host_room_name():
     room.reset_history()
     assert room.snapshot()["name"] == "Kitchen"
     assert room.snapshot()["participants"] == []
+
+
+def test_desktop_rename_uses_existing_config_and_status(monkeypatch):
+    import ast
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    source = Path(__file__).resolve().parents[1] / "src" / "cast_portal_room.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+               and n.name == "PortalRoomMixin")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
+                  and n.name == "_rename_portal_room")
+    calls = []
+    namespace = {"save_config": lambda cfg: calls.append(("save", dict(cfg)))}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
+    owner = SimpleNamespace(cfg={"room_name": "Your room"},
+                            _publish_portal_status=lambda: calls.append("publish"),
+                            toast=lambda message: calls.append(message))
+    rename = namespace["_rename_portal_room"]
+    rename(owner, "  Cinema  ")
+    assert owner.cfg["room_name"] == "Cinema"
+    assert calls == [("save", {"room_name": "Cinema"}), "publish", "Room name updated"]
+    rename(owner, "Cinema")
+    assert len(calls) == 3

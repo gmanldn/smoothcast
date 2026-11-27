@@ -87,8 +87,25 @@ class PortalRoomMixin:
             return self._portal_dispatch("command", {"envelope": envelope})
         except portal.PortalRequestError as exc:
             raise portal_commands.CommandError(exc.status, exc.message) from exc
+    def _rename_portal_room(self, value: object) -> None:
+        """Rename the existing room without restarting its services."""
+        from portal_room import clean_room_name
+
+        name = clean_room_name(value)
+        if self.cfg.get("room_name") != name:
+            self.cfg["room_name"] = name
+            save_config(self.cfg)
+            self._publish_portal_status()
+            self.toast("Room name updated")
+
     def _publish_portal_status(self) -> None:
         """Publish GTK-owned status for HTTP threads without dispatch waits."""
+        from portal_room import clean_room_name
+
+        label = getattr(self, "portal_room_name_label", None)
+        name = clean_room_name(self.cfg.get("room_name"))
+        if label is not None and label.get_text() != name:
+            label.set_text(name)
         snapshot = getattr(self, "_portal_status", None)
         if snapshot is None or self._closing:
             return

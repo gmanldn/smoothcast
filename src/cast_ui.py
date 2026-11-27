@@ -691,6 +691,37 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             label.add_css_class(css)
             return label
 
+        from portal_room import clean_room_name
+
+        name_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.portal_room_name_label = Gtk.Label(
+            label=clean_room_name(self.cfg.get("room_name")), xalign=0.0,
+            wrap=True, hexpand=True,
+        )
+        self.portal_room_name_label.add_css_class("hero-title")
+        name_row.append(self.portal_room_name_label)
+        rename = Gtk.MenuButton(label="Rename")
+        popover_name = Gtk.Popover()
+        rename.set_popover(popover_name)
+        editor = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        popover_name.set_child(editor)
+        entry = Gtk.Entry(placeholder_text="Room name", max_length=40)
+        editor.append(Gtk.Label(label="Room name", xalign=0.0))
+        editor.append(entry)
+        save = Gtk.Button(label="Save")
+        editor.append(save)
+
+        def apply_name(*_args):
+            self._rename_portal_room(entry.get_text())
+            popover_name.popdown()
+
+        popover_name.connect("show", lambda *_args: entry.set_text(
+            clean_room_name(self.cfg.get("room_name"))))
+        entry.connect("activate", apply_name)
+        save.connect("clicked", apply_name)
+        name_row.append(rename)
+        body.append(name_row)
+
         self.portal_status_label = Gtk.Label(
             label="Starting local portal…", xalign=0.0, wrap=True,
         )
