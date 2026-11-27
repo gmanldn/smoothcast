@@ -35,6 +35,19 @@ the same worktree). `finish` records evidence and releases the lease. See
 GitHub Issues ([docs/ISSUES.md](docs/ISSUES.md)) are authoritative; the read-only
 `scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
 
+## Concurrent work and changelog (P0)
+
+Claim only production files you will actually edit; reading a file is not
+ownership. Prefer 30-minute slices, release promptly after durable evidence,
+and use `agent.py scope --files src/one.py` in a private worktree to relinquish
+unused files without abandoning the ticket. Never bypass a live overlapping
+production lease. Shared generated metadata is not a long-lived lease.
+
+Every shipment **must update [CHANGELOG.md](CHANGELOG.md)** with dated,
+human-readable commit entries. The publication transport generates it from
+fresh develop history; do not hand-edit or claim it during implementation.
+See [changelog rules](docs/CHANGELOG.md).
+
 ## Product rule: effortless UX (P0)
 
 - User experience is paramount. SmoothCast handles discovery, routing,

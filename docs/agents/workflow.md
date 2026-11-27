@@ -88,6 +88,15 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
 
+### Changelog and scope handback
+
+Every nonempty shipment records its commits in the root [CHANGELOG.md](../../CHANGELOG.md).
+Use clear conventional commit subjects describing the actual behaviour; the
+transport generates dated entries from Git history at the publication boundary.
+Never reserve or manually edit the changelog during feature development.
+Use `agent.py scope --files src/one.py` to drop unused production paths while
+keeping the issue lease. See [format and recovery](../CHANGELOG.md).
+
 ## Lazy, risk-weighted CI — never a develop merge gate
 
 **Development never waits for CI or physical hardware qualification.** Push

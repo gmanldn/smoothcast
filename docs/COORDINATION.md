@@ -97,6 +97,20 @@ ran before pushing.
 | Durable handover | Every successful private-worktree `ship` posts idempotent SHA evidence. `finish` records final work, remaining actions, actual verification and releases the lease. Legacy `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
 | Evidence and closing | Legacy `done N` verifies published develop commits, requires a real `--why` and `--checklist`, posts confirmed evidence and releases **only its own live claim**. It refuses `--close`. Use `finish --close` in the matching agent worktree, with `--verification`, `--checklist` and `--next none`, to close after checking freshness and pending delivery receipts. |
 
+## Short, precise scopes and shared publication metadata
+
+Use `agent.py start N --files src/one.py,src/two.py --ttl 30` for a narrow
+slice; the same ticket still has one owner. While working, use
+`agent.py scope --files src/one.py` to shrink the live lease and its private
+task metadata together. This refuses to release files with unshipped changes.
+Read dependencies without claiming them. Expand scopes only for genuine edits
+using the existing race-arbitrated claim mechanism. Commit and hand back early.
+
+`CHANGELOG.md` is generated at shipment, not a production-file lock. Never
+edit it during feature implementation. Automatic PATCH allocation is also a
+late-bound operation; explicit version-only changes still require a lease.
+Non-force publication and exact blob checks remain mandatory.
+
 ## Build identity and release-number policy
 
 Development changes are identified by immutable Git SHAs. New release numbers

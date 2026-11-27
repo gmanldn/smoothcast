@@ -69,6 +69,7 @@ const p = {issue: 123, agent: "agent-unique", base: "<full develop SHA>",
   versionBlob: "<offline AST-validated version.py Git blob SHA>",
   changes: [{path: "src/example.py", old: "<base blob SHA or null for new>",
              content: "<complete reviewed new text>"}],
+  changelogDate: new Date().toISOString().slice(0, 19) + "Z",
   message: "fix: bounded result", verification: "actual tests or not run",
   next: "remaining acceptance and native finish"};
 const candidate = await prepare(api, p);
@@ -82,12 +83,18 @@ await ship(api, p, candidate);
 // await recordHandover(api, p, candidate);
 ```
 
+The root changelog is generated from the pinned base plus the reviewed
+candidate subject. Preserve the same UTC `changelogDate` across all stages;
+never put `CHANGELOG.md` in the ordinary change manifest or reserve it.
+On a fresh base after a proven unpublished abandonment, generate again from
+that base. See [changelog rules](../CHANGELOG.md).
+
 Before preparing, fetch the exact version.py and canonical AST guard
 (`scripts/ci/check_version_history.py`) at the base. Verify Git blob hashes
 offline and run its parse_version on the pinned version source. The candidate
 must contain the exact next PATCH version blob (or the unchanged valid blob
 when allocation is exhausted), and have one parent and precisely the reviewed
-changed paths plus any generated version edit. A normal shipment allocates the next PATCH in the same candidate; the transition is
+changed paths plus generated version/changelog edits. A normal shipment allocates the next PATCH in the same candidate; the transition is
 checked without executing application code. No per-ticket PATCH allocation,
 deletion, mode change, binary edit or closure is supported here.
 
