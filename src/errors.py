@@ -15,8 +15,8 @@ from dataclasses import dataclass
 import threading
 import time
 
-CATEGORIES = ("app", "cast", "discovery", "dlna", "ffmpeg", "media", "network", "room",
-              "subtitle", "upload", "internal")
+CATEGORIES = ("app", "cast", "discovery", "dlna", "ffmpeg", "media", "network", "portal",
+              "room", "subtitle", "upload", "internal")
 SEVERITIES = ("info", "warning", "error")
 
 
@@ -111,6 +111,9 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
     _spec("subtitle.audio_only", "info", False,
           "Audio-only media does not support subtitles. Choose Auto or Off.",
           "Set subtitles to Off."),
+    _spec("portal.missing_capability", "warning", False,
+          "This action needs a permission you do not have. Choose another action.",
+          "Try a different action.", "Ask the room owner for access."),
     _spec("cast.no_supported_format", "error", False,
           "This receiver advertises no format SmoothCast can send. Choose another receiver.",
           "Choose another receiver.", "Try a Google Cast target."),
