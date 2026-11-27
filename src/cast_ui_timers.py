@@ -15,6 +15,7 @@ import playback_state
 import portal_status
 import sleep_fade
 import stream_watchdog
+import streamer
 from cast_widgets import Async, save_config
 
 
@@ -23,6 +24,8 @@ class UiTimerMixin:
         self._timers_enabled = True
         if getattr(self, "_core_status", None) is None:
             self._core_status = portal_status.PublishedStatus()
+        # The first FFmpeg version query can take seconds; pay it before the first cast.
+        Async.run(streamer.require_compatible_ffmpeg, failed=lambda _message: None)
         self._refresh_portal()
         GLib.timeout_add_seconds(15, self._refresh_portal)
         GLib.timeout_add_seconds(15, self._refresh_network_activity)
