@@ -34,7 +34,13 @@ def test_queue_is_first_and_links_remain_discoverable():
     assert "#queuePanel{grid-column:1/-1}" in html
     assert '<a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a>' in html
     assert 'id="roomNameForm" hidden' in html and 'id="roomNameInput" maxlength="40"' in html
-    assert "Choose who a setting affects: your profile, this browser, or everyone in the shared room." in html
+    assert 'id="homeChooseScreen"' in html
+    assert 'class="primary-action"' in html and "Choose a file to cast" in html
+    assert "No screen selected. Choose one before casting, or add your file to Up Next instead." in html
+    assert 'class="settings-scope-list"' in html
+    for scope in ("Your profile", "This browser", "Everyone in this room", "Room host only"):
+        assert scope in html
+    assert "House PIN, host policies and shared-library folders are managed in desktop Preferences." in html
 
 
 def test_room_heading_and_rename_controls_follow_host_permission():
@@ -85,11 +91,11 @@ let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,
 """
     checks = """
 renderQueueDestination({});
-assert.equal($("quickCastStatus").textContent,"No room receiver selected. You can still add media to Up Next.");
+assert.equal($("quickCastStatus").textContent,"No screen selected. Choose one before casting, or add your file to Up Next instead.");
 assert.equal($("liveRoomTarget").textContent,"No casting target selected");
 assert.equal($("liveRoomPlayback").textContent,"Playback state unavailable");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Idle",title:"Old",active:false});
-assert.equal($("quickCastStatus").textContent,"Selected receiver: Lounge TV. SmoothCast checks availability before sending any file.");
+assert.equal($("quickCastStatus").textContent,"Selected screen: Lounge TV. SmoothCast checks availability before sending any file.");
 assert.equal($("liveRoomTarget").textContent,"Lounge TV");
 assert.equal($("liveRoomPlayback").textContent,"Idle");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Playing",title:"Film",active:true});

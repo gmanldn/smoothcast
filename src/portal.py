@@ -2198,6 +2198,10 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #playbackHeading{font-size:1rem}
 #homePanel #playback .actions button[data-action="play_pause"]{min-height:44px;flex-basis:auto;flex-grow:2}
 #homePanel .home-actions{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:6px;margin:10px 0}
+#homePanel #quickCastCard .primary-action{min-height:52px;font-size:1rem;font-weight:750}
+#homePanel #quickCastCard #homeChooseScreen{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-md);color:var(--text);font-weight:650;text-decoration:none}
+#advancedPanel .settings-scope-list{display:grid;gap:6px;padding:12px 12px 12px 30px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--input);color:var(--text)}
+#advancedPanel .settings-scope-list li{line-height:1.45}
 #homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
 #homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
 #homePanel .home-action span:not(.home-icon){display:none}
@@ -2239,9 +2243,9 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div class="room-heading"><div class="home-room-title"><h2 id="homeHeading" tabindex="-1">Your room</h2><a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a></div><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
 <div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
-<h2 id="quickCastHeading">Cast from this device</h2>
-<div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard" id="quickQueueUpload">Add to Up Next instead</a></div>
-<p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
+<h2 id="quickCastHeading">Start playing</h2>
+<div class="actions"><button id="uploadCastNow" class="primary-action" type="button" aria-describedby="quickCastStatus">Choose a file to cast</button><a href="#screensPanel" id="homeChooseScreen">Choose a TV or speaker</a><a href="#uploadCard" id="quickQueueUpload">Add media to Up Next</a></div>
+<p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">Choose a file first. SmoothCast asks you to confirm a screen before sending it.</p>
 </section>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
@@ -2353,7 +2357,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="people" class="participants"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
-<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Choose who a setting affects: your profile, this browser, or everyone in the shared room. Room-wide controls affect everyone using this room. Host policies and library folders are managed in desktop Preferences.</p>
+<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>These settings are grouped by who they affect. Playback and queue controls are on Home; screen selection is under Screens; connection and transfer details are under Mesh.</p><ul class="settings-scope-list" aria-label="Settings and where they apply"><li><strong>Your profile:</strong> your display name in this room.</li><li><strong>This browser:</strong> lock-screen controls and keeping this display awake.</li><li><strong>Everyone in this room:</strong> audio normalisation.</li><li><strong>Room host only:</strong> rename the shared room from the host computer.</li></ul><p>House PIN, host policies and shared-library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
 <section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">Your display name is shown to people in this room. Changing it does not change the room name.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
@@ -3030,8 +3034,8 @@ function playbackFeedback(state){
   return "";
 }
 function quickCastDestinationCopy(receiver){
-  return receiver?"Selected receiver: "+receiver+". SmoothCast checks availability before sending any file.":
-    "No room receiver selected. You can still add media to Up Next.";
+  return receiver?"Selected screen: "+receiver+". SmoothCast checks availability before sending any file.":
+    "No screen selected. Choose one before casting, or add your file to Up Next instead.";
 }
 function renderQueueDestination(state){
   const quickStatus=$("quickCastStatus"),quickCopy=quickCastDestinationCopy(state.receiver);
