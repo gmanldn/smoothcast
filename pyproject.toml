@@ -280,6 +280,7 @@ py-modules = [
     "ui_theme",
     "update_control",
     "update_facts",
+    "update_managed",
     "update_status",
     "url_control",
     "utils",
