@@ -289,7 +289,8 @@ def test_can_cancel_staged_upload_after_cast_rejection(tmp_path):
 
 
 def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
-    """One 8 MiB chunk replaces four 2 MiB requests without weakening ACK."""
+    """One 8 MiB chunk streams in bounded reads; fsync deferred to the
+    16 MiB coalesced checkpoint, not per chunk."""
     uploads = manager(tmp_path)
     size = portal_uploads.CHUNK_SIZE
     assert size == 8 * 1024 * 1024
@@ -309,9 +310,12 @@ def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
     with patch("portal_uploads.os.fsync", wraps=os.fsync) as synced:
         result = uploads.append("owner", created["id"], f"bytes 0-{size - 1}/{size}",
                                 size, source)
-    assert result["received"] == size
-    assert len(source.reads) == size // portal_uploads.READ_SIZE
-    assert synced.call_count == 1
+        assert result["received"] == size
+        assert len(source.reads) == size // portal_uploads.READ_SIZE
+        assert synced.call_count == 0  # below 16 MiB checkpoint threshold
+        # finalize flushes the remaining durable bytes (file + directory).
+        uploads.finalize("owner", created["id"])
+        assert synced.call_count == 2
     uploads.close()
 
 

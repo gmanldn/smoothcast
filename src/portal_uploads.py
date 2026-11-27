@@ -20,9 +20,12 @@ from typing import BinaryIO
 import cache_privacy
 
 # Larger HTTP chunks amortise request and sync costs while 64 KiB reads keep RAM bounded.
-# Every acknowledged chunk still completes fsync; no volatile offset is promised.
+# Coalesced durable checkpoint: fsync every N bytes or T seconds instead of per chunk.
+# Bytes between committed and received are volatile until the next checkpoint.
 CHUNK_SIZE = 8 * 1024 * 1024
 READ_SIZE = 64 * 1024
+CHECKPOINT_BYTES = 16 * 1024 * 1024
+CHECKPOINT_SECONDS = 5.0
 MAX_UPLOAD_BYTES = 1 << 40  # 1 TiB; available disk space is the practical limit.
 MAX_AUDIO_UPLOAD_BYTES = 512 * 1024 * 1024
 MAX_AUDIO_DURATION_SECONDS = 24 * 60 * 60
@@ -188,6 +191,7 @@ class _Upload:
     last_at: float = 0.0
     cancelled: bool = False
     received: int = 0
+    committed: int = 0
     complete_path: Path | None = None
     cast_submitted: bool = False
     dispatch_pending: bool = False
@@ -204,15 +208,19 @@ class _Upload:
     # A successful rename and directory fsync are separate steps. If fsync
     # fails, retain the final path and retry durability without re-uploading.
     directory_synced: bool = False
+    # Last monotonic time a durable checkpoint was taken; bounds staleness.
+    last_checkpoint: float = 0.0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class UploadManager:
     """Sequential, resumable uploads written directly to private disk files.
 
-    Requests are consumed in 64 KiB reads and each acknowledged chunk is
-    fsynced before its offset is advanced. A disconnected chunk is truncated
-    back to its starting offset, so a browser can safely retry it.
+    Requests are consumed in 64 KiB reads. Bytes are acknowledged as received
+    immediately but only become durable at coalesced checkpoints (bounded by
+    bytes or time). A disconnected chunk is truncated back to its starting
+    committed offset, so a browser can safely retry it. After a crash, resume
+    from the last committed (fsynced) offset, never from volatile bytes.
     """
 
     def __init__(self, root: Path | None = None, *, disk_usage=shutil.disk_usage,
@@ -313,6 +321,7 @@ class UploadManager:
             now = self._clock()
             upload = _Upload(upload_id, owner_key, name, suffix, size_value, partial,
                              client=str(client or "")[:64], created_at=now, last_at=now,
+                             last_checkpoint=now,
                              queue_only=bool(queue_only or audio_only),
                              audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
             if batch and 1 <= batch[0] <= batch[1] <= 500:
@@ -370,7 +379,7 @@ class UploadManager:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
-                    "received": upload.received,
+                    "received": upload.received, "committed": upload.committed,
                     "complete": upload.complete_path is not None and upload.directory_synced,
                     "queue_only": upload.queue_only,
                     "ready_to_cast": upload.early_cast in {"requested", "active"},
@@ -385,6 +394,7 @@ class UploadManager:
         agree. Authoritative status, cancellation and mutations retain locks.
         """
         received = upload.received
+        committed = upload.committed
         complete = upload.complete_path is not None and (
             upload.keep_partial or upload.directory_synced)
         if complete:
@@ -398,7 +408,8 @@ class UploadManager:
         elapsed = max(0.001, now - upload.created_at)
         return {
             "id": upload.upload_id, "name": upload.name, "size": upload.size,
-            "received": received, "complete": complete,
+            "received": received, "committed": committed,
+            "complete": complete,
             "client": upload.client, "phase": phase,
             "percent": (100 * received // upload.size) if upload.size else 0,
             "bytes_per_second": int(received / elapsed),
@@ -558,7 +569,15 @@ class UploadManager:
                             raise OSError("short write while storing upload")
                         view = view[amount:]
                     written += len(block)
-                os.fsync(fd)
+                upload.received += written
+                # Coalesced durable checkpoint: fsync when bounded bytes or
+                # time have elapsed since the last durable offset.
+                now = self._clock()
+                if (upload.received - upload.committed >= CHECKPOINT_BYTES
+                        or now - upload.last_checkpoint >= CHECKPOINT_SECONDS):
+                    os.fsync(fd)
+                    upload.committed = upload.received
+                    upload.last_checkpoint = now
             except BaseException:
                 if rollback_safe:
                     try:
@@ -573,11 +592,11 @@ class UploadManager:
                 os.close(fd)
             if upload.cancelled:
                 raise UploadError(401, guest_messages.ACCESS_REMOVED_DURING_UPLOAD)
-            upload.received += written
             upload.last_at = self._clock()
             ready = self._maybe_start_early_cast(upload)
             return {"id": upload.upload_id, "name": upload.name,
                     "size": upload.size, "received": upload.received,
+                    "committed": upload.committed,
                     "complete": upload.received == upload.size,
                     "ready_to_cast": ready,
                     "cast_path": str(upload.partial_path) if ready else None,
@@ -623,6 +642,16 @@ class UploadManager:
             if upload.cast_submitted and upload.dispatch_queue_only != intent:
                 raise UploadError(409, "This upload already has a different accepted room action.")
             if upload.complete_path is None:
+                # Ensure all received bytes are durable before completion.
+                if upload.received > upload.committed:
+                    fd = os.open(upload.partial_path,
+                                 os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+                    try:
+                        os.fsync(fd)
+                        upload.committed = upload.received
+                        upload.last_checkpoint = self._clock()
+                    finally:
+                        os.close(fd)
                 if upload.received != upload.size:
                     raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
                 flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
