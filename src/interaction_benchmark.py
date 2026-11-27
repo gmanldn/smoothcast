@@ -76,7 +76,9 @@ class InteractionBenchmarkMixin:
                    "seek": lambda: window.seek_to(30.0),
                    "queue_rebuild_1000": window._rebuild_queue,
                    "queue_remove_1000": lambda: self._remove_one(window)}
-        volume = getattr(window, "volume_step", None) or getattr(window, "_volume_step", None)
+        volume = (getattr(window, "volume_step", None)
+                  or getattr(window, "_volume_step", None)
+                  or getattr(window, "_nudge_volume", None))
         if callable(volume):
             actions["volume"] = lambda: volume(1)
         return actions

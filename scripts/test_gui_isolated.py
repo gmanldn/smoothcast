@@ -20,6 +20,11 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_SECONDS = 20
+# The interaction benchmark is deliberately heavy (#627): 10 rounds of a
+# 1,000-item queue rebuild and removal with a 32-phone poll burst each. Its
+# cost is bounded by the queue-scaling work in #462, so give it a wide budget
+# rather than time out before it can write samples.
+INTERACTION_LIMIT_S = 600
 
 
 def isolated_environment(scratch: Path, parent: dict[str, str] | None = None) -> dict[str, str]:
@@ -145,7 +150,12 @@ def main() -> int:
             # immediate xvfb-run shell and can leave children behind.
             process = subprocess.Popen(command, cwd=ROOT, env=env,
                                        start_new_session=True)
-            limit = 120 if interaction or (a11y and os.environ.get("SMOOTHCAST_A11Y_KEYS")) else MAX_SECONDS
+            if interaction:
+                limit = INTERACTION_LIMIT_S
+            elif a11y and os.environ.get("SMOOTHCAST_A11Y_KEYS"):
+                limit = 120
+            else:
+                limit = MAX_SECONDS
             try:
                 code = process.wait(timeout=limit)
             except subprocess.TimeoutExpired:
