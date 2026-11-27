@@ -34,6 +34,8 @@ FRONT_PAGE = (
 DISCLOSED = (
     Section("details", "Details", "Why is it behaving like this?",
             "advancedPanel", "_build_details_card"),
+    Section("mesh", "Mesh", "Which computers are connected, and how?",
+            "meshDetails", "_build_mesh_heartbeat_card"),
 )
 
 
