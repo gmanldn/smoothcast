@@ -16,6 +16,7 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -543,6 +544,26 @@ def install_link_tools(target: str, env: dict[str, str], *, check: bool = False)
         "an owner-configured isolated worker is still required.")
 
 
+class _DeferredInterrupt:
+    """Defer Ctrl+C until setup reaches a rollback-safe boundary."""
+
+    def __enter__(self):
+        self.previous = signal.getsignal(signal.SIGINT)
+        self.pending = False
+        signal.signal(signal.SIGINT, self._receive)
+        return self
+
+    def _receive(self, _signum, _frame):
+        self.pending = True
+
+    def checkpoint(self) -> None:
+        if self.pending:
+            raise KeyboardInterrupt
+
+    def __exit__(self, *_exc):
+        signal.signal(signal.SIGINT, self.previous)
+
+
 def ensure_venv(python: Path, env: dict[str, str], *,
                 check: bool = False) -> Path:
     installed = venv_python()
@@ -568,59 +589,63 @@ def ensure_venv(python: Path, env: dict[str, str], *,
             not installed.is_file() or not works(installed, GUI_CHECK, env=env)
         )
     )
-    if incompatible:
-        backup = VENV.with_name(f".venv-incompatible-{time.time_ns()}")
-        VENV.rename(backup)
-        say(f"Preserved stale environment at {backup}")
-    try:
-        if not venv_python().is_file():
-            say(f"Creating isolated virtual environment: {VENV}")
-            checked_run([str(python), "-m", "venv", "--system-site-packages",
-                         str(VENV)], env=env)
-        installed = venv_python()
-        if not works(installed, GUI_CHECK, env=env):
-            raise SetupError(
-                f"{installed} cannot import GTK4/libadwaita after rebuild. "
-                "Review the native Python/PyGObject installation."
-            )
-        if (not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or
-                not works(installed, PROJECT_DEPENDENCIES_CHECK, env=env)):
-            # The project declares its dependencies in pyproject.toml. Install
-            # missing runtime packages and the project in editable mode into
-            # the *selected venv* so every launcher resolves the same runtime;
-            # do not download or replace native GTK bindings.
-            checked_run([str(installed), "-m", "pip", "install",
-                         "--disable-pip-version-check", *PIP_PACKAGES,
-                         "-e", str(ROOT)], env=env)
-        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or not works(
-                installed, PROJECT_DEPENDENCIES_CHECK, env=env):
-            raise SetupError("SmoothCast runtime packages could not be installed "
-                             "(catt, PyChromecast, psutil, zeroconf, segno, smoothcast).")
-        missing = check_tools(env)
-        if missing:
-            raise SetupError("Media dependencies are missing: " + ", ".join(missing))
-        return installed
-    except Exception:
-        # Never delete a pre-existing environment. Only the replacement tree
-        # created after the backup (or a brand new install) is disposable.
-        if backup is not None or not original_exists:
-            try:
-                if VENV.is_symlink():
-                    VENV.unlink()
-                elif VENV.is_dir():
-                    shutil.rmtree(VENV)
-                elif VENV.exists():
-                    VENV.unlink()
-                if backup is not None:
-                    backup.rename(VENV)
-                    say(f"Rebuild failed; restored previous environment: {VENV}")
-            except OSError as restore_error:
+    with _DeferredInterrupt() as interrupt:
+        try:
+            if incompatible:
+                backup = VENV.with_name(f".venv-incompatible-{time.time_ns()}")
+                VENV.rename(backup)
+                interrupt.checkpoint()
+                say(f"Preserved stale environment at {backup}")
+            if not venv_python().is_file():
+                say(f"Creating isolated virtual environment: {VENV}")
+                checked_run([str(python), "-m", "venv", "--system-site-packages",
+                             str(VENV)], env=env)
+                interrupt.checkpoint()
+            installed = venv_python()
+            if not works(installed, GUI_CHECK, env=env):
                 raise SetupError(
-                    "SmoothCast setup failed and automatic rollback also failed. "
-                    f"Previous environment preserved at {backup}; "
-                    f"restore it manually to {VENV}: {restore_error}"
-                ) from restore_error
-        raise
+                    f"{installed} cannot import GTK4/libadwaita after rebuild. "
+                    "Review the native Python/PyGObject installation."
+                )
+            if (not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or
+                    not works(installed, PROJECT_DEPENDENCIES_CHECK, env=env)):
+                # The project declares its dependencies in pyproject.toml. Install
+                # missing runtime packages and the project in editable mode into
+                # the *selected venv* so every launcher resolves the same runtime;
+                # do not download or replace native GTK bindings.
+                checked_run([str(installed), "-m", "pip", "install",
+                             "--disable-pip-version-check", *PIP_PACKAGES,
+                             "-e", str(ROOT)], env=env)
+                interrupt.checkpoint()
+            if not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or not works(
+                    installed, PROJECT_DEPENDENCIES_CHECK, env=env):
+                raise SetupError("SmoothCast runtime packages could not be installed "
+                                 "(catt, PyChromecast, psutil, zeroconf, segno, smoothcast).")
+            missing = check_tools(env)
+            if missing:
+                raise SetupError("Media dependencies are missing: " + ", ".join(missing))
+            return installed
+        except BaseException:
+            # Never delete a pre-existing environment. Only the replacement tree
+            # created after the backup (or a brand new install) is disposable.
+            if backup is not None or not original_exists:
+                try:
+                    if VENV.is_symlink():
+                        VENV.unlink()
+                    elif VENV.is_dir():
+                        shutil.rmtree(VENV)
+                    elif VENV.exists():
+                        VENV.unlink()
+                    if backup is not None:
+                        backup.rename(VENV)
+                        say(f"Rebuild failed; restored previous environment: {VENV}")
+                except OSError as restore_error:
+                    raise SetupError(
+                        "SmoothCast setup failed and automatic rollback also failed. "
+                        f"Previous environment preserved at {backup}; "
+                        f"restore it manually to {VENV}: {restore_error}"
+                    ) from restore_error
+            raise
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap SmoothCast from Python 3.10+")
