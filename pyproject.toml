@@ -307,6 +307,7 @@ py-modules = [
     "search_engine",
     "search_query",
     "selftest_hold",
+    "series_model",
     "server",
     "shortcut_map",
     "shutdown_plan",
