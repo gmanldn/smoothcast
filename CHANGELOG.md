@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bd730391397d0d4e4561e034c0b5595d9051490d -->
+<!-- sc-changelog-through: 66fdc4695a9a452fdede290ca8b73ada722f9ab3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:36:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:37:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:37:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`66fdc4695a9a`](https://github.com/gmanldn/smoothcast/commit/66fdc4695a9a452fdede290ca8b73ada722f9ab3)
+
+- 🟪 **07:36:58 · Tests** — test(arch): MainWindow base-class ratchet at 17 (Refs #691) · [`18cd3bf830be`](https://github.com/gmanldn/smoothcast/commit/18cd3bf830bec2b9b6def34c76e2ba4c6a3cbc2c)
+
+- 🟩 **07:36:10 · Feature** — feat(requests): pure request board with duplicate +1, guest expiry, fulfil notifications (Refs #391) · [`74bfc6d575da`](https://github.com/gmanldn/smoothcast/commit/74bfc6d575dae41ae77d0a5a1647a1f89e06d2cd)
 
 - ⬜ **07:36:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd730391397d`](https://github.com/gmanldn/smoothcast/commit/bd730391397d0d4e4561e034c0b5595d9051490d)
+
+- ⬜ **07:36:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`3f9742f9f598`](https://github.com/gmanldn/smoothcast/commit/3f9742f9f598435c12b33678a206a6c144b9e022)
 
 - 🟥 **07:36:00 · Fix** — fix(ship): refuse to commit while new src/tests/scripts files are untracked and unnamed (Refs #700) · [`ca22093a3375`](https://github.com/gmanldn/smoothcast/commit/ca22093a3375e1530e009606680344a260c9d050)
 
