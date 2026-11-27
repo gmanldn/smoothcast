@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 13fc306185b3c2b2268ff7525ca59e0faf0f4354 -->
+<!-- sc-changelog-through: fea1b3442501d277cd7a02a339b6e6212a3dcccb -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:06:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:10:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:10:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fea1b3442501`](https://github.com/gmanldn/smoothcast/commit/fea1b3442501d277cd7a02a339b6e6212a3dcccb)
+
+- ⬜ **18:10:50 · Maintenance** — style: polish the web Home player and quick actions (Refs #709) · [`064ecfe85539`](https://github.com/gmanldn/smoothcast/commit/064ecfe8553991ab7c82b5557f230363941b6660)
 
 - ⬜ **18:06:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`13fc306185b3`](https://github.com/gmanldn/smoothcast/commit/13fc306185b3c2b2268ff7525ca59e0faf0f4354)
 
 - 🟪 **18:06:41 · Tests** — test: recover browser upload checkpoint coverage (Refs #568) · [`31723d987d76`](https://github.com/gmanldn/smoothcast/commit/31723d987d76cba7dd7f4231896b9bee7db9c5de)
+
+- ⬜ **18:06:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e0670a3c9e36`](https://github.com/gmanldn/smoothcast/commit/e0670a3c9e366a784c2eaf7566c912b6def2cf7e)
 
 - ⬜ **18:05:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8899446c7667`](https://github.com/gmanldn/smoothcast/commit/8899446c76672a869ef5be32088472755a1b1ef8)
 
