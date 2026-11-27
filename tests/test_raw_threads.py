@@ -27,7 +27,6 @@ ALLOWED = {
     "mesh_http.py": 1,
     "mesh_service.py": 2,
     "portal.py": 1,
-    "sc_core.py": 1,
     "server.py": 3,
     "shutdown_plan.py": 1,
     "streamer.py": 1,
