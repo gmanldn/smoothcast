@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 46b17c730937fd4f761b436845cf8eb53333186c -->
+<!-- sc-changelog-through: ff9b0b8262cc518233514635bbe3aa01cd433cfe -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:13:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:13:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:13:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ff9b0b8262cc`](https://github.com/gmanldn/smoothcast/commit/ff9b0b8262cc518233514635bbe3aa01cd433cfe)
+
+- 🟦 **07:13:18 · Refactor** — refactor(persist): room policy saved through the atomic owner-only Store (Refs #701) (Refs #325) · [`702c05d4e9fb`](https://github.com/gmanldn/smoothcast/commit/702c05d4e9fbbb10aa8fd6e37a947ddb4797800f)
 
 - 🟪 **07:13:08 · Tests** — test(arch): dated quarantine list for known-red tests; expired entries stop being excused (Refs #700) · [`46b17c730937`](https://github.com/gmanldn/smoothcast/commit/46b17c730937fd4f761b436845cf8eb53333186c)
+
+- ⬜ **07:13:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ce6cba966368`](https://github.com/gmanldn/smoothcast/commit/ce6cba96636869efe346124357ec7ab4b38cfc73)
 
 - 🟩 **07:12:47 · Feature** — feat(sync): pure watch-together session clock, command fencing, RTT clock and drift correction (Refs #373) · [`7d1fbf0778b0`](https://github.com/gmanldn/smoothcast/commit/7d1fbf0778b0086e580fd9dbeb763873da6240d2)
 
