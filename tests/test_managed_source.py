@@ -74,7 +74,8 @@ def test_staged_candidate_is_checksum_verified_and_never_activated(tmp_path, che
     staged = managed_source.stage_trusted_candidate(root, checkout, channel="develop",
                                                     verify=lambda *a: True)
     assert staged == root / "releases" / sha
-    assert (staged / "src" / "version.py").read_text(encoding="utf-8") == "PATCH = 1\n"
+    staged_version = staged / "src" / "version.py"
+    assert staged_version.read_text(encoding="utf-8") == "PATCH = 1\n"
     assert not (root / "current").exists() and not (root / "previous").exists()
 
 

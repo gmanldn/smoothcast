@@ -48,7 +48,6 @@
   "test_join_slate_ui.py",
   "test_launch_singleton.py",
   "test_low_end_encoding.py",
-  "test_managed_source.py",
   "test_mesh_acquisition_live.py",
   "test_mesh_ui_acquisition.py",
   "test_motion_video.py",
