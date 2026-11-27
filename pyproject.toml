@@ -377,6 +377,7 @@ py-modules = [
     "thumb_strip",
     "tone_knobs",
     "track_choices",
+    "transfer_progress",
     "transfer_session",
     "ui_theme",
     "ui_tokens",
