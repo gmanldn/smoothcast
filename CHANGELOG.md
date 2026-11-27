@@ -8,17 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3132d2016be0cbbeeb3e7b61ca66995277981f8c -->
+<!-- sc-changelog-through: f3220e3822ac46351e73dac6922eb6778a1f3a34 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:48:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:52:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:52:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f3220e3822ac`](https://github.com/gmanldn/smoothcast/commit/f3220e3822ac46351e73dac6922eb6778a1f3a34)
+
+- 🟪 **18:52:23 · Tests** — test: assert shared queue order in browser sync (Refs #324) · [`0664c5244c8e`](https://github.com/gmanldn/smoothcast/commit/0664c5244c8e90c3119d3c67933aba422a65d2b7)
 
 - ⬜ **18:48:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3132d2016be0`](https://github.com/gmanldn/smoothcast/commit/3132d2016be0cbbeeb3e7b61ca66995277981f8c)
 
 - 🟩 **18:48:01 · Feature** — feat: include platform in mesh node profiles (Refs #710) · [`5d06db71f813`](https://github.com/gmanldn/smoothcast/commit/5d06db71f8135eb402551b9cd3a4759d81e86249)
 
 - 🟩 **18:48:01 · Feature** — feat: include platform in mesh node profiles (Refs #710) · [`ea9a0ceb0293`](https://github.com/gmanldn/smoothcast/commit/ea9a0ceb0293ee6ad1df0878ae5b87ee5e7a89aa)
+
+- ⬜ **18:48:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`207c576a1fdd`](https://github.com/gmanldn/smoothcast/commit/207c576a1fdd9d59c48add3f8c7d5852598cad65)
 
 - ⬜ **18:47:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4fa6f60f40bb`](https://github.com/gmanldn/smoothcast/commit/4fa6f60f40bbea766d739137c14f5188746e0b39)
 
