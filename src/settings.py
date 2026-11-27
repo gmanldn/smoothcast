@@ -49,6 +49,7 @@ class PortalSettings:
     link_youtube: bool = True
     link_magnet: bool = True
     house_pin: bool = False        # require the printed PIN to join
+    library_indexer: bool = True   # index the house libraries in the background
 
     @classmethod
     def from_config(cls, cfg: dict) -> "PortalSettings":
@@ -57,7 +58,8 @@ class PortalSettings:
                    screens=_flag(cfg, "portal_screens", True),
                    link_youtube=_flag(cfg, "portal_link_youtube", True),
                    link_magnet=_flag(cfg, "portal_link_magnet", True),
-                   house_pin=_flag(cfg, "house_pin_enabled", False))
+                   house_pin=_flag(cfg, "house_pin_enabled", False),
+                   library_indexer=_flag(cfg, "library_indexer", True))
 
 
 def _number(cfg: dict, key: str, default: float, lo: float, hi: float) -> float:

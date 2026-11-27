@@ -84,7 +84,7 @@ class PortalHostMixin:
         """Start the shared-library indexer once folders exist (#408)."""
         import library_index_v2          # sqlite + search stack: only when folders exist (#463)
         import library_replication
-        if not self.cfg.get("library_indexer", True):
+        if not settings.PortalSettings.from_config(self.cfg).library_indexer:
             return
         folders = library_folders.load(self.cfg) if folders is None else folders
         indexer = getattr(self, "_library_indexer", None)
