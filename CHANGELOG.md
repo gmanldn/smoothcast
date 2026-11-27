@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 91662b9102fd487f5915dc7f8352cc1111272fac -->
+<!-- sc-changelog-through: 9ce4286e5969453cba3518adc5560a59ffa242d3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:44:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:45:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:45:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9ce4286e5969`](https://github.com/gmanldn/smoothcast/commit/9ce4286e5969453cba3518adc5560a59ffa242d3)
+
+- 🟦 **07:45:09 · Refactor** — refactor(settings): portal preferred port reads through PortalSettings so a corrupt value cannot crash start-up (Refs #693) · [`42b48c1b7e8b`](https://github.com/gmanldn/smoothcast/commit/42b48c1b7e8b25c8edea39e36cc70c9a6eee6733)
+
+- 🟩 **07:44:55 · Feature** — feat(drain): pure drain state machine and bounded sleep inhibitor (Refs #426) · [`468c01d8e159`](https://github.com/gmanldn/smoothcast/commit/468c01d8e1593fc9f02c0fab46de397f5596112b)
 
 - ⬜ **07:44:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`91662b9102fd`](https://github.com/gmanldn/smoothcast/commit/91662b9102fd487f5915dc7f8352cc1111272fac)
+
+- ⬜ **07:44:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c442863d8e73`](https://github.com/gmanldn/smoothcast/commit/c442863d8e73a166463e2a7e93cd30622b3e5b06)
 
 - 🟩 **07:44:17 · Feature** — feat(arch): HardwareEncoder port with VAAPI, NVENC and fake backends, ranked selection with visible reasons (Refs #703) · [`9ee923f2ace5`](https://github.com/gmanldn/smoothcast/commit/9ee923f2ace5fae6738dc9da5dc6b94db0b4ed9b)
 
