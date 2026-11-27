@@ -16,7 +16,7 @@ import commit_identity
 
 MAJOR = 2
 MINOR = 3
-PATCH = 6
+PATCH = 7
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 
@@ -183,7 +183,9 @@ def registered_checkout(repo: Path) -> Path | None:
         root = repo.resolve()
         if (source == root or source in root.parents or root in source.parents
                 or not (source / ".git").exists()
-                or not (source / "setup" / "bootstrap.py").is_file()):
+                or not (source / "setup" / "bootstrap.py").is_file()
+                or 'name = "smoothcast"' not in
+                (source / "pyproject.toml").read_text(encoding="utf-8")):
             return None
         return source
     except (OSError, ValueError, RuntimeError):
