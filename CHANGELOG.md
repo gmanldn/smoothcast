@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 89d6ba2be641c222bf0f63052d498ef5e93021d6 -->
+<!-- sc-changelog-through: ad3ac76ddf7b2f5cf38a74df2a79814a232302ed -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **21:18:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:20:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:20:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ad3ac76ddf7b`](https://github.com/gmanldn/smoothcast/commit/ad3ac76ddf7b2f5cf38a74df2a79814a232302ed)
+
+- 🟩 **21:20:13 · Feature** — feat(doctor): run the firewall check in smoothcast doctor (Refs #211) · [`105201d5f863`](https://github.com/gmanldn/smoothcast/commit/105201d5f863b87a8929eb4b1b1febc1cca233ac)
+
+- 🟩 **21:19:33 · Feature** — feat(diagnostics): shutdown total and per-step timings accumulate in latency.json (Refs #698) · [`c9c0340a5532`](https://github.com/gmanldn/smoothcast/commit/c9c0340a5532f82d07e921e05c57dbf6a37fbe63)
+
+- ⬜ **21:18:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e9db5fe14e5d`](https://github.com/gmanldn/smoothcast/commit/e9db5fe14e5d8f575f3d37c4f183552ffaf979bf)
 
 - ⬜ **21:18:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`89d6ba2be641`](https://github.com/gmanldn/smoothcast/commit/89d6ba2be641c222bf0f63052d498ef5e93021d6)
 
