@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4bf9e78213c08c0a8c237a0d324e18132115f0fb -->
+<!-- sc-changelog-through: a354b3a2258dbdefc73b5de810ea74e1679df8a2 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:47:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:48:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:48:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a354b3a2258d`](https://github.com/gmanldn/smoothcast/commit/a354b3a2258dbdefc73b5de810ea74e1679df8a2)
+
+- 🟩 **15:48:12 · Feature** — feat(security): MediaSource resolves uploads/library files by real path containment, rejecting .., symlinks and non-files (Refs #702) · [`c8f093262f00`](https://github.com/gmanldn/smoothcast/commit/c8f093262f00816ea3aabd8f54d155c9596cd830)
 
 - ⬜ **15:47:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4bf9e78213c0`](https://github.com/gmanldn/smoothcast/commit/4bf9e78213c08c0a8c237a0d324e18132115f0fb)
 
 - 🟪 **15:47:22 · Tests** — test(arch): ratchet blocks new source-text tests; 106 existing frozen (Refs #699) · [`c0e9b819cc53`](https://github.com/gmanldn/smoothcast/commit/c0e9b819cc530da66668cf36486961710822e8a8)
+
+- ⬜ **15:47:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`42470539674c`](https://github.com/gmanldn/smoothcast/commit/42470539674cedd3e7e300f01775b482452feb53)
 
 - 🟩 **15:47:19 · Feature** — feat(transfer): pure browser-to-mesh transfer session contract, API doc and tests (Refs #569) · [`437b440a4d3a`](https://github.com/gmanldn/smoothcast/commit/437b440a4d3a15452e0969bc204b57537cde39ff)
 
