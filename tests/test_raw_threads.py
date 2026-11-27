@@ -22,7 +22,6 @@ ALLOWED = {
     "link_acquisition.py": 2,
     "link_egress.py": 2,
     "link_sandbox_probe.py": 1,
-    "link_setup.py": 1,
     "low_end_policy.py": 1,
     "mesh_acquisition_bridge.py": 1,
     "mesh_acquisition_executor.py": 1,

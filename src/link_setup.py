@@ -28,14 +28,14 @@ def setup_and_qualify() -> tuple[bool, str]:
 
 
 def start_setup(on_done) -> None:
-    """Run ``setup_and_qualify`` on a daemon thread; ``on_done(ok, text)`` runs on that thread."""
-    import threading
+    """Run ``setup_and_qualify`` on the bounded disk pool; ``on_done(ok, text)`` runs on a worker."""
+    import task_runtime
 
-    def work() -> None:
-        try:
-            ok, text = setup_and_qualify()
-        except Exception as exc:
-            ok, text = False, f"Setup failed: {type(exc).__name__}."
-        on_done(ok, text)
+    def finish(result, error) -> None:
+        if error is not None:
+            on_done(False, f"Setup failed: {type(error).__name__}.")
+        else:
+            on_done(*result)
 
-    threading.Thread(target=work, name="link-setup", daemon=True).start()
+    rt = task_runtime.shared()
+    rt.submit("disk", rt.scope(), lambda _s: setup_and_qualify(), finish)
