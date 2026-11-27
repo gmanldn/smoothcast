@@ -27,6 +27,13 @@ def _isolated_worktree_pool(monkeypatch, tmp_path):
     monkeypatch.setenv("SC_WORKTREE_POOL", str(tmp_path / "worktrees"))
 
 
+@pytest.fixture(autouse=True)
+def _clones_act_as_private_worktrees(request, monkeypatch):
+    """Push-race tests model agents as plain clones; only the #688 test checks the guard."""
+    if "primary_checkout" not in request.node.name:
+        monkeypatch.setattr(agent, "primary_checkout_refusal", lambda: "")
+
+
 def run(cwd: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(cwd), *args], text=True).strip()
 
@@ -834,3 +841,16 @@ def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp
     assert "Checklist: all criteria" in state[1]
     assert closed == [584, 584]  # REST closure itself is idempotent
     assert released == [584, 584, 584]
+
+
+def test_ship_refuses_primary_checkout_without_a_private_task(monkeypatch, tmp_path, capsys):
+    # #688: agents never ship from the owner's clone, even already-committed work.
+    _, primary, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", primary)
+    commit(primary, "stray.txt", "owner checkout edit\n")
+    pushed = []
+    monkeypatch.setattr(agent, "git", lambda *args, **kw: pushed.append(args) or "")
+    args = agent.build_parser().parse_args(["ship", "--next", "none", "--skip-checks"])
+    assert agent.cmd_ship(args) == 2
+    assert "primary checkout" in capsys.readouterr().out
+    assert pushed == []

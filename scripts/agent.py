@@ -1100,9 +1100,24 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
         return False
 
 
+def primary_checkout_refusal() -> str:
+    """Non-empty when ship runs from the owner's primary clone (#688).
+
+    Agents work only in private worktrees from ``agent.py start``; shipping
+    from the primary checkout would push whatever happens to be committed there.
+    """
+    if (ROOT / ".git").is_dir() and private_task() is None:
+        return (f"refusing to ship from the primary checkout {ROOT}: run "
+                "'python3 scripts/agent.py start <issue>' and ship from its private worktree")
+    return ""
+
+
 def cmd_ship(a: argparse.Namespace) -> int:
     if a.assign_patch:
         print("--assign-patch is deprecated and ignored; development uses Git SHA identity")
+    if refusal := primary_checkout_refusal():
+        print(refusal)
+        return 2
     result = commit_private_slice(a)
     if result:
         return result
