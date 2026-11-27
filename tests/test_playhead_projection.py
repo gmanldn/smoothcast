@@ -297,3 +297,12 @@ def test_playhead_sources_never_probe_media():
     root = Path(__file__).resolve().parents[1] / "src"
     for name in ("portal.py", "position_tracker.py", "playback_state.py", "progress_model.py"):
         assert "ffprobe" not in (root / name).read_text("utf-8"), name
+
+
+def test_unknown_length_external_stream_shows_a_moving_marker_not_a_made_up_length():
+    import portal
+    text = portal._HTML
+    assert 'pr.removeAttribute("value")' in text and "length not reported" in text
+    widgets = open("src/cast_widgets.py").read()
+    assert "unknown_length" in widgets and "self.position % 60.0" in widgets
+    assert "unknown_length=" in open("src/cast_session.py").read()

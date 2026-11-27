@@ -402,16 +402,16 @@ class DeviceDiscoveryMixin:
             title, size = playback_state.external_media_labels(info)
             self.np_title.set_text(title)
             self.np_title.set_tooltip_text(title)
-            length = fmt_time(clock.duration) if clock.duration else "unavailable"
+            length = fmt_time(clock.duration) if clock.duration else "not reported by the source"
             self.np_meta.set_text(f"{size} · Length: {length} · External stream")
         if hasattr(self, "seekbar"):
             position = clock.value()
-            self.seekbar.set_state(position, clock.duration, None)
+            self.seekbar.set_state(position, clock.duration, None, unknown_length=position is not None)
             if not getattr(self.seekbar, "scrubbing", False):
                 self.elapsed_label.set_text(fmt_time(position))
                 self.remaining_label.set_text(
                     f"-{fmt_time(clock.duration - position)}"
-                    if position is not None and clock.duration else "--:--"
+                    if position is not None and clock.duration else "Live"
                 )
 
     def _device(self) -> str:

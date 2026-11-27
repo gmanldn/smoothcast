@@ -167,6 +167,7 @@ class SeekBar(Gtk.DrawingArea):
         self.position = 0.0
         self.duration = 0.0
         self.buffered = 0.0
+        self.unknown_length = False  # receiver reports no length: draw a moving marker
         self.scrubbing = False
         self.scrub_value = 0.0
         self._hover = False
@@ -190,7 +191,8 @@ class SeekBar(Gtk.DrawingArea):
         motion.connect("leave", self._leave)
         self.add_controller(motion)
 
-    def set_state(self, position, duration, buffered) -> None:
+    def set_state(self, position, duration, buffered, unknown_length=False) -> None:
+        self.unknown_length = bool(unknown_length) and not duration
         self.position = position or 0.0
         self.duration = duration or 0.0
         self.buffered = buffered or 0.0
@@ -253,6 +255,14 @@ class SeekBar(Gtk.DrawingArea):
         cr.set_source_rgba(*accent, 0.16)
         self._rounded(cr, 0, y, width, track_h, radius)
         cr.fill()
+        if self.unknown_length:
+            # Length unknown (live or external): a short marker sweeps the track
+            # once a minute so a moving playhead is visible without inventing a length.
+            seg = max(track_h * 4, width * 0.12)
+            x = (self.position % 60.0) / 60.0 * max(0.0, width - seg)
+            cr.set_source_rgba(*accent, 1.0)
+            self._rounded(cr, x, y, seg, track_h, radius)
+            cr.fill()
         if self.duration > 0:
             frac = min(1.0, self.buffered / self.duration) if self.buffered else 0.0
             if frac > 0:

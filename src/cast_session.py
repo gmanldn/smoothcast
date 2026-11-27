@@ -957,7 +957,8 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
             )
         # Pure watchdog: no blocking I/O on the GTK tick.
         stream_watchdog.recover_window(self, snapshot, position)
-        self.seekbar.set_state(position, duration, buffered)
+        self.seekbar.set_state(position, duration, buffered,
+                               unknown_length=self.external and position is not None)
         if position is not None:
             local_stream = self._local_stream() if previewing else None
             playing = (bool(local_stream and local_stream.get_playing())
@@ -974,7 +975,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 if duration:
                     self.remaining_label.set_text(f"-{fmt_time(duration - position)}")
                 else:
-                    self.remaining_label.set_text("--:--")
+                    self.remaining_label.set_text("Live" if self.external else "--:--")
             else:
                 self.elapsed_label.set_text("--:--")
                 self.remaining_label.set_text("--:--")
