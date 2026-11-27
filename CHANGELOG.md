@@ -8,15 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e576230df224752937b3c4042dd912929535fbb7 -->
+<!-- sc-changelog-through: b5c25e2ac56ca6893cad766c0907fa876da4a92d -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:51:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **15:52:03 · Fix** — fix(gui): make guest profile editing responsive and session safe (Refs #709) <!-- sc-changelog-pending -->
 
 - ⬜ **15:51:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e576230df224`](https://github.com/gmanldn/smoothcast/commit/e576230df224752937b3c4042dd912929535fbb7)
 
 - 🟦 **15:51:29 · Refactor** — refactor(settings): release-update checks read UpdateSettings, not raw cfg keys (Refs #693) (Refs #325) · [`f1cada395b84`](https://github.com/gmanldn/smoothcast/commit/f1cada395b84834b8dc057f0444d4fef823fc67f)
+
+- ⬜ **15:51:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b5c25e2ac56c`](https://github.com/gmanldn/smoothcast/commit/b5c25e2ac56ca6893cad766c0907fa876da4a92d)
 
 - 🟥 **15:50:47 · Fix** — fix(web): fence mesh feed callbacks and stop hidden heartbeat polling (Refs #710) · [`c715d07c26fa`](https://github.com/gmanldn/smoothcast/commit/c715d07c26fa8cd45d1ac1163f965d10cfbaffb4)
 

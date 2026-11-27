@@ -160,3 +160,60 @@ assert.equal(writes,3);
     result = subprocess.run(["node", "-"], input=harness + helper + scenario,
                             capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_browser_profile_edits_are_singleflight_and_session_fenced():
+    import shutil
+    import subprocess
+
+    import pytest
+    import portal
+
+    if shutil.which("node") is None:
+        pytest.skip("requires Node.js")
+    page = portal._page().decode("utf-8")
+    helper = page[page.index("let profileEdit=null;"):page.index('$("nameForm").addEventListener("submit",saveProfileName);')]
+    harness = r"""
+const assert=require("node:assert/strict");
+let csrf="first",stalePage=false,joined="",saved="",refreshes=0;
+const elements={displayName:{value:"Sam"},saveDisplayName:{disabled:false},profileStatus:{textContent:""}};
+const $=id=>elements[id];
+const calls=[];
+const post=(path,body)=>new Promise((resolve,reject)=>calls.push({path,body,resolve,reject}));
+const showJoinedName=name=>{joined=name};
+const localStorage={setItem:(key,value)=>{saved=value}};
+const refresh=()=>{refreshes++};
+const e={preventDefault(){}};
+"""
+    scenario = r"""
+(async()=>{
+  const first=saveProfileName(e);
+  await saveProfileName(e);
+  assert.equal(calls.length,1);
+  assert.equal(elements.saveDisplayName.disabled,true);
+  elements.displayName.value="New draft";
+  calls[0].resolve({participant:{name:"Sam 2"}});
+  await first;
+  assert.equal(elements.displayName.value,"New draft");
+  assert.equal(joined,"Sam 2");
+  assert.equal(saved,"Sam 2");
+  assert.equal(refreshes,1);
+  assert.equal(elements.saveDisplayName.disabled,false);
+  const old=saveProfileName(e);
+  csrf="second";resetProfileEdit();
+  elements.displayName.value="Other";
+  const next=saveProfileName(e);
+  calls[1].resolve({participant:{name:"Obsolete"}});
+  await old;
+  assert.equal(joined,"Sam 2");
+  assert.equal(elements.saveDisplayName.disabled,true);
+  calls[2].reject(Error("Name already used"));
+  await next;
+  assert.equal(elements.profileStatus.textContent,"Name already used");
+  assert.equal(elements.saveDisplayName.disabled,false);
+  assert.equal(elements.displayName.value,"Other");
+})().catch(err=>{console.error(err);process.exitCode=1});
+"""
+    result = subprocess.run(["node", "-"], input=harness + helper + scenario,
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr

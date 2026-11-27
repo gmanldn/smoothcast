@@ -2294,7 +2294,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">To rename the shared room, use Room → Rename on the computer running SmoothCast.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form></section>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">To rename the shared room, use Room → Rename on the computer running SmoothCast.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
@@ -2350,7 +2350,7 @@ $("roomLinkCopy").addEventListener("click",async()=>{
 async function post(path,body){
   if(stalePage)throw Error("Reload required");
   // A missing action response must not indefinitely block every room control.
-  const controller=path==="/api/action"?new AbortController():null;
+  const controller=["/api/action","/api/profile"].includes(path)?new AbortController():null;
   const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
   try{
     const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
@@ -2360,7 +2360,7 @@ async function post(path,body){
     if(!r.ok)throw Error(d.error||"Request failed");
     return d;
   }catch(error){
-    if(controller?.signal.aborted)throw Error("Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
     throw error;
   }finally{if(deadline!==null)clearTimeout(deadline)}
 }
@@ -2465,6 +2465,7 @@ $("loginForm").addEventListener("submit",async e=>{
 function expireSession(){
   stopPlayhead();playhead=null;
   csrf="";
+  resetProfileEdit();
   roomEvents.stop();
   void syncRemoteWakeLock();
   shortcutState=null;
@@ -3365,7 +3366,34 @@ $("volume").addEventListener("change",()=>{
   editingControls.delete("volume");
   queueVolume(Number($("volume").value));
 });
-$("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showJoinedName(d.participant.name);showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
+let profileEdit=null;
+function resetProfileEdit(){
+  profileEdit=null;
+  $("saveDisplayName").disabled=false;
+  $("profileStatus").textContent="";
+}
+async function saveProfileName(event){
+  event.preventDefault();
+  if(!csrf||stalePage||profileEdit?.session===csrf)return;
+  const input=$("displayName"),button=$("saveDisplayName"),feedback=$("profileStatus");
+  const submitted=input.value,request={session:csrf};
+  profileEdit=request;button.disabled=true;feedback.textContent="Updating name…";
+  const current=()=>profileEdit===request&&csrf===request.session&&!stalePage;
+  try{
+    const data=await post("/api/profile",{name:submitted});
+    if(!current())return;
+    const confirmed=data.participant?.name;
+    if(typeof confirmed!=="string"||!confirmed.trim())throw Error("Host did not confirm the name");
+    // Preserve edits made while this request was in flight.
+    if(input.value===submitted)input.value=confirmed;
+    showJoinedName(confirmed);
+    try{localStorage.setItem("sc_name",confirmed)}catch(_){}
+    feedback.textContent="Display name updated.";
+    refresh();
+  }catch(error){if(current())feedback.textContent=error.message||"Could not update name. Try again."}
+  finally{if(profileEdit===request){profileEdit=null;button.disabled=false}}
+}
+$("nameForm").addEventListener("submit",saveProfileName);
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.
