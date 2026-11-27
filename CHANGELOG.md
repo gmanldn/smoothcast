@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 85476a7bc5b192e83fc7bb344987a287d4557b62 -->
+<!-- sc-changelog-through: 448889e3e6ed2d10d198950d76aa1400a4464dae -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:49:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:51:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:51:48 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`448889e3e6ed`](https://github.com/gmanldn/smoothcast/commit/448889e3e6ed2d10d198950d76aa1400a4464dae)
+
+- 🟩 **06:51:42 · Feature** — feat(arch): paths.py and atomic schema-versioned Store, first slice of one persistence layer (Refs #701) · [`2bd8f693529f`](https://github.com/gmanldn/smoothcast/commit/2bd8f693529f70d22381e1992496c1e9f68da7af)
+
+- 🟩 **06:51:10 · Feature** — feat(portal): pure fail-closed policy checks for opt-in LAN HTTPS (Refs #340) · [`5726c6881011`](https://github.com/gmanldn/smoothcast/commit/5726c68810119cf67dd644e3f4a13869834f4a78)
+
+- ⬜ **06:49:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`860aa256201f`](https://github.com/gmanldn/smoothcast/commit/860aa256201fee65c506f61450e6523832da72e6)
 
 - ⬜ **06:49:49 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`85476a7bc5b1`](https://github.com/gmanldn/smoothcast/commit/85476a7bc5b192e83fc7bb344987a287d4557b62)
 
