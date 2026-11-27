@@ -8,11 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 9e30dfe83aef3cb14faa58e1abb6fc2aaca42887 -->
+<!-- sc-changelog-through: e56bbef2aaedb95ba8d4ed17a7a191404531ec1b -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:39:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:41:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:41:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e56bbef2aaed`](https://github.com/gmanldn/smoothcast/commit/e56bbef2aaedb95ba8d4ed17a7a191404531ec1b)
+
+- 🟩 **16:41:44 · Feature** — feat(power): PowerManager port with systemd, caffeinate and Windows backends plus fake (Refs #703) · [`04ff9993d480`](https://github.com/gmanldn/smoothcast/commit/04ff9993d480e02b414c7d6ad204178f32405870)
+
+- ⬜ **16:41:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f9ac6c5e7676`](https://github.com/gmanldn/smoothcast/commit/f9ac6c5e7676b5c3a86d0e5161e8c62bd4b952a1)
+
+- 🟥 **16:40:03 · Fix** — fix(gui): external streams with no reported length show a moving playhead marker, elapsed time and 'Live'/'length not reported' on native and web (Refs #635) · [`b27c748f80fa`](https://github.com/gmanldn/smoothcast/commit/b27c748f80fa1795ec71b49118c72b54e546873a)
+
+- ⬜ **16:39:32 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0751572a68d6`](https://github.com/gmanldn/smoothcast/commit/0751572a68d62f6397b87169b9f6e9dc8d617d5b)
 
 - ⬜ **16:39:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9e30dfe83aef`](https://github.com/gmanldn/smoothcast/commit/9e30dfe83aef3cb14faa58e1abb6fc2aaca42887)
 
