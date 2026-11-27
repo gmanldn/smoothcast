@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import {validateVersionBump,validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker} from "../scripts/connector_ship.mjs";
+import {renderChangelog,validateVersionBump,validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker} from "../scripts/connector_ship.mjs";
 const blobSha=c=>{const b=Buffer.from(c,"utf8");return crypto.createHash("sha1").update("blob "+b.length+"\0").update(b).digest("hex")};
 const VERSION38="MAJOR=2\nMINOR=0\nPATCH=38\n", VERSION39="MAJOR=2\nMINOR=0\nPATCH=39\n";
 const baseBlob=blobSha(VERSION38), newVersionBlob=blobSha(VERSION39);
@@ -435,4 +435,13 @@ test("release rejects tampered candidate and competing branch movement",async()=
   t.api.file=file;t.state.head=id("9");
   await assert.rejects(publishPending(t.api,releasePlan,c),/base moved/);
   assert.equal(t.counters.updates,0);
+});
+
+test("changelog escapes Markdown punctuation without altering the subject",()=>{
+  const source="# Changelog\n\n<!-- sc-changelog-through: "+id("a")+" -->\n";
+  const subject="fix: [a_b] *bold* "+String.fromCharCode(96)+"code"+String.fromCharCode(96)+" \\ <tag> &";
+  const expected="fix: \\[a\\_b\\] \\*bold\\* \\"+String.fromCharCode(96)+"code\\"+String.fromCharCode(96)+" \\\\ &lt;tag&gt; &amp;";
+  const out=renderChangelog(source,id("b"),[[id("b"),"2026-11-27T05:00:00Z",subject]]);
+  assert.ok(out.includes(expected),out);
+  assert.ok(!out.includes("async function checkBase"));
 });

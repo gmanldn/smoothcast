@@ -196,7 +196,7 @@ function logAnchor(source){
 function logEntry(sha,stamp,subject){
   check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(stamp)&&Number.isFinite(Date.parse(stamp)),"invalid changelog UTC timestamp");
   const cat=LOG_CATEGORIES[subject.split(/[(:]/,1)[0]]||"⬜ Maintenance", i=cat.indexOf(" ");
-  const safe=subject.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/[\\\x60*_[\]]/g,"\\async function checkBase(api,p){");
+  const safe=subject.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/[\\\x60*_[\]]/g,ch=>"\\"+ch);
   return "- "+cat.slice(0,i)+" **"+stamp.slice(11,19)+" · "+cat.slice(i+1)+"** — "+safe+
     (sha?" · [\x60"+sha.slice(0,12)+"\x60](https://github.com/gmanldn/smoothcast/commit/"+sha+")":LOG_PENDING);
 }
