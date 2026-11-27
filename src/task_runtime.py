@@ -85,7 +85,8 @@ class Runtime:
             self._futures = [f for f in self._futures if not f.done()] + [future]
         return future
 
-    def spawn_daemon(self, name: str, scope: Scope, fn: Callable[[Scope], None]) -> threading.Thread | None:
+    def spawn_daemon(self, name: str, scope: Scope, fn: Callable[[Scope], None], *,
+                     thread_name: str | None = None) -> threading.Thread | None:
         """Own a long-lived loop (accept loop, heartbeat, watcher) on a dedicated named thread.
 
         Not drawn from the bounded pools, so a daemon can never starve short tasks. ``fn(scope)``
@@ -103,7 +104,7 @@ class Runtime:
             except BaseException as exc:  # noqa: BLE001 - a dying daemon must be visible, not silent
                 self.errors.append((name, exc))
 
-        thread = threading.Thread(target=run, name=f"sc-daemon-{name}", daemon=True)
+        thread = threading.Thread(target=run, name=thread_name or f"sc-daemon-{name}", daemon=True)
         with self._lock:
             self._daemons = [t for t in self._daemons if t.is_alive()] + [thread]
         thread.start()

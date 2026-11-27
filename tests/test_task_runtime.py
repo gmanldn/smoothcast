@@ -143,3 +143,10 @@ def test_scope_wait_wakes_at_once_on_cancel_and_times_out_otherwise():
     threading.Timer(0.02, scope.cancel).start()
     began = time.monotonic()
     assert scope.wait(5.0) is True and time.monotonic() - began < 1.0
+
+
+def test_spawn_daemon_honours_an_explicit_thread_name():
+    rt = tr.Runtime()
+    thread = rt.spawn_daemon("loop", rt.scope(), lambda s: None, thread_name="smoothcast-mesh")
+    assert thread.name == "smoothcast-mesh"
+    thread.join(1)
