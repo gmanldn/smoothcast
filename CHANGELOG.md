@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a079fc05688fd70c2d5d028861e4ddd88ea49477 -->
+<!-- sc-changelog-through: bd17d1909c60241a1cae549ade66bd9dbd2eea3f -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:28:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:29:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:29:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd17d1909c60`](https://github.com/gmanldn/smoothcast/commit/bd17d1909c60241a1cae549ade66bd9dbd2eea3f)
+
+- 🟪 **07:29:21 · Tests** — test: drop source-size assertion from audio-delay wiring test; behaviour is covered above (Refs #699) · [`0b32fe093bac`](https://github.com/gmanldn/smoothcast/commit/0b32fe093bac96b734e67e2e4040045a278076b0)
+
+- 🟩 **07:28:34 · Feature** — feat(rooms): CEC wake wrapper with allow-list, 3 s timeout and once-only ignore logging (Refs #384) · [`fd999c6ee00b`](https://github.com/gmanldn/smoothcast/commit/fd999c6ee00be8ba6662fb34e5484bdc3f03b253)
 
 - ⬜ **07:28:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a079fc05688f`](https://github.com/gmanldn/smoothcast/commit/a079fc05688fd70c2d5d028861e4ddd88ea49477)
 
 - 🟪 **07:28:20 · Tests** — test(arch): quarantine a11y inventory red with owner; name owner for design-token red (Refs #700) · [`54bb90508b68`](https://github.com/gmanldn/smoothcast/commit/54bb90508b6829f9dd36297c51bf67bea2c959e1)
+
+- ⬜ **07:28:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f4e6dc28c9f0`](https://github.com/gmanldn/smoothcast/commit/f4e6dc28c9f018b12cfff0fc46c749660f1ce1a2)
 
 - ⬜ **07:27:54 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8205924d5d0e`](https://github.com/gmanldn/smoothcast/commit/8205924d5d0e2cdedfc6a8f8591f9a5452ec4d2a)
 
