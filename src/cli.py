@@ -89,6 +89,10 @@ def _main() -> int:
         # Headless Chromecast control (#268): never imports GTK or opens a window.
         import cli_control
         return cli_control.main(sys.argv[1:])
+    if sys.argv[1:2] == ["export"]:
+        # Plain-file export of queue/history/rooms/preferences (#435); no GTK.
+        import exporters
+        return exporters.main(sys.argv[2:])
     if sys.argv[1:2] == ["house"]:
         # Room HTTP API client (#434); headless, never imports GTK.
         import house_cli
