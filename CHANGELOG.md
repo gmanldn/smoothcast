@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 805574cdd94a70d8abe4185ec203be7870a23e37 -->
+<!-- sc-changelog-through: 33faac9b73270af1359eaf6dc28b04be4f9dacf1 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:57:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:58:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:58:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`33faac9b7327`](https://github.com/gmanldn/smoothcast/commit/33faac9b73270af1359eaf6dc28b04be4f9dacf1)
+
+- 🟥 **16:58:33 · Fix** — fix(portal): repair syntax error in route table from previous patch (Refs #689) · [`0791e010c417`](https://github.com/gmanldn/smoothcast/commit/0791e010c417d76a7103bcb2083317772cd4ade9)
+
+- 🟩 **16:57:55 · Feature** — feat(arch): power-inhibit backends (logind, caffeinate, Windows) and fake behind one contract test, injected OS calls, unwired (Refs #703) · [`ffc427c93124`](https://github.com/gmanldn/smoothcast/commit/ffc427c93124aacda52e3d6350a61b3820e99bfc)
 
 - ⬜ **16:57:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`805574cdd94a`](https://github.com/gmanldn/smoothcast/commit/805574cdd94a70d8abe4185ec203be7870a23e37)
+
+- ⬜ **16:57:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`886305779283`](https://github.com/gmanldn/smoothcast/commit/886305779283cbf4f771fbd939957b9e25bfd257)
 
 - 🟩 **16:57:28 · Feature** — feat(doctor): warn when the receiver route runs through a VPN; doctor.py baseline 187-&gt;188 for the one-line hook into doctor\_vpn (Refs #211, #210) (Refs #325) · [`41c5a1f878d1`](https://github.com/gmanldn/smoothcast/commit/41c5a1f878d10988b454c7ebe4cd5545ecc8f405)
 
