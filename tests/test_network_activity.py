@@ -98,3 +98,18 @@ def test_portal_entries_report_reading_age_so_viewers_can_advance_the_position(m
     assert network_activity.portal_entries(rows, "", 200.0)[0]["observed_age_ms"] == 0
     assert network_activity.portal_entries(rows, "", -1e6)[0]["observed_age_ms"] == 600000
     assert "observed_age_ms" not in network_activity.portal_entries(rows, "")[0]
+
+
+def test_refresh_skips_while_a_cast_is_starting(monkeypatch):
+    import network_activity_ui
+    calls = []
+    monkeypatch.setattr(network_activity_ui.Async, "run", lambda *a, **k: calls.append(a))
+
+    class W(network_activity_ui.NetworkActivityMixin):
+        _closing = False
+        busy = True
+        devices = [object()]
+        dlna_devices = []
+
+    assert W()._refresh_network_activity() is True
+    assert calls == []
