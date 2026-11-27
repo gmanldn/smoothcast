@@ -18,9 +18,9 @@ def test_all_receiver_states_have_readable_accessible_labels():
 
 def test_web_cli_desktop_notifications_and_mpris_use_central_states():
     paths = {key: (ROOT / "src" / key).read_text()
-             for key in ("cast_queue.py", "cast_portal.py", "cli_control.py",
+             for key in ("cast_discovery.py", "cast_portal.py", "cli_control.py",
                          "portal.py", "cast_ui.py", "notifications.py", "mpris.py")}
-    assert 'state_labels.present(self.device_state).short' in paths["cast_queue.py"]
+    assert 'state_labels.present(self.device_state).short' in paths["cast_discovery.py"]
     for key in ("state_label", "state_short", "state_description", "state_icon"):
         assert f'"{key}"' in paths["cast_portal.py"]
     assert 's.state_label||"State unavailable"' in paths["portal.py"]

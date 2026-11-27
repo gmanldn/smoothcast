@@ -196,7 +196,8 @@ def test_work_domains_are_inherited_by_real_gui_adapter_without_importing_gtk():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     widget_source = (root / "src" / "cast_widgets.py").read_text("utf-8")
-    queue_source = (root / "src" / "cast_queue.py").read_text("utf-8")
+    queue_source = "".join((root / "src" / name).read_text("utf-8")
+                           for name in ("cast_queue.py", "cast_discovery.py"))
     session_source = (root / "src" / "cast_session.py").read_text("utf-8")
     assert "async_jobs.WorkDomains(" in widget_source
     assert "GLib.idle_add, on_error=error_log.log" in widget_source

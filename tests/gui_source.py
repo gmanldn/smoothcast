@@ -38,10 +38,12 @@ GUI_MODULES = (
     "preferences_ui.py",
     "library_folders_ui.py",
     "cast_queue.py",
+    "cast_discovery.py",
     "queue_row_ui.py",
     "playlist_ui.py",
     "cast_ab_repeat_ui.py",
     "cast_session.py",
+    "cast_remote_url.py",
     "cast_retry_ui.py",
     "cast_av.py",
     "cast_subtitle_files.py",
@@ -61,7 +63,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
