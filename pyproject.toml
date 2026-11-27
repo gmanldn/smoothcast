@@ -294,6 +294,7 @@ py-modules = [
     "queue_undo",
     "queue_votes",
     "radio",
+    "radio_podcasts",
     "receiver_memory",
     "receiver_profiles",
     "receiver_sessions",
