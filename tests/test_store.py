@@ -20,3 +20,13 @@ def test_failed_write_reports_a_typed_reason(tmp_path):
     assert store.write({"a": 1}) is False and store.last_error in ("io_error", "permission_denied")
     ok = Store(tmp_path / "ok.json")
     assert ok.write({"a": 1}) and ok.last_error is None
+
+
+def test_quarantine_is_recorded_for_a_startup_notice(tmp_path):
+    import store
+    store.QUARANTINED.clear()
+    path = tmp_path / "y.json"
+    path.write_text("[1")
+    store.Store(path).read()
+    assert store.QUARANTINED == ["y.json"]
+    store.QUARANTINED.clear()

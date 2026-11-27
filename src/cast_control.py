@@ -424,6 +424,10 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         startup_timeline.mark_idle()
         self._start_jank_monitor()
         self._run_interaction_benchmark()
+        import store
+        if store.QUARANTINED:  # say so once instead of silently resetting a setting
+            window.toast("A damaged settings file was set aside and defaults were used: "
+                         + ", ".join(store.QUARANTINED[:3]), error=True)
         GLib.idle_add(self._guard_glib(self._start_optional_services), window,
                       priority=GLib.PRIORITY_LOW)
         return False

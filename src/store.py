@@ -26,6 +26,9 @@ def classify_error(exc: OSError) -> str:
     return "io_error"
 
 
+QUARANTINED: list[str] = []  # names of corrupt records set aside this run (#701)
+
+
 class Store:
     def __init__(self, path: Path | str, schema: int = 1, *,
                  migrate: Callable[[dict, int], dict | None] | None = None) -> None:
@@ -64,6 +67,8 @@ class Store:
         """Move a corrupt file aside (never delete user data) so it is not re-read."""
         try:
             os.replace(self.path, self.path.with_name(self.path.name + ".corrupt"))
+            if self.path.name not in QUARANTINED:
+                QUARANTINED.append(self.path.name)
         except OSError:
             pass
 
