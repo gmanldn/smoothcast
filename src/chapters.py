@@ -66,3 +66,29 @@ def jump(chapters: list[Chapter], position: float, direction: int, restart_after
     if position - here.start > restart_after or here.index == 0:
         return here.start if position > here.start + 1e-6 else None
     return chapters[here.index - 1].start
+
+
+def clock(seconds: float) -> str:
+    """``m:ss`` or ``h:mm:ss`` for a chapter start; never raises."""
+    if not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds < 0:
+        return "0:00"
+    total = int(seconds)
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def rows(chapters: list[Chapter], position: float | None = None) -> list[dict]:
+    """Display rows ``{index, title, start, at, current}`` for a chapter picker."""
+    here = current(chapters, position) if position is not None else None
+    return [{"index": c.index, "title": c.title or f"Chapter {c.index + 1}", "start": c.start,
+             "at": clock(c.start), "current": here is not None and here.index == c.index}
+            for c in chapters]
+
+
+def source_to_stream(chapter_start: float, stream_offset: float = 0.0) -> float:
+    """Exact stream time for a chapter when the stream was started at a source offset
+    (restart-at-offset seeks): chapter start minus the offset, floored at 0."""
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (chapter_start, stream_offset)):
+        return 0.0
+    return max(0.0, float(chapter_start) - float(stream_offset))
