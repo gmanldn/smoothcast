@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cff00a6d6e229e6cb27b21b6b7947048b768275f -->
+<!-- sc-changelog-through: 98a9b700089769aba708d17c51817dec790007f1 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:16:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:18:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:18:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`98a9b7000897`](https://github.com/gmanldn/smoothcast/commit/98a9b700089769aba708d17c51817dec790007f1)
+
+- 🟪 **07:18:05 · Tests** — test(arch): unit/contract/integration/e2e tiers auto-tagged, hermetic public-TCP guard; allow two new writers in ratchet (Refs #699) · [`6be0d1c4cf57`](https://github.com/gmanldn/smoothcast/commit/6be0d1c4cf577bc7aeaa2fe5e84caa78138a50f4)
+
+- 🟩 **07:17:14 · Feature** — feat(rooms): pure private-room visibility, 404 policy, temporary share and host stop log (Refs #376) · [`a8ee581ef73b`](https://github.com/gmanldn/smoothcast/commit/a8ee581ef73baa1734439610c9b76d476a927cb3)
+
+- ⬜ **07:16:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`900c97e06992`](https://github.com/gmanldn/smoothcast/commit/900c97e069920a71b269d0cac6b875910b0a078e)
 
 - ⬜ **07:16:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cff00a6d6e22`](https://github.com/gmanldn/smoothcast/commit/cff00a6d6e229e6cb27b21b6b7947048b768275f)
 
