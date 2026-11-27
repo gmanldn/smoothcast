@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 58614346f12e36921b40b17b477fbeea8aee7e58 -->
+<!-- sc-changelog-through: 3227c9b2a3a6a558f23f50eff57f242fa0c6c761 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:36:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:36:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:36:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3227c9b2a3a6`](https://github.com/gmanldn/smoothcast/commit/3227c9b2a3a6a558f23f50eff57f242fa0c6c761)
+
+- 🟩 **16:36:37 · Feature** — feat(attempts): attempt folders default to the active command-trace id; ids sanitised (Refs #698) · [`8b7b70d8fa31`](https://github.com/gmanldn/smoothcast/commit/8b7b70d8fa31b7c5b9ffb9eca8fa03582a0cd70d)
 
 - ⬜ **16:36:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`58614346f12e`](https://github.com/gmanldn/smoothcast/commit/58614346f12e36921b40b17b477fbeea8aee7e58)
 
 - 🟩 **16:36:25 · Feature** — feat(errors): app.save\_failed code, recorded when a store write fails (Refs #207, #701) (Refs #325) · [`82b6356dfcc6`](https://github.com/gmanldn/smoothcast/commit/82b6356dfcc6ff2cf13ffc14ddfae08242d53f25)
+
+- ⬜ **16:36:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0beec0947d94`](https://github.com/gmanldn/smoothcast/commit/0beec0947d94e726e948813ed342bde0a4324ea5)
 
 - 🟪 **16:34:18 · Tests** — test(arch): test\_managed\_source reads a staged temp file, not production source; baseline 104 -&gt; 103 (Refs #699) · [`f223f0509ce5`](https://github.com/gmanldn/smoothcast/commit/f223f0509ce5bc90b8f7b7602de26104f6a83891)
 
