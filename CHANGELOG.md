@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8495488617729b1a8ac2e35d67ba5bc06487844a -->
+<!-- sc-changelog-through: dfae87c9bc0057079a975426b483683c703f4551 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:37:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:39:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:39:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dfae87c9bc00`](https://github.com/gmanldn/smoothcast/commit/dfae87c9bc0057079a975426b483683c703f4551)
+
+- 🟦 **17:39:23 · Refactor** — refactor(errors): justify cli\_control boundary catch (Refs #694) · [`524dc74b2f87`](https://github.com/gmanldn/smoothcast/commit/524dc74b2f8779e1332270d79e9bbf004e355582)
+
+- 🟪 **17:38:58 · Tests** — test(update): settings test checks UpdateSettings behaviour instead of source text that moved; baseline shrinks (Refs #711) · [`27d8766e9cb1`](https://github.com/gmanldn/smoothcast/commit/27d8766e9cb1e497feea39d1f340ddfb2623ca9f)
 
 - ⬜ **17:37:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`849548861772`](https://github.com/gmanldn/smoothcast/commit/8495488617729b1a8ac2e35d67ba5bc06487844a)
 
 - 🟦 **17:37:29 · Refactor** — refactor(errors): justify boundary catches across eighteen more modules (Refs #694) · [`4a8a9c32de39`](https://github.com/gmanldn/smoothcast/commit/4a8a9c32de39b6daf2fde65617fbc4a66593ac89)
+
+- ⬜ **17:37:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`def14edfa392`](https://github.com/gmanldn/smoothcast/commit/def14edfa3924ff2496e1944ba091490753c7296)
 
 - 🟪 **17:35:54 · Tests** — test(gui): frame-step test drives the real mixin methods and installed shortcuts via a new gui\_shortcuts helper; baseline shrinks (Refs #699) · [`ba8b6d36a67d`](https://github.com/gmanldn/smoothcast/commit/ba8b6d36a67debdc88f57f56ab0c438f4deda463)
 
