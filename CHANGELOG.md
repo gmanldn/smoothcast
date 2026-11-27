@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: dbc0511b82e970613bf2c8382e71c0ea7e2c4010 -->
+<!-- sc-changelog-through: 636b51bd0da2f194c34894480d2ba1c74377f79b -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:54:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:56:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:56:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`636b51bd0da2`](https://github.com/gmanldn/smoothcast/commit/636b51bd0da2f194c34894480d2ba1c74377f79b)
+
+- 🟥 **06:55:37 · Fix** — fix(errors): add portal.missing\_capability to catalogue + portal category (Refs #207) · [`91e6ba68680a`](https://github.com/gmanldn/smoothcast/commit/91e6ba68680a822af5d477ea0f44a19941ddb52a)
+
+- 🟩 **06:55:27 · Feature** — feat(mesh): pure node pairing with SAS confirmation, scoped revocable trust and replay protection (Refs #358) · [`de6b2f97d28a`](https://github.com/gmanldn/smoothcast/commit/de6b2f97d28ab67547ec1874ff493a7fdd63b12e)
 
 - ⬜ **06:54:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dbc0511b82e9`](https://github.com/gmanldn/smoothcast/commit/dbc0511b82e970613bf2c8382e71c0ea7e2c4010)
+
+- ⬜ **06:54:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2cdc341e0c79`](https://github.com/gmanldn/smoothcast/commit/2cdc341e0c79082a1a444180ec65c82dd31bc1d8)
 
 - 🟦 **06:54:26 · Refactor** — refactor(arch): hw encoder failure record persists through the atomic Store (Refs #701) · [`edda32045082`](https://github.com/gmanldn/smoothcast/commit/edda320450829eacb1efd58c008124c3f1df5111)
 
