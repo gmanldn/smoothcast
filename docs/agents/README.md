@@ -21,6 +21,7 @@ repository root. This routing page is the human-readable fallback: open
 | Reduce context, tool output or code size; apply bundled Caveman/Ponytail | [Agent efficiency](efficiency.md), [Caveman](../../.kilo/skills/caveman/SKILL.md), [Ponytail](../../.kilo/skills/ponytail/SKILL.md); `agent_context.py skills` |
 | Mesh peer negotiation, versions and downgrade rules | [Peer protocol](peer-protocol.md) |
 | Product direction, trust model, mesh/room/portal features | [Vision](../VISION.md), [mesh search](../MESH_SEARCH.md) — **authoritative**; trusted-home-LAN model supersedes older PIN/pairing assumptions |
+| Portal security boundaries and guest authorization | [Portal threat model](../PORTAL_THREAT_MODEL.md) |
 | Historical rationale, old invariants or regressions | [Full original notes](../AGENT_REFERENCE.md) — **historical; not policy** |
 
 **Runtime failure evidence (#620):** when the owner has enrolled a diagnostics
