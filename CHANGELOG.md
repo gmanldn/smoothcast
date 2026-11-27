@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8ae1b7f5931ac86a826d66ac1a2087fae00f29a0 -->
+<!-- sc-changelog-through: a0a11de7f67e12aef5cb05e002a912847de5865a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:52:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:55:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:55:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a0a11de7f67e`](https://github.com/gmanldn/smoothcast/commit/a0a11de7f67e12aef5cb05e002a912847de5865a)
+
+- 🟪 **16:54:44 · Tests** — test(portal): route table must match api\_spec auth/csrf; fix /api/session policy (Refs #689) · [`eaba79dd45cd`](https://github.com/gmanldn/smoothcast/commit/eaba79dd45cd97e8cf14a98e5871303bafdd2022)
+
+- 🟩 **16:52:44 · Feature** — feat(ci): pure time-to-red measure with the 15-minute budget (Refs #700) · [`e8084a33647a`](https://github.com/gmanldn/smoothcast/commit/e8084a33647a66ee5b951a876aa188d6d4eefc42)
 
 - ⬜ **16:52:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8ae1b7f5931a`](https://github.com/gmanldn/smoothcast/commit/8ae1b7f5931ac86a826d66ac1a2087fae00f29a0)
+
+- ⬜ **16:52:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b8a56d56579b`](https://github.com/gmanldn/smoothcast/commit/b8a56d56579b493fcfe92a118cc92a5e6a5a8f89)
 
 - 🟪 **16:52:11 · Tests** — test(arch): ratchet against new two-way imports; one known cycle frozen (Refs #690) · [`ac557b5e4e98`](https://github.com/gmanldn/smoothcast/commit/ac557b5e4e9869a8b244d6e17cfb46254351b62d)
 
