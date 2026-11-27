@@ -104,3 +104,22 @@ def pytest_collection_modifyitems(config, items):
         if reason:
             item.add_marker(pytest.mark.skip(
                 reason=f"known {sys.platform} gap (#258): {reason}"))
+
+
+def pytest_collection_modifyitems(config, items):
+    """Excuse only dated, owned quarantine entries (#700); any other failure stays red."""
+    import datetime
+    import json
+    import pathlib
+    import pytest
+    try:
+        entries = json.loads((pathlib.Path(__file__).with_name("quarantine.json")).read_text())["entries"]
+    except (OSError, ValueError, KeyError):
+        return
+    today = datetime.date.today().isoformat()
+    for item in items:
+        entry = entries.get(item.nodeid)
+        if entry and str(entry.get("expires", "")) >= today:
+            item.add_marker(pytest.mark.xfail(
+                reason=f"quarantined: #{entry.get('ticket')} owner {entry.get('owner')} until {entry['expires']}",
+                strict=False))
