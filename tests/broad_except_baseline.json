@@ -10,7 +10,6 @@
   "cast_session.py": 4,
   "cast_ui.py": 3,
   "castctl.py": 8,
-  "cli_control.py": 1,
   "control_api.py": 1,
   "dlna.py": 4,
   "error_log.py": 2,

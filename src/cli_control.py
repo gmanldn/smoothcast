@@ -92,7 +92,7 @@ def _device_ip(device: str) -> str | None:
     """Only a literal IPv4 can be used for route selection without discovery."""
     try:
         castctl.validate_manual_target(device)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any validation failure means not a literal IPv4
         return None
     return device
 
