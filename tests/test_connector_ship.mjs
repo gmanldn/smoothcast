@@ -67,15 +67,15 @@ function transport(){
       if(path==="/git/commits/"+p.base)return {sha:p.base,tree:{sha:baseTree}};
       if(path==="/git/commits/"+candidate)return {sha:candidate,tree:{sha:newTree},parents:state.parents,message:state.message};
       if(path==="/git/trees/"+baseTree+"?recursive=1")return {sha:baseTree,truncated:false,tree:[leaf("src/version.py",baseBlob)]};
-      if(path==="/git/trees/"+newTree+"?recursive=1")return {sha:newTree,truncated:false,tree:[leaf("src/version.py",baseBlob),leaf("src/foo.py","f")]};
+      if(path==="/git/trees/"+newTree+"?recursive=1")return {sha:newTree,truncated:false,tree:[leaf("src/version.py",newVersionBlob),leaf("src/foo.py","f")]};
       if(path.startsWith("/compare/"+candidate+"..."))return {status:"behind",behind_by:1};
       throw Error("unexpected GET "+path);
     },
     file:async(ref,path)=>{
-      if(path==="src/version.py"){assert.equal(ref,p.base);return {sha:baseBlob,content:VERSION38}}
+      if(path==="src/version.py"){if(ref===candidate)return {sha:newVersionBlob,content:VERSION39};assert.equal(ref,p.base);return {sha:baseBlob,content:VERSION38}}
       assert.equal(ref,candidate);assert.equal(path,"src/foo.py");return {sha:newBlob,content:p.changes[0].content}
     },
-    tree:async(base,changes)=>{assert.equal(base,baseTree);assert.deepEqual(changes,[{path:"src/foo.py",mode:"100644",type:"blob",content:"pass\n"}]);counters.trees++;return newTree},
+    tree:async(base,changes)=>{assert.equal(base,baseTree);assert.deepEqual(changes,[{path:"src/foo.py",mode:"100644",type:"blob",content:"pass\n"},{path:"src/version.py",mode:"100644",type:"blob",content:VERSION39}]);counters.trees++;return newTree},
     commit:async(tree,parent,message)=>{assert.equal(tree,newTree);assert.equal(parent,p.base);assert.equal(message,"fix (Refs #598)");counters.commits++;return candidate},
     update:async(base,sha)=>{
       counters.updates++;assert.equal(base,p.base);assert.equal(sha,candidate);

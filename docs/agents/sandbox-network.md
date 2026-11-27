@@ -85,8 +85,8 @@ await ship(api, p, candidate);
 Before preparing, fetch the exact version.py and canonical AST guard
 (`scripts/ci/check_version_history.py`) at the base. Verify Git blob hashes
 offline and run its parse_version on the pinned version source. The candidate
-must contain the identical version blob, and have one parent and precisely
-the reviewed changed paths. A normal version-preserving transition is thus
+must contain the exact next PATCH version blob, and have one parent and precisely
+the reviewed changed paths. A normal shipment allocates the next PATCH in the same candidate; the transition is
 checked without executing application code. No per-ticket PATCH allocation,
 deletion, mode change, binary edit or closure is supported here.
 

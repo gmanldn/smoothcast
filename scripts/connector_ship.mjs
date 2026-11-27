@@ -1,5 +1,5 @@
 // Connector-only, develop-only progress and independently authorised PATCH release transport (#598, #631).
-// Per-ticket PATCH allocation is retired (owner policy, 25 Nov 2026).
+// Every nonempty progress shipment receives a single PATCH, independent of issue closure.
 // versionBlob MUST come from offline
 // canonical AST validation of exact pinned bytes; the connector re-derives
 // the same proof from the served bytes and refuses mismatches.
@@ -171,6 +171,15 @@ function verifyTreeDelta(before,after,changes){
   }
 }
 
+function shipmentChanges(p,source){
+  if(p.kind==="release"||p.kind==="finalise")return p.changes;
+  const v=parseVersion(source);
+  check(v!==null&&v.PATCH<2147483647,"invalid or exhausted PATCH");
+  const content=source.replace(VERSION_PART,(whole,key,eq,num,end)=>key==="PATCH"?key+eq+String(v.PATCH+1)+end:whole);
+  validateVersionBump(source,content);
+  return [...p.changes,{path:"src/version.py",old:p.versionBlob,content}];
+}
+
 async function checkBase(api,p){
   const b=await api.get("/git/commits/"+p.base);
   check(b.sha===p.base&&isSha(b.tree?.sha),"invalid base");
@@ -195,7 +204,7 @@ async function checkBase(api,p){
     const x=entries.get(c.path)??null;
     check(c.old===null?x===null:x?.sha===c.old&&x.type==="blob"&&x.mode==="100644","stale base blob or mode: "+c.path);
   }
-  return {sha:b.tree.sha,entries};
+  return {sha:b.tree.sha,entries,changes:shipmentChanges(p,served.content)};
 }
 
 async function versionHistory(api,base){
@@ -251,12 +260,13 @@ async function verifyCandidate(api,p,candidate){
     validateVersionBump(baseVersion.content,newVersion.content);
     check(v?.mode==="100644"&&v.sha!==p.versionBlob,"finalise must replace the version blob");
   }else{
-    check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
+    const expected=before.changes.find(x=>x.path==="src/version.py");
+    check(v?.sha===blobSha(expected.content)&&v.mode==="100644","candidate PATCH mismatch");
   }
-  verifyTreeDelta(before.entries,after,p.changes);
-  for(const x of p.changes){
+  verifyTreeDelta(before.entries,after,before.changes);
+  for(const x of before.changes){
     const t=after.get(x.path), file=await api.file(candidate,x.path);
-    check(t?.mode==="100644"&&t.type==="blob"&&t.sha===file.sha&&file.content===x.content,"candidate content/mode mismatch: "+x.path);
+    check(t?.mode==="100644"&&t.type==="blob"&&t.sha===file.sha&&file.content===x.content&&(x.path!=="src/version.py"||t.sha===blobSha(file.content)),"candidate content/mode mismatch: "+x.path);
   }
 }
 
@@ -293,7 +303,7 @@ async function createCandidate(api,p){
   checkPending(comments);
   check(await tip(api)===p.base,"stale base");
   const baseTree=await checkBase(api,p);
-  const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
+  const tree=await api.tree(baseTree.sha,baseTree.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
   check(isSha(tree),"invalid tree");
   const candidate=await api.commit(tree,p.base,candidateMessage(p));
   check(isSha(candidate),"invalid candidate");
@@ -354,7 +364,7 @@ async function recordHandover(api,p,candidate){
     // the original issue must contain the exact SHA/base delivery intent.
     const prefix="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent=";
     check(comments.some(c=>(c.body||"").includes(prefix)),"missing pending receipt for landed candidate");
-    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nFiles: "+p.changes.map(x=>x.path).join(", ")+"\n"+shipped);
+    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nFiles: "+[...p.changes.map(x=>x.path),...(p.kind==="release"?[]:["src/version.py"])].join(", ")+"\n"+shipped);
     check(Number.isSafeInteger(id),"handover not acknowledged; retry exact candidate");
     const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
     check(confirmed.some(c=>c.id===id&&(c.body||"").includes(shipped)),"handover not visible");

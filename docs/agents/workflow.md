@@ -80,8 +80,8 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
 - Every `agent.py ship` has an immutable commit SHA; `src/version.py` is release
-  SemVer. Owner policy (27 Nov 2026): **agents may increment PATCH independently in `develop`**, never
-  `main`. MINOR and MAJOR remain owner-directed. The old `--assign-patch` flag is ignored. The version-history guard runs
+  SemVer. Owner policy (27 Nov 2026): **each nonempty shipment automatically increments PATCH in `develop`**, never
+  `main`. MINOR and MAJOR remain owner-directed. The old `--assign-patch` flag is unnecessary. The version-history guard runs
   regardless of `--skip-checks`. If targeted checks already ran, use
   `--skip-checks` and record the evidence at finish; never claim unrun checks passed.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
