@@ -32,6 +32,10 @@ MAX_AUDIO_DURATION_SECONDS = 24 * 60 * 60
 MAX_ACTIVE_UPLOADS = 3
 MIN_FREE_BYTES = 512 * 1024 * 1024
 PARTIAL_TTL_SECONDS = 24 * 60 * 60
+# Finished uploads neither written nor read (cast) for two weeks are reclaimed
+# at start-up; without this the private upload folder grows without bound.
+COMPLETED_TTL_SECONDS = 14 * 24 * 60 * 60
+_UPLOAD_STEM = re.compile(r"[A-Za-z0-9_-]{32}")
 ANNOUNCE_TTL_SECONDS = 15 * 60
 ANNOUNCE_MAX = 100
 VIDEO_SUFFIXES = frozenset({
@@ -236,6 +240,24 @@ class UploadManager:
         self._announced: dict[str, tuple[float, list[dict]]] = {}
         self._lock = threading.RLock()
         self._remove_expired_partials()
+        self._remove_stale_completed()
+
+    def _remove_stale_completed(self) -> None:
+        cutoff = self._clock() - COMPLETED_TTL_SECONDS
+        try:
+            paths = list(self.root.iterdir())
+        except OSError:
+            return
+        for path in paths:
+            if (path.suffix.lower() not in VIDEO_SUFFIXES | AUDIO_SUFFIXES
+                    or not _UPLOAD_STEM.fullmatch(path.stem)):
+                continue
+            try:
+                info = path.lstat()
+                if stat.S_ISREG(info.st_mode) and max(info.st_mtime, info.st_atime) < cutoff:
+                    path.unlink()
+            except OSError:
+                continue
 
     def _remove_expired_partials(self) -> None:
         cutoff = self._clock() - PARTIAL_TTL_SECONDS
