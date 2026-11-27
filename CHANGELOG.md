@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 76f4878e1d9db68c666d7927efc37b885b464313 -->
+<!-- sc-changelog-through: 11ea3152ad345d9ec3046c4952a90515fe296775 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:41:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:43:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:43:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`11ea3152ad34`](https://github.com/gmanldn/smoothcast/commit/11ea3152ad345d9ec3046c4952a90515fe296775)
+
+- 🟨 **15:42:42 · Documentation** — docs: record Cast backend dependency pins and licences (Refs #202) · [`a9516374a3f1`](https://github.com/gmanldn/smoothcast/commit/a9516374a3f1fd1dbcd0a7010f2caaccf725af94)
 
 - ⬜ **15:41:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`76f4878e1d9d`](https://github.com/gmanldn/smoothcast/commit/76f4878e1d9db68c666d7927efc37b885b464313)
+
+- ⬜ **15:41:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f0ba271f0a5a`](https://github.com/gmanldn/smoothcast/commit/f0ba271f0a5a42896d82ddfc2df01388fcd9d8a5)
 
 - 🟪 **15:41:24 · Tests** — test(portal): upload recovery harness supplies the confirmed receiver required by the #572 retry fence, so the reconcile and fallback tests exercise the retry again (Refs #686) · [`86b2fe60c2fe`](https://github.com/gmanldn/smoothcast/commit/86b2fe60c2fec91793e1dbea8465f290effef442)
 
