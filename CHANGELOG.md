@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2efacec86a3317f68220f8b8c81885141418cf82 -->
+<!-- sc-changelog-through: e3cb8c1d6d9e7e2f30e2344e6f73fa2274fe356e -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:40:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:43:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e3cb8c1d6d9e`](https://github.com/gmanldn/smoothcast/commit/e3cb8c1d6d9e7e2f30e2344e6f73fa2274fe356e)
+
+- 🟩 **06:43:39 · Feature** — feat(stream): publish measured stream-health from the HLS server and attach it to the room status as stream\_health (Refs #49) · [`3bdacaf4592b`](https://github.com/gmanldn/smoothcast/commit/3bdacaf4592b6c3a320593c3abb4d65d4b605d92)
+
+- 🟩 **06:41:45 · Feature** — feat(remote): pure playback phase projection and bounded recovery notifier (Refs #338) · [`a8ca1da8162f`](https://github.com/gmanldn/smoothcast/commit/a8ca1da8162f5d791f261b7ec6e219cca5ca4e4e)
 
 - ⬜ **06:40:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2efacec86a33`](https://github.com/gmanldn/smoothcast/commit/2efacec86a3317f68220f8b8c81885141418cf82)
+
+- ⬜ **06:40:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ef9352eabdfe`](https://github.com/gmanldn/smoothcast/commit/ef9352eabdfe670cece2be7469f002c468e65d3e)
 
 - 🟩 **06:40:26 · Feature** — feat(stream): server counts served and failed HLS segments into the measured stream-health aggregate (Refs #49) · [`7c712970d1bf`](https://github.com/gmanldn/smoothcast/commit/7c712970d1bfed23360419b6635fb4bb49075681)
 
