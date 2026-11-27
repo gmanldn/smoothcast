@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a0a11de7f67e12aef5cb05e002a912847de5865a -->
+<!-- sc-changelog-through: 805574cdd94a70d8abe4185ec203be7870a23e37 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:55:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:57:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:57:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`805574cdd94a`](https://github.com/gmanldn/smoothcast/commit/805574cdd94a70d8abe4185ec203be7870a23e37)
+
+- 🟩 **16:57:28 · Feature** — feat(doctor): warn when the receiver route runs through a VPN; doctor.py baseline 187-&gt;188 for the one-line hook into doctor\_vpn (Refs #211, #210) (Refs #325) · [`41c5a1f878d1`](https://github.com/gmanldn/smoothcast/commit/41c5a1f878d10988b454c7ebe4cd5545ecc8f405)
+
+- ⬜ **16:55:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d369e2dc030f`](https://github.com/gmanldn/smoothcast/commit/d369e2dc030f7bfb43616ec838e6eb09cc243431)
 
 - ⬜ **16:55:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a0a11de7f67e`](https://github.com/gmanldn/smoothcast/commit/a0a11de7f67e12aef5cb05e002a912847de5865a)
 
