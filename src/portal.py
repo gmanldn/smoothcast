@@ -459,6 +459,16 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._sessions.move_to_end(key)
             return session.participant_id
 
+    def participant_capabilities(self, participant_id: str) -> set[str]:
+        """Every capability a participant holds.
+
+        On the trusted home LAN every authenticated participant holds every
+        capability. Return the declared capability set so a future role model
+        can restrict per-participant access without changing the caller.
+        """
+        del participant_id  # All participants hold all capabilities in this model.
+        return {cap for cap in api_spec.ROUTE_CAPABILITIES.values() if cap is not None}
+
     def resume_session(self, token: str | None) -> tuple[str, portal_room.Participant] | None:
         """Return the existing CSRF token and participant for a valid cookie."""
         if not token:
@@ -761,8 +771,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _libraries(self) -> None:
         """Libraries on the network: nodes and their shared folders, browsable by path (#413)."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized(self.path, "GET"):
+            return
         browser = getattr(self.server, "library_browser", None)
         if browser is None:
             return self._send(200, {"origins": []})
@@ -865,8 +875,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _events(self) -> None:
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized("/api/events", "GET"):
+            return
         participant_id = self.server.session_participant(self._cookie_token())
         if participant_id is None:
             return self._error(401, "Session expired")
@@ -930,8 +940,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _search_stream(self) -> None:
         """Server-sent events: cached results at once, late origins as they answer."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized("/api/search/stream", "GET"):
+            return
         stream = getattr(self.server, "library_search_stream", None)
         text = (parse_qs(urlsplit(self.path).query).get("q") or [""])[0]
         if not text.strip():
@@ -954,8 +964,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _search(self) -> None:
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
-        if not self._authenticated():
-            return self._error(401, "Session expired")
+        if not self._authorized("/api/search", "GET"):
+            return
         if self._throttle("read"):
             return
         engine = getattr(self.server, "library_search", None)
@@ -1019,6 +1029,30 @@ class _Handler(BaseHTTPRequestHandler):
         if csrf:
             supplied = self.headers.get("X-CSRF-Token", "")
             return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
+        return True
+
+    def _authorized(self, path: str, method: str, *, csrf: bool = False) -> bool:
+        """Authorize a request against the route's declared capability.
+
+        Combines authentication (session cookie + CSRF when required) with the
+        capability check from ``src/api_spec.py``. Every authenticated participant
+        on the trusted home LAN holds every capability; the check is enforced at
+        dispatch so a future role model can restrict per-participant access.
+        Returns True when authorized; sends 401/403 and returns False otherwise.
+        """
+        if not self._authenticated(csrf=csrf):
+            self._error(401, "Session expired")
+            return False
+        capability = api_spec.required_capability(path, method)
+        if capability is not None:
+            participant = self.server.session_participant(self._cookie_token())
+            if participant is None:
+                self._error(401, "Session expired")
+                return False
+            if capability not in self.server.participant_capabilities(participant):
+                self._error(403, f"This action requires the {capability} capability",
+                            code="portal.missing_capability")
+                return False
         return True
 
     def _throttle(self, route_class: str) -> bool:
@@ -1103,8 +1137,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/events":
             return self._events()
         if path == "/api/status":
-            if not self._authenticated():
-                return self._error(401, "Enter the PIN shown in SmoothCast")
+            if not self._authorized(path, "GET"):
+                return
             if self._throttle("read"):
                 return
             participant_id = self.server.session_participant(self._cookie_token())
@@ -1116,7 +1150,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._error(exc.status, exc.message)
             return self._send(200, payload)
         upload_id = self._upload_route(path)
-        if upload_id and self._authenticated():
+        if upload_id:
+            if not self._authorized(path, "GET"):
+                return
             if self._throttle("upload"):
                 return
             if self.server.uploads is None:
@@ -1126,8 +1162,6 @@ class _Handler(BaseHTTPRequestHandler):
                     self._cookie_token() or "", upload_id)})
             except portal_uploads.UploadError as exc:
                 return self._exception_error(exc)
-        if upload_id:
-            return self._error(401, "Enter the PIN shown in SmoothCast")
         return self._error(404, "Not found")
 
     def do_POST(self) -> None:  # noqa: N802
@@ -1141,7 +1175,9 @@ class _Handler(BaseHTTPRequestHandler):
         if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
-            if self._authenticated(csrf=True) and self._throttle(
+            if not self._authorized(path, "POST", csrf=True):
+                return
+            if self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
                 return
         if portal_update_http.route(self, "POST", path):
@@ -1149,8 +1185,8 @@ class _Handler(BaseHTTPRequestHandler):
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads/target":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/uploads/target", "POST", csrf=True):
+                return
             try:
                 self._body()
                 target = self.server.dispatch("upload_target", {
@@ -1160,8 +1196,8 @@ class _Handler(BaseHTTPRequestHandler):
             except PortalRequestError as exc:
                 return self._exception_error(exc)
         if path == "/api/uploads/announce":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/uploads/announce", "POST", csrf=True):
+                return
             try:
                 if self.server.uploads is None:
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
@@ -1171,8 +1207,8 @@ class _Handler(BaseHTTPRequestHandler):
             except (PortalRequestError, portal_uploads.UploadError) as exc:
                 return self._exception_error(exc)
         if path == "/api/uploads":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/uploads", "POST", csrf=True):
+                return
             try:
                 if self.server.uploads is None:
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
@@ -1207,8 +1243,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(201, {"ok": True, **created})
         upload_id = self._upload_complete_route(path)
         if upload_id:
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized(path, "POST", csrf=True):
+                return
             try:
                 if self.server.uploads is None:
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
@@ -1289,8 +1325,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
         if path == "/api/search/magnets":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/search/magnets", "POST", csrf=True):
+                return
             jobs = self.server.link_jobs
             if jobs is None or not callable(getattr(jobs, "search_magnets", None)):
                 return self._error(503, "Archive search is unavailable in this room.")
@@ -1300,8 +1336,8 @@ class _Handler(BaseHTTPRequestHandler):
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path == "/api/search/youtube":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/search/youtube", "POST", csrf=True):
+                return
             jobs = self.server.link_jobs
             if jobs is None:
                 return self._error(503, guest_messages.YOUTUBE_OFF)
@@ -1311,8 +1347,8 @@ class _Handler(BaseHTTPRequestHandler):
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path in {"/api/link-jobs", "/api/link-jobs/cancel", "/api/link-jobs/retry"}:
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized(path, "POST", csrf=True):
+                return
             jobs = self.server.link_jobs
             if jobs is None:
                 return self._error(503, guest_messages.LINK_DOWNLOADS_OFF)
@@ -1333,8 +1369,8 @@ class _Handler(BaseHTTPRequestHandler):
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path == "/api/profile":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/profile", "POST", csrf=True):
+                return
             name = body.get("name")
             if not isinstance(name, str):
                 return self._error(400, "Your name must be text")
@@ -1348,8 +1384,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True,
                                     "participant": participant.public(self.server.clock())})
         if path == "/api/action":
-            if not self._authenticated(csrf=True):
-                return self._error(403, guest_messages.SESSION_ENDED)
+            if not self._authorized("/api/action", "POST", csrf=True):
+                return
             action = body.get("action")
             envelope: portal_commands.MutationEnvelope | None = None
             participant_id: str | None = None
@@ -1512,8 +1548,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:  # noqa: N802
         if self._path().startswith("/api/uploads") and not self._client_compatible():
             return
-        if not self._authenticated(csrf=True):
-            return self._error(403, guest_messages.SESSION_ENDED)
+        if not self._authorized(self._path(), "PUT", csrf=True):
+            return
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
@@ -1556,8 +1592,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if portal_screens_http.route(self, "DELETE", self._path()):
             return
-        if not self._authenticated(csrf=True):
-            return self._error(403, guest_messages.SESSION_ENDED)
+        if not self._authorized(self._path(), "DELETE", csrf=True):
+            return
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())

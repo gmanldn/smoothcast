@@ -142,3 +142,68 @@ def test_portal_serves_the_document_without_a_session():
         assert status == 200 and body == json.loads(api_spec.dumps())
     finally:
         harness.close()
+
+
+def test_unauthenticated_status_is_rejected():
+    """GET /api/status requires a session (room:read capability)."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("GET", "/api/status")
+        assert status in (401, 403), f"expected 401/403, got {status}: {body}"
+    finally:
+        harness.close()
+
+
+def test_authenticated_status_succeeds():
+    """Authenticated GET /api/status returns 200 (all participants hold room:read)."""
+    harness = RoomHarness(count=1)
+    try:
+        client = harness.login("alice")
+        status, body, _ = client.status()
+        assert status == 200
+    finally:
+        harness.close()
+
+
+def test_unauthenticated_action_is_rejected():
+    """POST /api/action requires a session (room:write capability)."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("POST", "/api/action",
+                                          {"action": "play_pause"})
+        assert status in (401, 403), f"expected 401/403, got {status}: {body}"
+    finally:
+        harness.close()
+
+
+def test_authenticated_action_succeeds():
+    """Authenticated POST /api/action returns 202 (all participants hold room:write)."""
+    harness = RoomHarness(count=1)
+    try:
+        client = harness.login("alice")
+        status, body, _ = client.action({"action": "play_pause"})
+        assert status == 202
+    finally:
+        harness.close()
+
+
+def test_public_route_without_session_succeeds():
+    """GET /api/config is public (no capability) and works without a session."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("GET", "/api/config")
+        assert status == 200
+        assert "pin_required" in body
+    finally:
+        harness.close()
+
+
+def test_unauthenticated_upload_is_rejected():
+    """POST /api/uploads requires a session (uploads:create capability)."""
+    harness = RoomHarness(count=1)
+    try:
+        status, body, _ = harness.request("POST", "/api/uploads",
+                                          {"name": "film.mp4", "size": 100})
+        assert status in (401, 403), f"expected 401/403, got {status}: {body}"
+    finally:
+        harness.close()
