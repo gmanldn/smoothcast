@@ -8,8 +8,6 @@ stored, so restart keeps policy but drops old guest sessions.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
 ROLES = ("viewer", "controller", "host")
@@ -77,12 +75,6 @@ class Policy:
         return None if self.locked else self.default_role
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".policy")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"default_role": self.default_role, "locked": self.locked}, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        import store  # atomic, fsynced, owner-only (#701)
+        if not store.Store(self.path).write({"default_role": self.default_role, "locked": self.locked}):
+            raise OSError(f"could not save {self.path}")
