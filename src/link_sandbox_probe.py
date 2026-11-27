@@ -16,6 +16,8 @@ canary is created and removed by this module. GTK-free.
 """
 from __future__ import annotations
 
+import paths
+
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -265,8 +267,7 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
 
 # -- cached result, tied to the exact launcher file ---------------------------------------
 def cache_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "cast-control" / "link-qualification.json"
+    return paths.config_dir() / "link-qualification.json"
 
 
 def _identity(launcher: str) -> dict | None:

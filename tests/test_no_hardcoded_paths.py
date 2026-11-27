@@ -8,11 +8,11 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 ALLOWED = {
-    "paths.py", "mpris.py", "control_api.py",  # mpris: a D-Bus desktop-entry id, not a path
+    "paths.py", "mpris.py", "control_api.py", "diagnostics.py",  # mpris: a D-Bus desktop-entry id, not a path
     "demo_session.py", "demo_mode.py", 
     "receiver_memory.py", "reliability_metrics.py",
-    "diagnostics.py", "streamer.py", "cast_portal_room.py",
-    "cast_widgets.py", "doctor.py", "link_sandbox_probe.py", "low_end_policy.py",
+    "streamer.py", 
+    "cast_widgets.py", 
     "portal_uploads.py", "server.py",
 }
 

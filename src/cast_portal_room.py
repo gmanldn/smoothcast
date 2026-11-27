@@ -5,6 +5,8 @@ INV-011 read budget; the methods run on the same ``PortalMixin`` instance.
 """
 from __future__ import annotations
 
+import paths
+
 import hashlib
 
 import portal
@@ -122,10 +124,9 @@ class PortalRoomMixin:
             return
         if isinstance(state, dict):
             import stream_health
-            import pathlib
 
             # Tiny bounded file written by the HLS server process (#49).
-            measured = stream_health.read_snapshot(pathlib.Path.home() / ".cache" / "cast-control")
+            measured = stream_health.read_snapshot(paths.cache_dir())
             if measured is not None:
                 state["stream_health"] = measured
             if self.external:

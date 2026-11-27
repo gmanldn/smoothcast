@@ -6,6 +6,8 @@ a network, GTK or FFmpeg. Nothing here changes the system; fixes are only ever
 """
 from __future__ import annotations
 
+import paths
+
 import json
 import shutil
 import socket
@@ -166,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--receiver", metavar="HOST", help="also check this receiver is reachable")
     args = parser.parse_args(argv)
-    cache = Path.home() / ".cache" / "cast-control"
+    cache = paths.cache_dir()
     checks: list[Callable[[], Result]] = [
         python_version, ffmpeg, lambda: disk_space(cache), temp_writable, listener,
         default_route, multicast, clock]
