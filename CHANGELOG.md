@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 02f9929e5c95743d92be6879695d0e8b22eaa525 -->
+<!-- sc-changelog-through: 60c595b7eaf9c19534be158f2db2042fde78822a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:30:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:32:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:32:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`60c595b7eaf9`](https://github.com/gmanldn/smoothcast/commit/60c595b7eaf9c19534be158f2db2042fde78822a)
+
+- 🟩 **07:32:20 · Feature** — feat(web): publish source chapters in the room status so the web room can show and jump to them (Refs #39) (Refs #325) · [`8275cbd73763`](https://github.com/gmanldn/smoothcast/commit/8275cbd737633bc1638a3688c38dba7f3259497f)
+
+- 🟩 **07:31:06 · Feature** — feat(health): pure house health view-model and strict node.heartbeat validation (Refs #386) · [`510d918a31bd`](https://github.com/gmanldn/smoothcast/commit/510d918a31bd0fc0ee98def8a40f02bfe7c6e380)
+
+- ⬜ **07:30:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`339a0abdcf43`](https://github.com/gmanldn/smoothcast/commit/339a0abdcf43bb9ea730d0e0fb93d7df2834304c)
 
 - ⬜ **07:30:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`02f9929e5c95`](https://github.com/gmanldn/smoothcast/commit/02f9929e5c95743d92be6879695d0e8b22eaa525)
 
