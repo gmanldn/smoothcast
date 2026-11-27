@@ -96,6 +96,7 @@ py-modules = [
     "cast_ui_timers",
     "cast_widgets",
     "castctl",
+    "cec_control",
     "chapters",
     "chrome_ingress_session",
     "chrome_mesh_readiness",
