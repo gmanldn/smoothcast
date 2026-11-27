@@ -7,6 +7,7 @@ Safe to call from any thread and does not import or launch GTK.
 from __future__ import annotations
 
 from collections import deque
+import paths
 import datetime as _dt
 import os
 import pathlib
@@ -36,7 +37,7 @@ FORMAT_ENV = "SMOOTHCAST_LOG_FORMAT"
 class ErrorLog:
     def __init__(self, path: Optional[pathlib.Path | str] = None) -> None:
         if path is None:
-            path = pathlib.Path.home() / ".config" / "cast-control" / FILENAME
+            path = paths.config_dir() / FILENAME
         self._path = pathlib.Path(path)
         self._lock = threading.Lock()
         self._lines: deque[str] = deque()

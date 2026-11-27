@@ -11,6 +11,7 @@ Pure module: no GTK, processes or network.
 from __future__ import annotations
 
 from collections import OrderedDict
+import paths
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 import hashlib
@@ -108,7 +109,7 @@ def _cache_read(path: Path, key: str) -> Analysis | None:
 
 
 def analysis_cache_path() -> Path:
-    return Path.home() / ".cache/cast-control/music-autogain.json"
+    return paths.cache_dir() / "music-autogain.json"
 
 
 def get_cached(path: str | os.PathLike, track: int, profile: str,

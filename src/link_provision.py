@@ -17,8 +17,8 @@ _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "link_sandbox_bwr
 
 
 def wrapper_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "cast-control" / "link-sandbox"
+    import paths
+    return paths.config_dir() / "link-sandbox"
 
 
 def default_launcher() -> str:
