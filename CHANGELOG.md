@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 29e8a55217fa177caf0ea69cc387282b708ab928 -->
+<!-- sc-changelog-through: e91814dc3ae84225165da47904305a8623f1ce24 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:06:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:11:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:11:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e91814dc3ae8`](https://github.com/gmanldn/smoothcast/commit/e91814dc3ae84225165da47904305a8623f1ce24)
+
+- 🟥 **19:10:47 · Fix** — fix: contain guest uploads within the upload root (Refs #325) · [`fa85e55d8986`](https://github.com/gmanldn/smoothcast/commit/fa85e55d89861a77aafaa7c1dc9009cb313b2978)
 
 - ⬜ **19:06:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`29e8a55217fa`](https://github.com/gmanldn/smoothcast/commit/29e8a55217fa177caf0ea69cc387282b708ab928)
 
 - 🟥 **19:06:15 · Fix** — fix: honor deferred bootstrap interrupt before success (Refs #580) · [`6aa2138844b0`](https://github.com/gmanldn/smoothcast/commit/6aa2138844b0b32b5558dd6236a0c1d4b8c8f206)
+
+- ⬜ **19:06:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4886a238aba1`](https://github.com/gmanldn/smoothcast/commit/4886a238aba1dac3326ebacfce59d983be10b0a4)
 
 - ⬜ **19:03:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`15e385f85a87`](https://github.com/gmanldn/smoothcast/commit/15e385f85a87cea4177b7e77023ac608c450033c)
 
