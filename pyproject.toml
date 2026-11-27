@@ -343,6 +343,7 @@ py-modules = [
     "room_queues",
     "room_store",
     "rooms_zones",
+    "sandbox_port",
     "sc_core",
     "screenshot",
     "search_engine",
