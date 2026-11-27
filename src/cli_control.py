@@ -30,6 +30,7 @@ import re
 import sys
 
 import castctl
+import playback_state
 import command_trace
 import state_labels
 import streamer
@@ -189,7 +190,7 @@ def cmd_status(args: argparse.Namespace) -> dict:
         "playing": castctl.is_playing(info),
         "position": info.get("current_time"),
         "duration": info.get("duration"),
-        "title": info.get("title") or "",
+        "title": playback_state.reported_title(info),
         "volume": castctl.volume_percent(info),
         "muted": castctl.volume_muted(info),
         "seekable": castctl.is_seekable(info),

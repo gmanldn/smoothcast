@@ -98,7 +98,7 @@ def timer_expired(deadline: object, now: float) -> bool:
     return math.isfinite(value) and value > 0 and now >= value
 
 
-def _reported_title(info: dict) -> str:
+def reported_title(info: dict) -> str:
     """Title the receiver reports: catt's ``info -j`` nests it in media_metadata."""
     title = info.get("title")
     if not title:
@@ -120,7 +120,7 @@ def direct_session_matches(info: dict | None, saved_title: str) -> bool:
         return False
     # Some Chromecast receivers omit titles. Reject a known mismatch rather
     # than attaching our media controls to another app's unrelated stream.
-    current_title = _reported_title(info)
+    current_title = reported_title(info)
     saved_title = str(saved_title or "").strip()
     if current_title and saved_title and current_title.casefold() != saved_title.casefold():
         return False
@@ -139,7 +139,7 @@ def hls_session_matches(info: dict | None, saved_url: str, saved_title: str) -> 
         return False
     if str(info.get("content_id") or "").strip() != saved_url:
         return False
-    current_title = _reported_title(info)
+    current_title = reported_title(info)
     if current_title and saved_title and current_title.casefold() != saved_title.strip().casefold():
         return False
     return True

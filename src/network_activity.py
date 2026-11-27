@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ipaddress
+import playback_state
 import math
 import re
 import time
@@ -55,7 +56,7 @@ def _active_entry(protocol: str, receiver: str, host: str, info: object) -> dict
         "protocol": protocol,
         "receiver": _safe_title(receiver, "Unknown receiver"),
         "host": host,
-        "title": _safe_title(info.get("title") or info.get("media_title"), "Media title unavailable"),
+        "title": _safe_title(info.get("title") or info.get("media_title") or playback_state.reported_title(info), "Media title unavailable"),
         "state": state,
         "position": _number(info.get("current_time")),
         "duration": _number(info.get("duration")),

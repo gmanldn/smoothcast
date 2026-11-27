@@ -10,6 +10,7 @@ import time
 from typing import Callable
 
 import castctl
+import playback_state
 
 
 class ForeignPlayback(RuntimeError):
@@ -20,7 +21,7 @@ def classify(info: object, expected_title: str) -> str:
     if not isinstance(info, dict):
         return "uncertain"
     state = str(info.get("player_state") or "").upper()
-    title = str(info.get("title") or "").strip()
+    title = playback_state.reported_title(info)
     expected = str(expected_title or "").strip()
     if state in {"PLAYING", "PAUSED"}:
         if title and expected and title.casefold() != expected.casefold():
