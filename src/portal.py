@@ -102,6 +102,7 @@ class _Session:
     csrf: str
     expiry: float
     participant_id: str
+    is_host: bool = False
 
 
 class PortalError(RuntimeError):
@@ -343,7 +344,34 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         with self._lock:
             if self.pin_required and not self.pin_allowed(client, pin):
                 raise PortalRequestError(401, "Incorrect PIN or too many attempts")
-            return self.create_session(name)
+            token, csrf, participant = self.create_session(name)
+            self._sessions[self._session_key(token)].is_host = self.is_host_client(client)
+            return token, csrf, participant
+
+    def is_host_client(self, client: str) -> bool:
+        """Only a browser connecting from this host's bound address is the host."""
+        try:
+            remote = ipaddress.ip_address(client.split("%", 1)[0])
+            bound = ipaddress.ip_address(str(self.server_address[0]).split("%", 1)[0])
+            if isinstance(remote, ipaddress.IPv6Address) and remote.ipv4_mapped:
+                remote = remote.ipv4_mapped
+            if isinstance(bound, ipaddress.IPv6Address) and bound.ipv4_mapped:
+                bound = bound.ipv4_mapped
+            return not bound.is_unspecified and remote == bound
+        except ValueError:
+            return False
+
+    def session_is_host(self, token: str | None) -> bool:
+        """Whether this live session was authenticated by a browser on this host."""
+        return self.session_key_is_host(self._session_key(token) if token else None)
+
+    def session_key_is_host(self, key: str | None) -> bool:
+        if not isinstance(key, str) or len(key) != 64:
+            return False
+        with self._lock:
+            self._expire_sessions(self.clock())
+            session = self._sessions.get(key)
+            return bool(session and session.is_host)
 
     def revoke_participant(self, participant_id: str) -> int:
         """Host-only: drop every session for one room identity, not playback."""
@@ -469,15 +497,18 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._sessions.move_to_end(key)
             return session.participant_id
 
-    def participant_capabilities(self, participant_id: str) -> set[str]:
+    def participant_capabilities(self, participant_id: str, *, host: bool = False) -> set[str]:
         """Every capability a participant holds.
 
-        On the trusted home LAN every authenticated participant holds every
-        capability. Return the declared capability set so a future role model
-        can restrict per-participant access without changing the caller.
+        Authenticated room participants share room controls. Host management is
+        restricted to sessions logged in from this server's bound address.
         """
-        del participant_id  # All participants hold all capabilities in this model.
-        return {cap for cap in api_spec.ROUTE_CAPABILITIES.values() if cap is not None}
+        del participant_id  # Room roles are shared; host authority comes from the local connection.
+        capabilities = {cap for cap in api_spec.ROUTE_CAPABILITIES.values()
+                        if cap is not None and cap != "room:host"}
+        if host:
+            capabilities.add("room:host")
+        return capabilities
 
     def resume_session(self, token: str | None) -> tuple[str, portal_room.Participant] | None:
         """Return the existing CSRF token and participant for a valid cookie."""
@@ -802,7 +833,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(404, "That library isn't available right now.")
         return self._send(200, result)
 
-    def _room_payload(self, participant_id: str) -> dict:
+    def _room_payload(self, participant_id: str, *, host: bool = False) -> dict:
         """The authenticated status document shared by /api/status and /api/events."""
         try:
             if self.server.status_snapshot is None:
@@ -835,6 +866,7 @@ class _Handler(BaseHTTPRequestHandler):
         uploads = self.server.uploads
         state["room_transfers"] = uploads.room_transfers() if uploads is not None else []
         state["room"] = self.server.room.snapshot(participant_id)
+        state["room"]["can_rename"] = host
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
         state["link_search_available"] = (jobs.search_available() if jobs is not None
@@ -887,7 +919,8 @@ class _Handler(BaseHTTPRequestHandler):
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
         if not self._authorized("/api/events", "GET"):
             return
-        participant_id = self.server.session_participant(self._cookie_token())
+        session_token = self._cookie_token()
+        participant_id = self.server.session_participant(session_token)
         if participant_id is None:
             return self._error(401, "Session expired")
         if not self.server.acquire_event_stream(participant_id):
@@ -895,7 +928,8 @@ class _Handler(BaseHTTPRequestHandler):
                                     "code": "room.rate_limited"}, extra_headers={"Retry-After": "5"})
         key = self._event_key()
         try:
-            first = self._room_payload(participant_id)
+            is_host = self.server.session_is_host(session_token)
+            first = self._room_payload(participant_id, host=is_host)
         except PortalRequestError as exc:
             self.server.release_event_stream(participant_id)
             return self._error(exc.status, exc.message)
@@ -935,7 +969,7 @@ class _Handler(BaseHTTPRequestHandler):
                 current = self._event_key()
                 if current != key or now - last_state >= EVENT_RESEND_SECONDS:
                     try:
-                        payload = self._room_payload(participant_id)
+                        payload = self._room_payload(participant_id, host=is_host)
                         key = current
                     except PortalRequestError:
                         pass
@@ -1059,7 +1093,8 @@ class _Handler(BaseHTTPRequestHandler):
             if participant is None:
                 self._session_rejected(csrf)
                 return False
-            if capability not in self.server.participant_capabilities(participant):
+            if capability not in self.server.participant_capabilities(
+                    participant, host=self.server.session_is_host(self._cookie_token())):
                 self._error(403, f"This action requires the {capability} capability",
                             code="portal.missing_capability")
                 return False
@@ -1149,6 +1184,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "ok": True, "csrf": csrf,
                 "participant": participant.public(self.server.clock()),
+                "room": {"name": self.server.room.name,
+                         "can_rename": self.server.session_is_host(self._cookie_token())},
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             })
         if path == "/api/events":
@@ -1158,11 +1195,13 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if self._throttle("read"):
                 return
-            participant_id = self.server.session_participant(self._cookie_token())
+            session_token = self._cookie_token()
+            participant_id = self.server.session_participant(session_token)
             if participant_id is None:
                 return self._error(401, "Session expired")
             try:
-                payload = self._room_payload(participant_id)
+                payload = self._room_payload(
+                    participant_id, host=self.server.session_is_host(session_token))
             except PortalRequestError as exc:
                 return self._error(exc.status, exc.message)
             return self._send(200, payload)
@@ -1185,11 +1224,11 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
-        if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
+        if (path in {"/api/login", "/api/action", "/api/profile", "/api/room/rename", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
-        if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
+        if (path in {"/api/action", "/api/profile", "/api/room/rename", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
             if not self._authorized(path, "POST", csrf=True):
@@ -1338,9 +1377,29 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "ok": True, "csrf": csrf,
                 "participant": participant.public(self.server.clock()),
-                "room": self.server.room.snapshot(participant.id),
+                "room": {**self.server.room.snapshot(participant.id),
+                         "can_rename": self.server.session_is_host(token)},
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
+        if path == "/api/room/rename":
+            name = body.get("name")
+            if not isinstance(name, str) or len(name) > portal_room.MAX_NAME:
+                return self._error(400, "Room name must be 40 characters or fewer")
+            token = self._cookie_token()
+            participant_id = self.server.session_participant(token)
+            if participant_id is None:
+                return self._error(401, "Session expired")
+            try:
+                self.server.dispatch("room_rename", {
+                    "name": name, "_portal_auth_key": self.server._session_key(token or ""),
+                })
+            except (PortalRequestError, portal_room.RoomError) as exc:
+                return self._exception_error(exc)
+            except OSError:
+                return self._error(500, "Could not save the room name")
+            room = self.server.room.snapshot(participant_id)
+            room["can_rename"] = True
+            return self._send(200, {"ok": True, "room": room})
         if path == "/api/search/magnets":
             if not self._authorized("/api/search/magnets", "POST", csrf=True):
                 return
@@ -2129,6 +2188,8 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #dashboard nav a[aria-current="page"]{background:var(--input);border-color:var(--accent)}
 #homePanel{background:transparent;border:0;box-shadow:none;padding:0;min-width:0}
 #homePanel>.room-heading{margin:0 0 12px;flex-wrap:wrap;gap:6px}
+.home-room-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.home-room-title h2{margin:0}
 #homePanel .home-lead{font-size:.84rem;color:var(--muted);margin:0}
 #homePanel #quickCastCard{padding:14px 16px}
 #homePanel #quickCastHeading{font-size:1rem;margin:0 0 8px}
@@ -2175,7 +2236,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
-<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
+<div class="room-heading"><div class="home-room-title"><h2 id="homeHeading" tabindex="-1">Your room</h2><a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a></div><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
 <div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <h2 id="quickCastHeading">Cast from this device</h2>
@@ -2292,14 +2353,16 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="people" class="participants"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
-<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
+<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Choose who a setting affects: your profile, this browser, or everyone in the shared room. Room-wide controls affect everyone using this room. Host policies and library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">To rename the shared room, use Room → Rename on the computer running SmoothCast.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">Your display name is shown to people in this room. Changing it does not change the room name.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
 <p id="remoteDimHint" role="status" hidden>Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.</p>
 </section>
+<section aria-labelledby="roomNameHeading"><h3 id="roomNameHeading">Shared room</h3>
+<form id="roomNameForm" hidden><label for="roomNameInput">Room name</label><p class="field-hint">This name appears to everyone in the room. Rename is available only in a browser on the computer running SmoothCast.</p><div class="actions"><input id="roomNameInput" maxlength="40" autocomplete="off" aria-describedby="roomNameStatus" required><button id="saveRoomName" class="secondary" type="submit">Save room name</button></div><p id="roomNameStatus" class="field-hint" role="status" aria-live="polite"></p></form>
 <section aria-labelledby="musicHeading"><h3 id="musicHeading">Shared room audio</h3>
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
@@ -2350,7 +2413,7 @@ $("roomLinkCopy").addEventListener("click",async()=>{
 async function post(path,body){
   if(stalePage)throw Error("Reload required");
   // A missing action response must not indefinitely block every room control.
-  const controller=["/api/action","/api/profile"].includes(path)?new AbortController():null;
+  const controller=["/api/action","/api/profile","/api/room/rename"].includes(path)?new AbortController():null;
   const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
   try{
     const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
@@ -2360,7 +2423,7 @@ async function post(path,body){
     if(!r.ok)throw Error(d.error||"Request failed");
     return d;
   }catch(error){
-    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":path==="/api/room/rename"?"Room rename timed out; check the displayed room name before retrying.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
     throw error;
   }finally{if(deadline!==null)clearTimeout(deadline)}
 }
@@ -2466,6 +2529,7 @@ function expireSession(){
   stopPlayhead();playhead=null;
   csrf="";
   resetProfileEdit();
+  resetRoomNameEdit();
   roomEvents.stop();
   void syncRemoteWakeLock();
   shortcutState=null;
@@ -3081,11 +3145,18 @@ function renderGlance(room){
   set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
 }
 function renderRoomIdentity(room){
+  const canRename=room?.can_rename===true;
+  const renameLink=$("roomRenameLink"),renameForm=$("roomNameForm"),renameInput=$("roomNameInput");
+  if(renameLink)renameLink.hidden=!canRename;
+  if(renameForm)renameForm.hidden=!canRename;
   if(typeof room?.name!=="string"||!room.name.trim())return;
   const name=room.name;
   const title=name==="Your room"?"Join the house":"Join "+name;
+  const heading=$("homeHeading");
+  if(heading&&heading.textContent!==name)heading.textContent=name;
   const join=$("joinTitle");
   if(join&&join.textContent!==title)join.textContent=title;
+  if(renameInput&&document.activeElement!==renameInput&&renameInput.value!==name)renameInput.value=name;
 }
 function renderRoom(room){lastRoom=room;renderRoomIdentity(room);renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
@@ -3372,6 +3443,14 @@ function resetProfileEdit(){
   $("saveDisplayName").disabled=false;
   $("profileStatus").textContent="";
 }
+function resetRoomNameEdit(){
+  roomRenameEdit=null;
+  const button=$("saveRoomName"),feedback=$("roomNameStatus"),link=$("roomRenameLink"),form=$("roomNameForm");
+  if(button)button.disabled=false;
+  if(feedback)feedback.textContent="";
+  if(link)link.hidden=true;
+  if(form)form.hidden=true;
+}
 async function saveProfileName(event){
   event.preventDefault();
   if(!csrf||stalePage||profileEdit?.session===csrf)return;
@@ -3394,6 +3473,27 @@ async function saveProfileName(event){
   finally{if(profileEdit===request){profileEdit=null;button.disabled=false}}
 }
 $("nameForm").addEventListener("submit",saveProfileName);
+let roomRenameEdit=null;
+async function saveRoomName(event){
+  event.preventDefault();
+  if(!csrf||stalePage||roomRenameEdit?.session===csrf)return;
+  const input=$("roomNameInput"),button=$("saveRoomName"),feedback=$("roomNameStatus");
+  const submitted=input.value.trim(),request={session:csrf};
+  if(!submitted){feedback.textContent="Enter a room name.";input.focus();return}
+  roomRenameEdit=request;button.disabled=true;feedback.textContent="Saving room name…";
+  const current=()=>roomRenameEdit===request&&csrf===request.session&&!stalePage;
+  try{
+    const data=await post("/api/room/rename",{name:submitted});
+    if(!current())return;
+    if(data.room?.can_rename!==true||typeof data.room.name!=="string")throw Error("The host did not confirm the room name.");
+    if(input.value.trim()===submitted)input.value=data.room.name;
+    renderRoomIdentity(data.room);
+    feedback.textContent="Room name updated for everyone in this room.";
+    refresh();
+  }catch(error){if(current())feedback.textContent=error.message||"Could not rename this room. Try again."}
+  finally{if(roomRenameEdit===request){roomRenameEdit=null;button.disabled=false}}
+}
+$("roomNameForm").addEventListener("submit",saveRoomName);
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.

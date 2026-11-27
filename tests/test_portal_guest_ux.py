@@ -291,12 +291,16 @@ def test_joined_room_and_open_expiry_return_focus_to_visible_content():
 
     joined = _fn("showJoinedRoom")
     expired = _fn("expireSession")
+    profile_reset = _fn("resetProfileEdit")
+    room_reset = _fn("resetRoomNameEdit")
     assert 'id="queueHeading" tabindex="-1"' in portal._HTML
     if not shutil.which("node"):
         pytest.skip("Node.js required to test focus transitions")
     harness = r"""
 const assert=require("node:assert/strict");
-const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
+const elements={dashboard:{hidden:true},uploadCard:{hidden:true},saveRoomName:{disabled:true},
+ saveDisplayName:{disabled:true},profileStatus:{textContent:"Saving"},
+ roomNameStatus:{textContent:"Saving"},roomRenameLink:{hidden:false},roomNameForm:{hidden:false},
  homeHeading:{focusCount:0,focus(){this.focusCount++}},
  login:{hidden:true},loginButton:{disabled:false},
  pin:{focusCount:0,focus(){this.focusCount++}},
@@ -304,7 +308,7 @@ const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
  errorDash:{textContent:""},error:{textContent:""}};
 const $=id=>elements[id];
 const loginButton=elements.loginButton;
-let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null;
+let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null,roomRenameEdit={session:"paired"};
 let playhead=null,playheadTimer=null;
 function stopPlayhead(){}
 const pendingControls={clear(){}};const roomEvents={stop(){}};
@@ -326,7 +330,7 @@ assert.match(elements.error.textContent,/name to rejoin/);
 assert.equal(elements.login.hidden,false);
 assert.equal(elements.dashboard.hidden,true);
 """
-    subprocess.run(["node", "-"], input=harness + joined + expired + scenario,
+    subprocess.run(["node", "-"], input=harness + joined + expired + profile_reset + room_reset + scenario,
                    check=True, text=True, timeout=10)
 
 
@@ -605,7 +609,7 @@ def test_mesh_retry_timer_is_cancelled_on_room_exit_and_tab_resume():
 
     panel = panel_html()
     assert "cancelMeshRetry();backoff=3000;close();started=false" in panel
-    assert "else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}" in panel
+    assert "else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}else{syncHeartbeat();syncProfiles()}}" in panel
     script = panel.split("<script>", 1)[1].split("</script>", 1)[0]
     start = script.index("function cancelMeshRetry(){")
     end = script.index("async function boot(){", start)
@@ -649,11 +653,11 @@ def test_open_join_shows_authoritative_identity_and_change_name_link():
     page = room_html()
     assert "joinedAs" in page.ids
     assert "nameForm" in page.ids and "nameForm" in page.anchors
-    assert '<a href="#nameForm">Change name</a>' in portal._HTML
+    assert '<a href="#nameForm">Change my display name</a>' in portal._HTML
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
     assert 'showJoinedName(d.participant.name);' in script
     assert 'showJoinedName(data.participant.name);' in script
-    assert 'showJoinedName(d.participant.name);showError("errorDash","Display name updated")' in script
+    assert 'feedback.textContent="Display name updated."' in script
     start = script.index("function showJoinedName(value){")
     end = script.index("function configureOpenJoin(){", start)
     helper = script[start:end]

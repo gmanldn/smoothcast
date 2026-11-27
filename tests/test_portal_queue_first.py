@@ -32,6 +32,39 @@ def test_queue_is_first_and_links_remain_discoverable():
     assert "disabled" not in page.ids["linkInput"]
     assert "disabled" in page.ids["linkSubmit"]
     assert "#queuePanel{grid-column:1/-1}" in html
+    assert '<a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a>' in html
+    assert 'id="roomNameForm" hidden' in html and 'id="roomNameInput" maxlength="40"' in html
+    assert "Choose who a setting affects: your profile, this browser, or everyone in the shared room." in html
+
+
+def test_room_heading_and_rename_controls_follow_host_permission():
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for headless browser checks")
+    html = portal._HTML
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    identity = script[script.index("function renderRoomIdentity(room){"):
+                      script.index("function renderRoom(room){")]
+    harness = r"""
+const assert=require("node:assert/strict");
+const elements={roomRenameLink:{hidden:true},roomNameForm:{hidden:true},roomNameInput:{value:""},
+  homeHeading:{textContent:"Your room"},joinTitle:{textContent:"Join the house"}};
+const document={activeElement:null};
+const $=id=>elements[id];
+"""
+    scenario = r"""
+renderRoomIdentity({name:"Lounge",can_rename:true});
+assert.equal(elements.homeHeading.textContent,"Lounge");
+assert.equal(elements.joinTitle.textContent,"Join Lounge");
+assert.equal(elements.roomRenameLink.hidden,false);
+assert.equal(elements.roomNameForm.hidden,false);
+assert.equal(elements.roomNameInput.value,"Lounge");
+renderRoomIdentity({name:"Studio",can_rename:false});
+assert.equal(elements.homeHeading.textContent,"Studio");
+assert.equal(elements.roomRenameLink.hidden,true);
+assert.equal(elements.roomNameForm.hidden,true);
+"""
+    subprocess.run(["node", "-"], input=harness + identity + scenario,
+                   text=True, check=True, timeout=10)
 
 
 def test_destination_and_link_controls_without_receiver_or_provider():

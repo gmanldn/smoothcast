@@ -31,6 +31,9 @@ class PortalRig:
             self.calls.append((action, payload))
             if action == "status":
                 return {"title": "sample.mp4", "state": "PLAYING", "queue": self.queue}
+            if action == "room_rename":
+                self.server.room.set_name(payload["name"])
+                return {"name": self.server.room.name}
             return "accepted"
 
         self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch,
@@ -690,6 +693,30 @@ def test_profile_edit_only_changes_the_authenticated_participant(rig):
                       second["participant"]["id"]: "Alex"}
     assert "textContent=person.name" in portal._HTML
     assert "innerHTML" not in portal._HTML
+
+
+def test_room_rename_is_visible_and_available_only_to_host_session(rig):
+    host_token, host_csrf, _ = rig.server.login("127.0.0.1", PIN, "Host")
+    guest_token, guest_csrf, _ = rig.server.login("127.0.0.2", PIN, "Guest")
+    origin = f"http://{rig.host}"
+    guest_cookie = f"sc_portal_session={guest_token}"
+    host_cookie = f"sc_portal_session={host_token}"
+
+    status, body, _ = rig.request(
+        "POST", "/api/room/rename", {"name": "Guest takeover"}, cookie=guest_cookie,
+        csrf=guest_csrf, origin=origin)
+    assert status == 403 and rig.server.room.name == "Your room"
+
+    status, body, _ = rig.request(
+        "POST", "/api/room/rename", {"name": "Studio"}, cookie=host_cookie,
+        csrf=host_csrf, origin=origin)
+    assert status == 200 and decode(body)["room"]["name"] == "Studio"
+    assert decode(body)["room"]["can_rename"] is True
+
+    status, body, _ = rig.request("GET", "/api/status", cookie=guest_cookie)
+    assert status == 200 and decode(body)["state"]["room"]["can_rename"] is False
+    status, body, _ = rig.request("GET", "/api/status", cookie=host_cookie)
+    assert status == 200 and decode(body)["state"]["room"]["can_rename"] is True
 
 
 def test_queue_votes_are_per_person_and_require_a_live_item():

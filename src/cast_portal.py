@@ -211,6 +211,15 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             current = getattr(self, "_portal", None)
             if current is None or not current.server.session_key_active(session_key):
                 raise portal.PortalRequestError(401, guest_messages.ACCESS_REMOVED)
+        if operation == "room_rename":
+            current = getattr(self, "_portal", None)
+            if (current is None or session_key is None
+                    or not current.server.session_key_is_host(session_key)):
+                raise portal.PortalRequestError(403, "Only the host computer can rename this room")
+            from portal_room import clean_room_name
+            name = clean_room_name(payload.get("name"))
+            self._rename_portal_room(name)
+            return {"name": name}
         if operation == "upload_target":
             return self._portal_upload_target()
         if operation == "music_autogain":
