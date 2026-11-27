@@ -57,7 +57,7 @@ import reliability_metrics
 
 import cast_failure_code
 
-from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
+from cast_widgets import CONFIG_DIR, save_config, fmt_time, Async
 
 
 class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
