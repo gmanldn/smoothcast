@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d05eee752e78175cefa85afd2c284a19d5b512ff -->
+<!-- sc-changelog-through: a33b470dbf4cda0394b3af59f63177b19d1e4167 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:52:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:53:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:53:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a33b470dbf4c`](https://github.com/gmanldn/smoothcast/commit/a33b470dbf4cda0394b3af59f63177b19d1e4167)
+
+- ⬜ **15:53:33 · Maintenance** — chore(agent): ship syncs pyproject py-modules when src modules are added or removed (Refs #690) · [`3c83207fabb1`](https://github.com/gmanldn/smoothcast/commit/3c83207fabb1019972262628215b17c084601f5a)
 
 - ⬜ **15:52:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d05eee752e78`](https://github.com/gmanldn/smoothcast/commit/d05eee752e78175cefa85afd2c284a19d5b512ff)
+
+- ⬜ **15:52:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`eef2dc8ce907`](https://github.com/gmanldn/smoothcast/commit/eef2dc8ce907ddda7353a172448307753a2b6064)
 
 - 🟦 **15:52:57 · Refactor** — refactor(settings): in-app updater channel comes from UpdateSettings (Refs #693) (Refs #325) · [`13ea63cb2a69`](https://github.com/gmanldn/smoothcast/commit/13ea63cb2a694a5ef26b701c5948a93ac42473f3)
 
