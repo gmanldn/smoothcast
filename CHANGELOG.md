@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0d262ead6fa96f981129e13833d0a8a566b64c76 -->
+<!-- sc-changelog-through: 5791e2f4f6b53fb9124e8188f1c14fc84912b189 -->
 
 ## 2026-11-27 · UTC
 
-- 🟪 **15:33:54 · Tests** — test(msi): verify installed licence and icon and repair licence (Refs #535) <!-- sc-changelog-pending -->
+- ⬜ **15:40:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:40:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5791e2f4f6b5`](https://github.com/gmanldn/smoothcast/commit/5791e2f4f6b53fb9124e8188f1c14fc84912b189)
+
+- 🟥 **15:40:20 · Fix** — fix(portal): a guest whose session or CSRF token is rejected on an action again gets 403 'Your session has ended. Reload the page and join the room again.' instead of 401 'Session expired'; reads keep 401. Restores the reply central authorization changed in 8a058ee0 (Refs #702) (Refs #686) · [`13e40ab359b2`](https://github.com/gmanldn/smoothcast/commit/13e40ab359b202304f9c9ce43985bf3294d97798)
+
+- 🟪 **15:34:05 · Tests** — test(msi): verify installed licence and icon and repair licence (Refs #535) · [`cf4f12c40aaf`](https://github.com/gmanldn/smoothcast/commit/cf4f12c40aaf01b04aaaafa5532279b4f3847007)
 
 - 🟪 **15:31:35 · CI** — ci(msi): build isolated fixtures and run native upgrade matrix (Refs #535) · [`0d262ead6fa9`](https://github.com/gmanldn/smoothcast/commit/0d262ead6fa96f981129e13833d0a8a566b64c76)
 
