@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f633ac2a7e1832e96eff0a21aa3611b2e765b84d -->
+<!-- sc-changelog-through: d0dde6ba175d9329edcae882f98e344521ba9424 -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **15:19:09 · Fix** — fix(web): recover network diagrams after failed image loads (Refs #710) <!-- sc-changelog-pending -->
+- 🟪 **15:30:00 · CI** — ci(msi): build isolated fixtures and run native upgrade matrix (Refs #535) <!-- sc-changelog-pending -->
+
+- 🟥 **15:19:19 · Fix** — fix(web): recover network diagrams after failed image loads (Refs #710) · [`d0dde6ba175d`](https://github.com/gmanldn/smoothcast/commit/d0dde6ba175d9329edcae882f98e344521ba9424)
 
 - 🟥 **15:18:07 · Fix** — fix(gui): show the named room before joining and clarify profile controls (Refs #709) · [`f633ac2a7e18`](https://github.com/gmanldn/smoothcast/commit/f633ac2a7e1832e96eff0a21aa3611b2e765b84d)
 

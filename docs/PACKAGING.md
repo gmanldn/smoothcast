@@ -152,9 +152,18 @@ assert it again, prove a downgrade is **rejected**, then uninstall. It writes
 `dist/windows-msi-upgrade-results.json`, reuses the `msi_install_contract`
 primitives, and its `--dry-run` emits the untested contract off Windows.
 
-Still separate: the signed release gate (#536/#538), physical-device
-qualification (#537), and wiring `msi_upgrade_matrix.py` into the
-`windows-msi-install` job (it needs the two `--fixture-version` MSIs staged).
+The Windows builder stages two consecutive MSI ProductVersions from the
+canonical source version in `build/msi-fixtures/a` and `b`, reusing the
+verified frozen payload. Their builder SHA-256 sidecars travel in a separate,
+short-retention CI artifact (`smoothcast-windows-upgrade-fixtures`), never in
+the distributable MSI/ZIP artifact. The independent `windows-msi-upgrade`
+hosted worker verifies both sidecars and executes the full upgrade sequence,
+uploading its report and installer logs even on failure. This is a blocking
+job for the packaging workflow, not a gate on ordinary develop pushes.
+
+Still separate: native execution evidence for the exact workflow revision,
+config persistence and forced rollback coverage, signing (#536/#538), approved
+bundled media (#529), and physical-device qualification (#537).
 A headless MSI CI pass is **not** evidence of a verified native GUI, HLS
 reachability, local preview or Cast.
 

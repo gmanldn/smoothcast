@@ -78,7 +78,7 @@ jobs:
   windows:
     name: PyInstaller / Windows UCRT64
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: msys2/setup-msys2@3c51bf698df1e37b2261f53cb67797b97761185c # v2
@@ -144,6 +144,33 @@ jobs:
         run: |
           if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
           "$VENV_PY" scripts/build_windows_msi.py --skip-pyinstaller --json
+      # Fixture ProductVersions differ; the frozen payload and source SHA do not.
+      # Keep fixtures outside dist so the release artifact never contains them.
+      - name: Build isolated MSI upgrade fixtures
+        shell: msys2 {0}
+        run: |
+          if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
+          "$VENV_PY" -m pytest -q tests/test_msi_upgrade_matrix.py tests/test_msi_upgrade_execution.py tests/test_msi_upgrade_policy.py
+          versions=$("$VENV_PY" - <<'PY'
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts/ci")
+          from check_version_history import parse_version
+          from msi_upgrade_matrix import fixture_versions
+          version = ".".join(map(str, parse_version(Path("src/version.py").read_text(encoding="utf-8"))))
+          print(*fixture_versions(version))
+          PY
+          )
+          read -r A B <<< "$versions"
+          test -n "$A" && test -n "$B"
+          "$VENV_PY" scripts/build_windows_msi.py --skip-pyinstaller --fixture-version "$A" --output-dir build/msi-fixtures/a --json
+          "$VENV_PY" scripts/build_windows_msi.py --skip-pyinstaller --fixture-version "$B" --output-dir build/msi-fixtures/b --json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoothcast-windows-upgrade-fixtures
+          path: build/msi-fixtures/
+          if-no-files-found: error
+          retention-days: 7
       - name: Archive Windows artefact
         shell: msys2 {0}
         run: |
@@ -182,4 +209,34 @@ jobs:
           path: |
             dist/windows-msi-test-results.json
             dist/*.log
+          if-no-files-found: warn
+
+  windows-msi-upgrade:
+    name: Windows MSI / A-B upgrade and downgrade rejection
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: smoothcast-windows-upgrade-fixtures
+          path: fixtures
+      - name: Upgrade A to B and reject downgrade (headless)
+        shell: pwsh
+        run: |
+          $a = @(Get-ChildItem -LiteralPath 'fixtures/a' -Filter '*.msi' -File)
+          $b = @(Get-ChildItem -LiteralPath 'fixtures/b' -Filter '*.msi' -File)
+          if ($a.Count -ne 1 -or $b.Count -ne 1) { throw 'Expected exactly two isolated MSI fixtures' }
+          if ($a[0].Name -match '^SmoothCast-(\d+\.\d+\.\d+)-x64\.msi$') {
+            $baseVersion = $Matches[1]
+          } else { throw 'Invalid A fixture filename' }
+          py -3 scripts/ci/msi_upgrade_matrix.py --fixture-a $a[0].FullName --fixture-b $b[0].FullName --base-version $baseVersion --commit "$env:GITHUB_SHA" --runner "$env:RUNNER_NAME" --os-build ([System.Environment]::OSVersion.VersionString) --report dist/windows-msi-upgrade-results.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-msi-upgrade-evidence
+          path: |
+            dist/windows-msi-upgrade-results.json
+            dist/msi-upgrade-logs/
           if-no-files-found: warn
