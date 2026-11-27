@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 573414ba54bbe9bbfda9576bb8b1b6d6d9ad8b95 -->
+<!-- sc-changelog-through: 8dfe02001d536ad2f479b8967e4da8c210e5579a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:19:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:23:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:23:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8dfe02001d53`](https://github.com/gmanldn/smoothcast/commit/8dfe02001d536ad2f479b8967e4da8c210e5579a)
+
+- 🟦 **17:23:28 · Refactor** — refactor(errors): justify 13 boundary catches in portal\_screens\_http, config\_control, mesh\_ui (Refs #694) · [`e3544c342b58`](https://github.com/gmanldn/smoothcast/commit/e3544c342b5842e4dc3da5c19d1846b2965b4724)
+
+- 🟦 **17:22:02 · Refactor** — refactor(runtime): library indexer runs under spawn\_daemon, observes scope cancel within 1s; allowance removed (Refs #696) · [`4f4cad12d3d7`](https://github.com/gmanldn/smoothcast/commit/4f4cad12d3d703b280134b1c995d4b0beaf22f86)
 
 - ⬜ **17:19:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`573414ba54bb`](https://github.com/gmanldn/smoothcast/commit/573414ba54bbe9bbfda9576bb8b1b6d6d9ad8b95)
 
 - 🟥 **17:19:31 · Fix** — fix(preferences): split shared-room group into preferences\_room\_ui to restore size budget (Refs #706) · [`2e6ceb1f2ee8`](https://github.com/gmanldn/smoothcast/commit/2e6ceb1f2ee8fc23d1b539313be264ebd0668b40)
+
+- ⬜ **17:19:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`97137c817b12`](https://github.com/gmanldn/smoothcast/commit/97137c817b12dcc0dbd0744cb121243228dabae7)
 
 - 🟦 **17:18:41 · Refactor** — refactor(runtime): mesh heartbeat runs under spawn\_daemon keeping its thread name; allowance removed (Refs #696) · [`162792480f21`](https://github.com/gmanldn/smoothcast/commit/162792480f214e6553de940f99459feda2341021)
 
