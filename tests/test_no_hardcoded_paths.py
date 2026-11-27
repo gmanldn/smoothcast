@@ -10,7 +10,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 ALLOWED = {
     "paths.py", "mpris.py", "control_api.py", "diagnostics.py",  # mpris: a D-Bus desktop-entry id, not a path
     "demo_session.py", "demo_mode.py", 
-    "receiver_memory.py", "reliability_metrics.py",
+    "reliability_metrics.py",
     "streamer.py", 
     "cast_widgets.py", 
     "portal_uploads.py", "server.py",
