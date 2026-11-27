@@ -11,7 +11,7 @@ from pathlib import Path
 from test_core_purity import CORE, SRC, _imports
 
 # module -> src modules it imports although they are not core (today's debt).
-KNOWN: dict[str, set[str]] = {"hw_encoder_state": {"media_tools"}}
+KNOWN: dict[str, set[str]] = {}
 
 
 def violations() -> dict[str, set[str]]:
