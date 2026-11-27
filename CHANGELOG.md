@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f64bba5dce73f731842e33c0cbbe605b28c467b5 -->
+<!-- sc-changelog-through: 1547376a0baa97ade53449083c2cee00fd6fbf7b -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:39:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:40:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:40:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1547376a0baa`](https://github.com/gmanldn/smoothcast/commit/1547376a0baa97ade53449083c2cee00fd6fbf7b)
+
+- 🟩 **07:40:23 · Feature** — feat(arch): bounded task runtime (scopes, deadlines, bounded shutdown) and raw-thread ratchet (Refs #696) · [`328dab94d036`](https://github.com/gmanldn/smoothcast/commit/328dab94d0367872f6d51bdc1b142fd75327659a)
 
 - ⬜ **07:39:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f64bba5dce73`](https://github.com/gmanldn/smoothcast/commit/f64bba5dce73f731842e33c0cbbe605b28c467b5)
 
 - 🟩 **07:39:14 · Feature** — feat(arch): pure event-sourced room queue store with idempotency, revision fences and replay (Refs #695) · [`3049aa2bdd90`](https://github.com/gmanldn/smoothcast/commit/3049aa2bdd909bcf2d8f0ee5cc696fa96e757fa9)
+
+- ⬜ **07:39:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d7ffb71449cb`](https://github.com/gmanldn/smoothcast/commit/d7ffb71449cbebc40efd8090b9e6d86818086300)
 
 - 🟩 **07:39:04 · Feature** — feat(search): pure play-by-key resolver with origin failover, idempotent revision-checked enqueue (Refs #414) · [`b906f65df160`](https://github.com/gmanldn/smoothcast/commit/b906f65df160596575b85ff37227acb923d2dd80)
 
