@@ -182,22 +182,46 @@ def unique_discovered_host(name: str, devices: list[Device]) -> str | None:
     return matches[0].host if len(matches) == 1 else None
 
 
+_info_failures: dict[str, str] = {}
+
+
+def last_info_failure(device: str) -> str:
+    """Why the latest status read for ``device`` returned nothing ('' if it worked)."""
+    return _info_failures.get(device, "")
+
+
+def _info_failed(device: str, reason: str) -> None:
+    # Log only when the reason changes so a 40 s poll cannot flood errors.log.
+    if _info_failures.get(device) != reason:
+        log_backend_failure(f"Receiver status unavailable for {device!r}: {reason}")
+    _info_failures[device] = reason
+
+
 def _catt_info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Full device/media status. None when offline or unreachable."""
     if not device.strip():
         return None
     try:
         result = _run(["-d", device, "info", "-j"], timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired:
+        _info_failed(device, f"status helper timed out after {timeout:g}s")
+        return None
+    except OSError as exc:
+        _info_failed(device, f"status helper could not start: {exc}")
         return None
     if result.returncode != 0:
+        tail = " ".join((result.stderr or result.stdout or "").split())[-160:]
+        _info_failed(device, f"status helper exited {result.returncode}: {tail}")
         return None
     try:
         payload = json.loads(result.stdout or "{}")
     except ValueError:
+        _info_failed(device, "status helper returned unreadable output")
         return None
     if not isinstance(payload, dict) or not payload:
+        _info_failed(device, "status helper returned no data")
         return None
+    _info_failures.pop(device, None)
     return cast(ReceiverInfo, payload)
 
 
