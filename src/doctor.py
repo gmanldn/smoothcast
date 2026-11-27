@@ -173,7 +173,8 @@ def main(argv: list[str] | None = None) -> int:
         python_version, ffmpeg, lambda: disk_space(cache), temp_writable, listener,
         default_route, multicast, clock]
     if args.receiver:
-        checks.append(lambda: receiver(args.receiver))
+        from doctor_vpn import receiver_checks
+        checks.extend(receiver_checks(args.receiver))
     results = run(checks)
     if args.json:
         print(to_json(results))
