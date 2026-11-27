@@ -8,11 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2e1e1d1ae6fdc96b56a88b6cdf0785d42eacf66b -->
+<!-- sc-changelog-through: e9a7f8b73d181d77101aef17449e68bb3fd4c258 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:27:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:29:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:29:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e9a7f8b73d18`](https://github.com/gmanldn/smoothcast/commit/e9a7f8b73d181d77101aef17449e68bb3fd4c258)
+
+- 🟦 **17:29:55 · Refactor** — refactor(errors): justify boundary catches across eleven more modules (Refs #694) · [`ef476a643720`](https://github.com/gmanldn/smoothcast/commit/ef476a643720e6f9e2e75c3154eb065fe560e078)
+
+- 🟥 **17:29:17 · Fix** — fix(agents): run ship checks at nice 19/ionice idle so pytest -n auto never starves a live cast's encoder on the owner's desktop (Refs #686) · [`84b813c02047`](https://github.com/gmanldn/smoothcast/commit/84b813c02047a3a88416b8136ab475744eb4cb68)
+
+- 🟩 **17:28:15 · Feature** — feat(diagnostics): shared latency Stats with atomic save/load; the CLI diagnostics command bundles saved latency (Refs #698) · [`f63150530922`](https://github.com/gmanldn/smoothcast/commit/f6315053092277f399939e137a0647fcf84a69ec)
+
+- ⬜ **17:27:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`97a4169032d7`](https://github.com/gmanldn/smoothcast/commit/97a4169032d751c30af0d0fa5e1edbfe595ba628)
 
 - ⬜ **17:27:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2e1e1d1ae6fd`](https://github.com/gmanldn/smoothcast/commit/2e1e1d1ae6fdc96b56a88b6cdf0785d42eacf66b)
 
