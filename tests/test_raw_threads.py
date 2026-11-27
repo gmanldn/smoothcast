@@ -31,7 +31,6 @@ ALLOWED = {
     "mesh_service.py": 2,
     "mesh_udp.py": 1,
     "portal.py": 1,
-    "portal_update_http.py": 1,
     "replica_manager.py": 1,
     "sc_core.py": 1,
     "server.py": 3,
