@@ -38,7 +38,8 @@ def _out(*args: str) -> str | None:
 
 
 def decide(*, head: str | None, target: str | None, dirty: bool | None,
-           ancestor: bool | None, running: bool, restart: bool = False) -> tuple[str, str]:
+           ancestor: bool | None, running: bool, restart: bool = False,
+           playback: bool = False) -> tuple[str, str]:
     """Pure plan: (action, one-line message). Unknown facts fail closed."""
     if head is None or target is None:
         return "refuse", "Cannot read the checkout or the latest build; nothing changed."
@@ -47,13 +48,21 @@ def decide(*, head: str | None, target: str | None, dirty: bool | None,
     if head != target:
         if ancestor is not True:
             return "refuse", "This checkout has diverged from the latest build; not overwriting it."
-        return ("defer" if running else "update"), (
-            f"Update ready ({target[:12]}); waiting for the running SmoothCast or playback to finish. "
-            "Playback is untouched." if running else f"Updating to {target[:12]}.")
+        if running:
+            reason = "playback session" if playback else "running SmoothCast"
+            return "defer", (
+                f"Update ready ({target[:12]}); waiting for the {reason} to finish. "
+                "Playback is untouched.")
+        return "update", f"Updating to {target[:12]}."
     if running:
-        return ("defer" if restart else "noop"), (
-            "Already on the latest build; restart it when playback ends."
-            if restart else f"Already running the latest build ({head[:12]}).")
+        if restart:
+            message = ("Already on the latest build; playback is active, so restart was deferred."
+                       if playback else
+                       "Already on the latest build; restart it when playback ends.")
+            return "defer", message
+        if playback:
+            return "noop", "A saved playback session is active; no restart was attempted."
+        return "noop", f"Already running the latest build ({head[:12]})."
     return "start", f"Already on the latest build ({head[:12]}); starting SmoothCast."
 
 
@@ -62,7 +71,7 @@ def _launch() -> None:
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _running() -> bool:
+def _saved_playback() -> bool:
     # A saved session can outlive its GUI process (for example during a crash
     # or a delayed shutdown callback). Its receiver/worker ownership may still
     # be live, so never treat an unaccounted session as permission to update.
@@ -70,10 +79,15 @@ def _running() -> bool:
     # safe defer, not a reason to kill a stream whose owner is uncertain.
     try:
         session = Path.home() / ".cache" / "cast-control" / "session.json"
-        if session.exists():
-            return True
+        session.stat()
+    except FileNotFoundError:
+        return False
     except (OSError, RuntimeError):
         return True
+    return True
+
+
+def _running() -> bool:
     sys.path.insert(0, str(ROOT / "setup"))
     sys.path.insert(0, str(ROOT / "src"))
     try:
@@ -104,8 +118,10 @@ def main(argv: list[str] | None = None) -> int:
     if head and target:
         probe = _git("merge-base", "--is-ancestor", head, target)
         ancestor = None if probe is None or probe.returncode not in (0, 1) else probe.returncode == 0
+    playback = _saved_playback()
     action, message = decide(head=head, target=target, dirty=dirty, ancestor=ancestor,
-                             running=_running(), restart=args.restart)
+                             running=playback or _running(), restart=args.restart,
+                             playback=playback)
     print(message)
     if args.dry_run or action in ("refuse", "defer", "noop"):
         return 1 if action == "refuse" else 0
