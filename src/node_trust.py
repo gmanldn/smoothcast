@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from pathlib import Path
 
 SCOPES = ("media_read", "incoming_copy", "receiver_control")
@@ -99,12 +97,6 @@ class Trust:
     def _save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".trust")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"peers": self.peers}, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        import store  # atomic, fsynced, owner-only (#701)
+        if not store.Store(self.path).write({"peers": self.peers}):
+            raise OSError(f"could not save {self.path}")

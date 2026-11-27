@@ -12,7 +12,6 @@ import hmac
 import json
 import os
 import secrets
-import tempfile
 from pathlib import Path
 
 VERSION = 1
@@ -99,12 +98,6 @@ class Residents:
                 for k, v in sorted(self.items.items(), key=lambda kv: kv[1]["name"].lower())]
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".residents")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"version": VERSION, "residents": self.items}, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        import store  # atomic, fsynced, owner-only (#701)
+        if not store.Store(self.path).write({"version": VERSION, "residents": self.items}):
+            raise OSError(f"could not save {self.path}")
