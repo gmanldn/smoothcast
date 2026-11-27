@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: aee6c1cdc19ad8f1bc3cb96b95f62069830fa25a -->
+<!-- sc-changelog-through: c0ce904d649703eb77d1a3862f0e196fa03b2556 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:14:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:15:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:15:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c0ce904d6497`](https://github.com/gmanldn/smoothcast/commit/c0ce904d649703eb77d1a3862f0e196fa03b2556)
+
+- 🟦 **17:15:26 · Performance** — perf(cast): warm the FFmpeg version check off-thread at window start so the first cast skips a ~4.6 s stall · [`322bffa0ae7b`](https://github.com/gmanldn/smoothcast/commit/322bffa0ae7b1caf3153708d054944adacea4c83)
 
 - ⬜ **17:14:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`aee6c1cdc19a`](https://github.com/gmanldn/smoothcast/commit/aee6c1cdc19ad8f1bc3cb96b95f62069830fa25a)
+
+- ⬜ **17:14:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c2b391a9adf5`](https://github.com/gmanldn/smoothcast/commit/c2b391a9adf5872788e94b877e42ded6ef897d1f)
 
 - 🟦 **17:14:50 · Refactor** — refactor(errors): justify 16 boundary catches across five small modules (Refs #694) · [`f4ef2a6e2b28`](https://github.com/gmanldn/smoothcast/commit/f4ef2a6e2b289ea6ff1bbb15b1a8ac78e06aef3c)
 
