@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1607c6e6fbd5b6e7c32600ab139f033270a54ff0 -->
+<!-- sc-changelog-through: ea77b00a8d774693b1305ece77fbfbe2d1d26712 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:23:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:25:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:25:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ea77b00a8d77`](https://github.com/gmanldn/smoothcast/commit/ea77b00a8d774693b1305ece77fbfbe2d1d26712)
+
+- 🟩 **07:25:08 · Feature** — feat(persist): Store write failures carry a typed reason (disk full, permission denied, I/O) (Refs #701) (Refs #325) · [`e1d475c203b4`](https://github.com/gmanldn/smoothcast/commit/e1d475c203b48c3f3be47484c85e32c19c907ff5)
+
+- 🟩 **07:24:52 · Feature** — feat(photos): pure EXIF orientation/GPS strip, slideshow plan and ephemeral store (Refs #381) · [`ddbb5a528ab2`](https://github.com/gmanldn/smoothcast/commit/ddbb5a528ab23ad8a7d816825b33df0965459e93)
 
 - ⬜ **07:23:59 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1607c6e6fbd5`](https://github.com/gmanldn/smoothcast/commit/1607c6e6fbd5b6e7c32600ab139f033270a54ff0)
+
+- ⬜ **07:23:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`af46c18ff507`](https://github.com/gmanldn/smoothcast/commit/af46c18ff5070e19b089fb7f33cb240e68734c4a)
 
 - 🟩 **07:23:48 · Feature** — feat(persist): Store quarantines a corrupt record and starts from defaults (Refs #701) (Refs #325) · [`b99f55d05c87`](https://github.com/gmanldn/smoothcast/commit/b99f55d05c8735cd71a0a22a9634771304f4613c)
 
