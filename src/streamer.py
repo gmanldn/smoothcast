@@ -130,6 +130,11 @@ def _hls_output(generation: str) -> tuple[str, str, str, list[str]]:
 
 
 VAAPI_PATH = "/dev/dri/renderD128"
+# 10-bit 4:2:0 is decoded on the GPU, converted to nv12 on the CPU, then
+# encoded on the GPU: software x264 on a weak CPU cannot hold 1080p HEVC10 at
+# real time. A GPU that cannot decode it stalls and takes the software retry.
+VAAPI_PIX_FMTS = frozenset({"yuv420p", "nv12", "yuvj420p", "yuv420p10le", "p010le"})
+VAAPI_TEN_BIT = frozenset({"yuv420p10le", "p010le"})
 
 VIDEO_EXTS = {
     ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts",
@@ -1631,7 +1636,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0, picture_config: dict | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0, picture_config: dict | None = None, ten_bit: bool = False) -> list[str]:
         chain: list[str] = []
         # H.264 High@4.1 is the conservative 1080p30 Cast baseline. Scale
         # alone does not make 1080p60/4K60 compatible with older receivers.
@@ -1728,9 +1733,12 @@ class Session:
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
                                 or embedded_subtitle_index is not None)
-        force_software = not software and (rotation != 0 or bool(plan_filters) or bool(aspect_filters))
+        force_software = not software and (
+            ten_bit or rotation != 0 or bool(plan_filters) or bool(aspect_filters))
         if (not software and need_subtitle_filter) or force_software:
-            return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
+            # p010 surfaces must be converted before h264_vaapi sees them.
+            head = "hwdownload,format=p010le,format=nv12" if ten_bit else "hwdownload,format=nv12"
+            return ["-vf", ",".join([head, *chain, "hwupload"])]
         if chain:
             return ["-vf", ",".join(chain)]
         return []
@@ -1835,7 +1843,7 @@ class Session:
                 video_stream=media.video_stream_index)
             out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
             if (out_w > 1920 or out_h > 1080 or hdr_tonemap.filter_for(media)
-                    or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
+                    or (media.pix_fmt and media.pix_fmt not in VAAPI_PIX_FMTS)):
                 self.used_software_fallback = True
         if bitmap_track is not None or picture_adjustments.active(picture_config):
             self.used_software_fallback = True
@@ -1877,6 +1885,7 @@ class Session:
             video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
             source_fps=media.fps,
+            ten_bit=media.pix_fmt in VAAPI_TEN_BIT,
             quality=quality,
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
