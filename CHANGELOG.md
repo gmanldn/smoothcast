@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 55bf2c6ed0a86411fbd4a792526ad2eddbe0ce50 -->
+<!-- sc-changelog-through: a32a77297f580ce98ebbfb6abbfeff407a847795 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **21:17:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:18:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:18:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a32a77297f58`](https://github.com/gmanldn/smoothcast/commit/a32a77297f580ce98ebbfb6abbfeff407a847795)
+
+- 🟪 **21:18:01 · Tests** — test(link): real-process worker crash, quota, deadline, cancel and no-residual-child coverage (Refs #588) · [`0687dca1152d`](https://github.com/gmanldn/smoothcast/commit/0687dca1152deed0125b2be3fb2ebf07cd9057cc)
 
 - ⬜ **21:17:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55bf2c6ed0a8`](https://github.com/gmanldn/smoothcast/commit/55bf2c6ed0a86411fbd4a792526ad2eddbe0ce50)
 
 - 🟦 **21:17:50 · Performance** — perf(stream): casts start sooner - the first 10 s encode at full speed (-readrate\_initial\_burst, FFmpeg 6.1+) instead of 8 s of real-time reading before the first two segments; guest uploads that may still be arriving keep plain -readrate (Refs #686) · [`0988c0ee3133`](https://github.com/gmanldn/smoothcast/commit/0988c0ee31335b0791cfa8791a84175150240eba)
+
+- ⬜ **21:17:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7d81743fdd11`](https://github.com/gmanldn/smoothcast/commit/7d81743fdd11bfbe5581a32f0c178dc263e79850)
 
 - 🟩 **21:17:25 · Feature** — feat(ui): mesh joins the shared room layout model with a web/GTK parity check (Refs #708) · [`18cc6a4a2716`](https://github.com/gmanldn/smoothcast/commit/18cc6a4a271685c1ae9f196cd3a5d86691ece512)
 
