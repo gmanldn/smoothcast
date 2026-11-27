@@ -95,6 +95,10 @@ def _build_window(tmp_path, *, idle_add=None):
     uploads = portal_uploads.UploadManager(tmp_path / "uploads")
     window._portal = SimpleNamespace(uploads=uploads,
                                      server=SimpleNamespace(uploads=uploads))
+    # Retry consent is covered by test_portal_recovery_target.py; here the
+    # confirmed receiver is unchanged so the retry path itself is exercised.
+    uploads.recovery_target = lambda upload_id, path: "confirmed"
+    window._portal_upload_target = lambda: {"target_id": "confirmed"}
     window.saved_configs = saved
     window._portal_fence = portal_commands.CommandFence()
     window._device = lambda: "TV"
