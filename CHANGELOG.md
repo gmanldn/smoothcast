@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b5c25e2ac56ca6893cad766c0907fa876da4a92d -->
+<!-- sc-changelog-through: d05eee752e78175cefa85afd2c284a19d5b512ff -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **15:52:03 · Fix** — fix(gui): make guest profile editing responsive and session safe (Refs #709) <!-- sc-changelog-pending -->
+- ⬜ **15:52:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:52:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d05eee752e78`](https://github.com/gmanldn/smoothcast/commit/d05eee752e78175cefa85afd2c284a19d5b512ff)
+
+- 🟦 **15:52:57 · Refactor** — refactor(settings): in-app updater channel comes from UpdateSettings (Refs #693) (Refs #325) · [`13ea63cb2a69`](https://github.com/gmanldn/smoothcast/commit/13ea63cb2a694a5ef26b701c5948a93ac42473f3)
+
+- 🟩 **15:52:50 · Feature** — feat(portal): pure upload-panel view model: EMA speed, ETA range, honest stages, resume invitation, cast confirm (Refs #570) · [`5a3d702459de`](https://github.com/gmanldn/smoothcast/commit/5a3d702459de18346e3446ef3bbb6be95a763bea)
+
+- 🟥 **15:52:15 · Fix** — fix(gui): make guest profile editing responsive and session safe (Refs #709) · [`91b5b180e7f9`](https://github.com/gmanldn/smoothcast/commit/91b5b180e7f982ebbb9078a16313284ddb1896c1)
 
 - ⬜ **15:51:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e576230df224`](https://github.com/gmanldn/smoothcast/commit/e576230df224752937b3c4042dd912929535fbb7)
 
