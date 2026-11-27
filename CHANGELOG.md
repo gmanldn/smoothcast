@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1aafd5b4b79822300c3a586aa1bd066fa9999e99 -->
+<!-- sc-changelog-through: 1c38bc888d403f5347d24f1a7d663752d3823f93 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:21:32 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:22:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:22:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1c38bc888d40`](https://github.com/gmanldn/smoothcast/commit/1c38bc888d403f5347d24f1a7d663752d3823f93)
+
+- 🟦 **07:21:57 · Refactor** — refactor(paths): diagnostics, doctor, low-end probe, link qualification and portal room locate state through paths (Refs #701) (Refs #325) · [`d1320ef1a9e2`](https://github.com/gmanldn/smoothcast/commit/d1320ef1a9e282a31ad1913a10c652d619d95adb)
+
+- 🟩 **07:21:43 · Feature** — feat(music): pure seeded house-radio scorer with repeat rules, kids filter and feedback (Refs #379) · [`b27ee88fd1f1`](https://github.com/gmanldn/smoothcast/commit/b27ee88fd1f16d42a7401947fd488f05caafd867)
+
+- ⬜ **07:21:32 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`07cc958f1942`](https://github.com/gmanldn/smoothcast/commit/07cc958f19428211a38f75fd926d15b5a90377d4)
 
 - ⬜ **07:21:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1aafd5b4b798`](https://github.com/gmanldn/smoothcast/commit/1aafd5b4b79822300c3a586aa1bd066fa9999e99)
 
