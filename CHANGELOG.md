@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 028b23cc16045b0e0db5e26cf043cc15e84f342f -->
+<!-- sc-changelog-through: 06c65e1fcac2797ee007888ba1706aaf8c2ee8e9 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:17:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:20:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:20:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`06c65e1fcac2`](https://github.com/gmanldn/smoothcast/commit/06c65e1fcac2797ee007888ba1706aaf8c2ee8e9)
+
+- 🟩 **19:20:01 · Feature** — feat: add host-authorized room rename to web dashboard (Refs #709) · [`017c1fd321ab`](https://github.com/gmanldn/smoothcast/commit/017c1fd321ab5b405036b62058668ee8b524fadd)
 
 - ⬜ **19:17:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`028b23cc1604`](https://github.com/gmanldn/smoothcast/commit/028b23cc16045b0e0db5e26cf043cc15e84f342f)
 
 - 🟩 **19:17:41 · Feature** — feat: persist headless CLI latency (Refs #698) · [`f90451d2c34c`](https://github.com/gmanldn/smoothcast/commit/f90451d2c34cd3064a4574eb510a6fc4bb8937f3)
+
+- ⬜ **19:17:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`39723f41b4d1`](https://github.com/gmanldn/smoothcast/commit/39723f41b4d1ec901024e9911696df6bc5070805)
 
 - ⬜ **19:15:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e759cdf4f1c5`](https://github.com/gmanldn/smoothcast/commit/e759cdf4f1c5101e66fb4ec3b297139a2f3be790)
 
