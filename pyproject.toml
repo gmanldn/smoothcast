@@ -162,6 +162,7 @@ py-modules = [
     "jank_watchdog",
     "join_slate_policy",
     "join_slate_ui",
+    "kids_limits",
     "lan_guard",
     "lan_interfaces",
     "lan_tls_policy",
