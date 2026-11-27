@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 08bff2e33299181dc64cfbb0fc8bc7f584a1cbe1 -->
+<!-- sc-changelog-through: e2a38bcf34e301646cf01f5400c4a9e46dde69f2 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:02:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:03:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:03:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e2a38bcf34e3`](https://github.com/gmanldn/smoothcast/commit/e2a38bcf34e301646cf01f5400c4a9e46dde69f2)
+
+- 🟦 **16:03:18 · Refactor** — refactor(store): error\_tail publish state uses Store (Refs #701) · [`b96e603d02d8`](https://github.com/gmanldn/smoothcast/commit/b96e603d02d83a0158a5bd724c7e2fcedced67e3)
 
 - ⬜ **16:02:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08bff2e33299`](https://github.com/gmanldn/smoothcast/commit/08bff2e33299181dc64cfbb0fc8bc7f584a1cbe1)
+
+- ⬜ **16:02:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c7c138da85d1`](https://github.com/gmanldn/smoothcast/commit/c7c138da85d1d70583b0850ab40506617ea7c355)
 
 - 🟦 **16:02:50 · Refactor** — refactor(paths): CONFIG\_DIR uses paths.APP\_DIR (Refs #701) (Refs #325) · [`7117382857fa`](https://github.com/gmanldn/smoothcast/commit/7117382857fa1b9749d5b89854ac6671c7ddbb9b)
 
