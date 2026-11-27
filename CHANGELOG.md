@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cad5aa251e6ef68b0237b75fe45c5d941ff58ef3 -->
+<!-- sc-changelog-through: be431811e5678bb48deed83e9fbf5560081af7a0 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:41:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:42:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:42:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`be431811e567`](https://github.com/gmanldn/smoothcast/commit/be431811e5678bb48deed83e9fbf5560081af7a0)
+
+- 🟩 **07:42:53 · Feature** — feat(arch): per-attempt artifact folders, bounded retention and redacted bundle (Refs #698) · [`be459e78f831`](https://github.com/gmanldn/smoothcast/commit/be459e78f831fde2dfaa8e4aadfddfdac0bcc503)
+
+- 🟩 **07:42:34 · Feature** — feat(queue): pure fractional-key sequence CRDT for a partition-tolerant Up Next (Refs #421) · [`d9bbdb14c1d5`](https://github.com/gmanldn/smoothcast/commit/d9bbdb14c1d578bd497b9ff318086b54445ab414)
 
 - ⬜ **07:41:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cad5aa251e6e`](https://github.com/gmanldn/smoothcast/commit/cad5aa251e6ef68b0237b75fe45c5d941ff58ef3)
+
+- ⬜ **07:41:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`22f3ead50092`](https://github.com/gmanldn/smoothcast/commit/22f3ead50092381e24ed305bb366ad5cb1ad3cd9)
 
 - 🟩 **07:41:36 · Feature** — feat(arch): pure plan\_encode with reasons, golden argv tests and lighter-plan degradation (Refs #697) · [`1671d0da4594`](https://github.com/gmanldn/smoothcast/commit/1671d0da459413c959f93780926d3a8e988a62f2)
 
