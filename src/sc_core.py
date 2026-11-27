@@ -64,7 +64,7 @@ class ScCore:
         self._started_mono = self._clock()
         try:
             self.tick()                   # first snapshot is available immediately
-        except Exception as exc:          # a bad first tick must not stop startup
+        except Exception as exc:          # a bad first tick must not stop startup  # noqa: BLE001 - a bad first tick must not stop startup; recorded
             self._record_error(exc)
         self._thread = threading.Thread(target=self._loop, name="smoothcast-sc-core",
                                         daemon=True)
@@ -103,12 +103,12 @@ class ScCore:
         try:
             resolved = self._resolve()
             address = resolved if isinstance(resolved, str) and resolved else None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - resolve failure is recorded and the tick continues
             self._record_error(exc)
         if address is not None and not getattr(self._window, "_closing", False):
             try:
                 self._ensure_mesh(address)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - mesh start failure is recorded
                 self._record_error(exc)
         beat = self._sample(address, now)
         with self._lock:
@@ -145,7 +145,7 @@ class ScCore:
                 return
             try:
                 self.tick()
-            except Exception as exc:      # a bad tick must never end the thread
+            except Exception as exc:      # a bad tick must never end the thread  # noqa: BLE001 - a bad tick must never end the thread; recorded
                 self._record_error(exc)
 
     def _record_error(self, exc: BaseException) -> None:
@@ -168,7 +168,7 @@ def stop(window: object) -> None:
     if core is not None:
         try:
             core.stop()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort stop
             pass
 
 
@@ -179,7 +179,7 @@ def snapshot(window: object) -> dict[str, Any] | None:
         return None
     try:
         return core.snapshot()
-    except Exception:
+    except Exception:  # noqa: BLE001 - snapshot is optional
         return None
 
 
@@ -196,12 +196,12 @@ def _mesh_summary(service: object) -> dict[str, Any]:
                 "receivers_ready": 0, "clients": 0, "activities": []}
     try:
         state = str((service.status() or {}).get("state") or "unknown")
-    except Exception:
+    except Exception:  # noqa: BLE001 - status is optional; defaults to unknown
         state = "unknown"
     beat: Any = None
     try:
         beat = service.heartbeat_snapshot()
-    except Exception:
+    except Exception:  # noqa: BLE001 - heartbeat is optional
         beat = None
     beat = beat if isinstance(beat, dict) else {}
     return {
@@ -221,7 +221,7 @@ def _cast_summary(window: object) -> dict[str, Any]:
     state: Any = None
     try:
         state = read() if callable(read) else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - state read is optional
         state = None
     state = state if isinstance(state, dict) else {}
     return {
