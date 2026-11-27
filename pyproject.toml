@@ -240,6 +240,7 @@ py-modules = [
     "network_route_ui",
     "network_routes",
     "network_topology",
+    "night_mode",
     "node_copy_plan",
     "node_media_ids",
     "node_profile",
