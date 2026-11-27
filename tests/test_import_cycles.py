@@ -1,7 +1,7 @@
 """Layering ratchet (ARCH-02, #690): no new module-level import cycles in src/.
 
 Only imports executed at import time count (top level, including ``try`` and
-``if`` bodies); imports inside functions are deliberate cycle breakers. The
+``if`` bodies, but not ``if TYPE_CHECKING``); imports inside functions are deliberate cycle breakers. The
 allowlist holds today's cycles and may only shrink.
 """
 from __future__ import annotations
@@ -12,7 +12,12 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[1] / "src"
 
 # Each entry is a sorted tuple of the modules in one strongly connected component.
-KNOWN_CYCLES: set[tuple[str, ...]] = {("cast_app_lifecycle", "cast_control")}
+KNOWN_CYCLES: set[tuple[str, ...]] = set()
+
+
+def _is_type_checking(test: ast.expr) -> bool:
+    return ((isinstance(test, ast.Name) and test.id == "TYPE_CHECKING")
+            or (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"))
 
 
 def _top_level_imports(tree: ast.Module, names: set[str]) -> set[str]:
@@ -24,6 +29,8 @@ def _top_level_imports(tree: ast.Module, names: set[str]) -> set[str]:
                 found.update(a.name.split(".")[0] for a in node.names)
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 found.add(node.module.split(".")[0])
+            elif isinstance(node, ast.If) and _is_type_checking(node.test):
+                visit(node.orelse)  # the TYPE_CHECKING body never runs at import time
             elif isinstance(node, (ast.If, ast.Try)):
                 visit(node.body)
                 visit(getattr(node, "orelse", []))
