@@ -2407,7 +2407,7 @@ function schedulePlayhead(){
 }
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
 function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
-let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
+let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[],queueLimit=100;
 const queueElement=$("queue");
 function queueAction(button){
   const row=button.closest("[data-queue-id]");
@@ -2451,7 +2451,7 @@ function renderQueue(items,revision=queueRevision){
   if(queuePressed){deferredQueue={rows,revision};return}
   queueRevision=revision;
   queueState=rows;
-  const key=JSON.stringify(rows.map(item=>[
+  const key=queueLimit+JSON.stringify(rows.map(item=>[
     item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,item.media_kind,
   ]));
   if(key===queueRenderKey)return;
@@ -2468,7 +2468,7 @@ function renderQueue(items,revision=queueRevision){
     empty.className="empty";
     empty.textContent="Nothing in Up Next yet";
     nodes.push(empty);
-  }else rows.forEach((item,index)=>{
+  }else rows.slice(0,queueLimit).forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
     const id=String(item.id||"");
     let li=oldRows.get(id);
@@ -2516,6 +2516,23 @@ function renderQueue(items,revision=queueRevision){
     });
     nodes.push(li);
   });
+  if(rows.length>queueLimit){
+    const more=document.createElement("li"),button=document.createElement("button");
+    more.className="queue-more";
+    button.type="button";
+    button.className="secondary";
+    button.dataset.queueMore="1";
+    button.textContent="Show "+Math.min(100,rows.length-queueLimit)+" more of "+(rows.length-queueLimit)+" remaining";
+    button.addEventListener("click",()=>{
+      queueLimit+=100;
+      queueRenderKey=null;
+      renderQueue(queueState,queueRevision);
+      queueElement.querySelectorAll("[data-queue-id]")[queueLimit-100]?.querySelector("button")?.focus();
+      $("queueFeedback").textContent="Showing "+Math.min(queueLimit,queueState.length)+" of "+queueState.length+" Up Next items.";
+    });
+    more.append(button);
+    nodes.push(more);
+  }
   queue.replaceChildren(...nodes);
   if(focusTarget){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);

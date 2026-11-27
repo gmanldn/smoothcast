@@ -39,8 +39,12 @@ def test_queue_320px_no_overflow_named_buttons_and_keyboard_move():
             page.locator("#name").fill("Phone")
             page.locator("#loginForm button").click()
             items = page.locator("#queue .queue-item")
-            items.nth(119).wait_for()
+            items.nth(99).wait_for()
+            assert items.count() == 100
+            page.locator("#queue [data-queue-more]").click()
             assert items.count() == 120
+            assert page.locator("#queue [data-queue-more]").count() == 0
+            assert "120 of 120" in page.locator("#queueFeedback").inner_text()
             width, inner = page.evaluate("[document.documentElement.scrollWidth, innerWidth]")
             assert width <= inner, f"page is {width}px wide in a {inner}px viewport"
             unnamed = page.evaluate("""[...document.querySelectorAll('#queue button')].filter(
