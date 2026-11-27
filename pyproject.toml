@@ -316,6 +316,7 @@ py-modules = [
     "sleep_fade",
     "slider_accessibility",
     "slo_gate",
+    "speaker_presets",
     "startup_cleanup",
     "startup_timeline",
     "state_labels",
