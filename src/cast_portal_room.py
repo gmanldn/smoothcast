@@ -92,6 +92,10 @@ class PortalRoomMixin:
         snapshot = getattr(self, "_portal_status", None)
         if snapshot is None or self._closing:
             return
+        current = getattr(self, "_portal", None)
+        room = getattr(getattr(current, "server", None), "room", None)
+        if room is not None:
+            room.set_name(self.cfg.get("room_name"))
         try:
             state = self._portal_handle("status", {})
         except Exception as exc:

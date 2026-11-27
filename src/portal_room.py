@@ -20,11 +20,21 @@ MAX_PARTICIPANTS = 32
 MAX_DORMANT_PARTICIPANTS = 128
 PRESENCE_RETENTION_SECONDS = 8 * 60 * 60
 MAX_NAME = 40
+DEFAULT_ROOM_NAME = "Your room"
 MAX_EVENTS = 200
 MAX_TITLE = 60
 MAX_TITLES = 300
 COLORS = ("#6aa9ff", "#f2a65a", "#7ed6a5", "#d99cff", "#ff8d8d",
           "#72d6df", "#f4d35e", "#b8b8ff")
+
+
+def clean_room_name(value: object) -> str:
+    """One printable, bounded label; never a network address or identity."""
+    if not isinstance(value, str):
+        return DEFAULT_ROOM_NAME
+    text = " ".join(value[:4096].split())
+    clean = "".join(ch for ch in text if ch.isprintable())[:MAX_NAME].strip()
+    return clean or DEFAULT_ROOM_NAME
 
 
 class RoomError(Exception):
@@ -72,6 +82,19 @@ class PortalRoom:
         self._activity_keys: OrderedDict[tuple[str, str], float] = OrderedDict()
         self.titles: dict[str, str] = {}
         self.seq = 0
+        self._name = DEFAULT_ROOM_NAME
+
+    def set_name(self, value: object) -> bool:
+        """Host-owned metadata only: retain participants, votes and history."""
+        name = clean_room_name(value)
+        with self._lock:
+            if name == self._name:
+                return False
+            self._name = name
+            # The existing SSE change detector observes room.seq. A rename
+            # must reach joined clients even when playback and queue are idle.
+            self.seq += 1
+            return True
 
     def join(self, name: object, now: float | None = None) -> Participant:
         now = self.clock() if now is None else now
@@ -230,6 +253,7 @@ class PortalRoom:
                 self.events.popleft()
             return {
                 "seq": self.seq,
+                "name": self._name,
                 "me": me.public(now) if me else None,
                 "participants": [
                     person.public(now) for person in sorted(

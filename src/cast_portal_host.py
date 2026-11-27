@@ -184,7 +184,8 @@ class PortalHostMixin:
         except Exception:
             activity = []
         room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
-        participants = room.snapshot().get("participants", []) if room is not None else []
+        room_state = room.snapshot() if room is not None else {}
+        participants = room_state.get("participants", [])
         names = [person["name"] for person in participants if isinstance(person, dict)
                  and isinstance(person.get("name"), str)]
         roster = ", ".join(names[:4])
@@ -215,7 +216,8 @@ class PortalHostMixin:
         ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
                  if isinstance(row, dict) and row.get("ready")]
         shown = f" · Screens: {', '.join(ready)}" if ready else ""
-        label.set_text(f"{presence} · {summary}{shown}")
+        room_name = room_state.get("name", "Your room")
+        label.set_text(f"{room_name} · {presence} · {summary}{shown}")
         peers = getattr(getattr(self, "_portal", None), "peers", None)
         peer_list = peers.snapshot() if peers is not None else []
         available = getattr(getattr(self, "_portal", None),

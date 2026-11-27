@@ -59,6 +59,7 @@ DEFAULTS: dict = {
     "portal_screens": True,
     "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,
+    "room_name": "Your room",  # Host display label; does not change joining or receiver identity.
     # Normal media capabilities; qualified workers and per-request consent still apply.
     "acquisition_defaults_applied": True,
     "portal_link_youtube": True,

@@ -113,6 +113,10 @@ _PANEL = r"""
   function updateFreshness(){if(lastMeshAt)put("meshFreshness","Last mesh change / snapshot received at "+new Date(lastMeshAt).toLocaleTimeString()+". Quiet meshes may have no changes.")}
   window.scRenderMeshRoom=function(state){
     if(!state||typeof state!=="object")return;
+    // The room snapshot carries a host-owned display label independently of the mesh.
+    const roomName=typeof state.room?.name==="string"&&state.room.name.trim()?state.room.name:"Your room";
+    put("homeHeading",roomName);
+    put("meshRoomHeading",roomName+" · room control");
     put("meshRoomTitle",state.active?(state.title||"Media title unavailable"):"Nothing playing");
     put("meshRoomReceiver","Selected: "+(state.receiver||"No receiver selected")+" · "+(state.state_label||state.state||"State unavailable"));
     const queued=Array.isArray(state.queue)?state.queue.length:null;
