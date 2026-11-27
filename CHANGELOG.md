@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f6798985267528ff21bbcfe2c1742f01d7c27f75 -->
+<!-- sc-changelog-through: f927cdcc8f14f9bea466376d37c8a854b41eb48f -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:06:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:07:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:07:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f927cdcc8f14`](https://github.com/gmanldn/smoothcast/commit/f927cdcc8f14f9bea466376d37c8a854b41eb48f)
+
+- 🟩 **07:07:25 · Feature** — feat(diagnostics): Receiver (measured) row from the stream-health aggregate: decoder state and encoder recoveries, unknown when unobserved (Refs #49) (Refs #325) · [`6c44f3bf52e7`](https://github.com/gmanldn/smoothcast/commit/6c44f3bf52e785be3acea0e28b58b17ce469ffe7)
+
+- 🟩 **07:06:58 · Feature** — feat(offline): pure download admission, tidy rules, eviction reconcile and signed tokens (Refs #369) · [`9e1a204765d3`](https://github.com/gmanldn/smoothcast/commit/9e1a204765d3845a44708c15f85788370758d0ff)
 
 - ⬜ **07:06:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f67989852675`](https://github.com/gmanldn/smoothcast/commit/f6798985267528ff21bbcfe2c1742f01d7c27f75)
+
+- ⬜ **07:06:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`76e0c6684643`](https://github.com/gmanldn/smoothcast/commit/76e0c6684643c752aef571308b41132e189f52a6)
 
 - 🟥 **07:06:33 · Fix** — fix(errors): castctl logs status-refresh and disconnect failures instead of swallowing (Refs #694) · [`2907d0bba615`](https://github.com/gmanldn/smoothcast/commit/2907d0bba6158641b92d297ac193f0ee2262d952)
 
