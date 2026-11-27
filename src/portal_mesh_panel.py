@@ -64,7 +64,7 @@ _PANEL = r"""
 <div class="mesh-metric"><strong id="meshBusyCount">—</strong><span>Reported in use</span></div>
 <div class="mesh-metric"><strong id="meshUnavailableCount">—</strong><span>Stale / unreachable</span></div>
 </div>
-<section id="meshDiagramBox" aria-labelledby="meshDiagramHeading"><h3 id="meshDiagramHeading">Network diagram</h3><img id="meshDiagram" hidden alt="Diagram of every device on the network, its receivers and connected clients" style="width:100%;max-width:640px;height:auto;background:var(--input);border:1px solid var(--line);border-radius:12px"><ul id="meshProfiles" aria-label="Detail for each device"></ul></section>
+<section id="meshDiagramBox" aria-labelledby="meshDiagramHeading"><h3 id="meshDiagramHeading">Network diagram</h3><p id="meshDiagramStatus" class="mesh-note" role="status" aria-live="polite">Waiting for device details…</p><img id="meshDiagram" hidden alt="Diagram of every device on the network, its receivers and connected clients" style="width:100%;max-width:640px;height:auto;background:var(--input);border:1px solid var(--line);border-radius:12px"><ul id="meshProfiles" aria-label="Detail for each device"></ul></section>
 <section id="meshReceiverInventory" aria-labelledby="meshTargetsHeading"><h3 id="meshTargetsHeading">Casting targets across the mesh</h3><p class="field-hint">Receiver observations, not a cast command. A ready report does not reserve a receiver.</p><ul id="meshTargets" aria-label="Playback targets"></ul><p id="meshNoTargets" class="muted" hidden>No receivers reported yet. Check whether your TV or speaker is awake.</p></section>
 <div class="mesh-room" aria-labelledby="meshRoomHeading"><h3 id="meshRoomHeading">This host · room control</h3>
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
@@ -101,7 +101,7 @@ _PANEL = r"""
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
   let beatTimer=null,beatBusy=false;
   let bootRequest=null,bootEpoch=0;
-  let profileRequest=null,profileSession=null,profileSignature=null,profileVisible=false;
+  let profileRequest=null,profileSession=null,profileSignature=null,profileVisible=false,diagramGeneration=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const TEXT={self:"This device",alive:"Online",ready:"Reported ready",busy:"Reported in use",stale:"Not seen lately",unreachable:"Can't be reached"};
   const RANK={ready:0,busy:1,stale:2,unreachable:3};
@@ -375,7 +375,8 @@ _PANEL = r"""
   function cancelProfiles(reset=false){
     if(profileRequest){profileRequest.abort();profileRequest=null}
     if(reset){
-      profileSession=null;profileSignature=null;profileVisible=false;
+      profileSession=null;profileSignature=null;profileVisible=false;diagramGeneration++;
+      put("meshDiagramStatus","Waiting for device details…");
       const list=$("meshProfiles"),img=$("meshDiagram");
       if(list)list.replaceChildren();
       if(img){img.hidden=true;img.removeAttribute("src")}
@@ -390,6 +391,23 @@ _PANEL = r"""
     const visible=profilesVisible();
     if(!visible){profileVisible=false;cancelProfiles();return}
     if(!profileVisible){profileVisible=true;profiles()}
+  }
+  function refreshDiagram(img,signature,session){
+    if(!img||signature===profileSignature)return;
+    // decode() is bound to this image request; do not let a late decode
+    // overwrite a subsequent room session or diagram generation.
+    const generation=++diagramGeneration;
+    const current=()=>generation===diagramGeneration&&profileSession===session&&csrf===session&&dash&&!dash.hidden;
+    profileSignature=signature;
+    put("meshDiagramStatus","Loading network diagram…");
+    img.src="/api/mesh/diagram.svg?t="+Date.now()+"-"+generation;
+    const ready=()=>{if(current()){img.hidden=false;put("meshDiagramStatus","")}};
+    const failed=()=>{if(current()){
+      img.hidden=true;profileSignature=null;
+      put("meshDiagramStatus","Diagram unavailable · will retry. Device details remain below.");
+    }};
+    if(typeof img.decode==="function")img.decode().then(ready,failed);
+    else {img.onload=ready;img.onerror=failed}
   }
   async function profiles(){
     const list=document.getElementById("meshProfiles"),img=document.getElementById("meshDiagram");
@@ -419,10 +437,7 @@ _PANEL = r"""
       }
       for(const li of [...list.children])if(!keep.has(li.dataset.node))li.remove();
       const signature=JSON.stringify(d.nodes||[]);
-      if(img&&signature!==profileSignature){
-        img.src="/api/mesh/diagram.svg?t="+Date.now();
-        img.hidden=false;profileSignature=signature;
-      }
+      refreshDiagram(img,signature,session);
     }catch(_){}
     finally{if(profileRequest===request)profileRequest=null}
   }

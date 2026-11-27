@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e836471a988eb8a2f901e9ffc9584edfa2c16be7 -->
+<!-- sc-changelog-through: f633ac2a7e1832e96eff0a21aa3611b2e765b84d -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **15:17:56 · Fix** — fix(gui): show the named room before joining and clarify profile controls (Refs #709) <!-- sc-changelog-pending -->
+- 🟥 **15:19:09 · Fix** — fix(web): recover network diagrams after failed image loads (Refs #710) <!-- sc-changelog-pending -->
+
+- 🟥 **15:18:07 · Fix** — fix(gui): show the named room before joining and clarify profile controls (Refs #709) · [`f633ac2a7e18`](https://github.com/gmanldn/smoothcast/commit/f633ac2a7e1832e96eff0a21aa3611b2e765b84d)
 
 - 🟩 **14:34:41 · Feature** — feat(win): fail-closed FFmpeg archive verifier/stager with PE x64 and capability checks (Refs #529) · [`e836471a988e`](https://github.com/gmanldn/smoothcast/commit/e836471a988eb8a2f901e9ffc9584edfa2c16be7)
 
