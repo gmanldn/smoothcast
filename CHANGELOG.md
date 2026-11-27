@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f923251f9eef6a022732ef889db619a6723ac086 -->
+<!-- sc-changelog-through: b8f1432c083f1ef6cc28cb6a41010078e8cd41e7 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:32:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:34:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:34:17 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b8f1432c083f`](https://github.com/gmanldn/smoothcast/commit/b8f1432c083f1ef6cc28cb6a41010078e8cd41e7)
+
+- 🟥 **07:34:11 · Fix** — fix(arch): add src/settings.py that update\_facts imports; it was left untracked by the previous ship (Refs #693) · [`93f6b2d30611`](https://github.com/gmanldn/smoothcast/commit/93f6b2d30611fa0c9afab4551e47dac3058576c9)
+
+- 🟩 **07:33:36 · Feature** — feat(a11y): pure per-resident accessibility prefs, track selection, add-my-captions and static HTML audit (Refs #389) · [`826ee2cf7b6f`](https://github.com/gmanldn/smoothcast/commit/826ee2cf7b6f443dc2a01077a5d51d3f6d3171d5)
 
 - ⬜ **07:32:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f923251f9eef`](https://github.com/gmanldn/smoothcast/commit/f923251f9eef6a022732ef889db619a6723ac086)
 
 - 🟪 **07:32:45 · Tests** — test(arch): import-cycle ratchet ignores TYPE\_CHECKING imports; zero module-level cycles remain (Refs #690) · [`3e9ed8499a4a`](https://github.com/gmanldn/smoothcast/commit/3e9ed8499a4ad3a3b71a05a103a034e64f4dc597)
+
+- ⬜ **07:32:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a712d45f9978`](https://github.com/gmanldn/smoothcast/commit/a712d45f99783802e26c3975ee488c06a63ce333)
 
 - ⬜ **07:32:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`60c595b7eaf9`](https://github.com/gmanldn/smoothcast/commit/60c595b7eaf9c19534be158f2db2042fde78822a)
 
