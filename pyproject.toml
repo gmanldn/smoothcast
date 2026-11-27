@@ -297,7 +297,6 @@ py-modules = [
     "portal_upload_recovery",
     "portal_uploads",
     "position_tracker",
-    "power_backends",
     "power_port",
     "preference_choices",
     "preferences_link_ui",
