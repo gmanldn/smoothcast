@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ea77b00a8d774693b1305ece77fbfbe2d1d26712 -->
+<!-- sc-changelog-through: 2426f9e6b2fd3f04698c941e516c2fd978689921 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:25:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:26:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:26:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2426f9e6b2fd`](https://github.com/gmanldn/smoothcast/commit/2426f9e6b2fd3f04698c941e516c2fd978689921)
+
+- 🟩 **07:26:13 · Feature** — feat(arch): probed DRM render-node helper for hardware encode, not yet used by the streamer (Refs #703) (Refs #325) · [`a1037dbb37a2`](https://github.com/gmanldn/smoothcast/commit/a1037dbb37a2506a900ee2fb81d5979700d3f02b)
+
+- 🟩 **07:25:56 · Feature** — feat(portal): pure share-target manifest entry, /share guard, classifier and pending-share store (Refs #382) · [`1efdaa73b776`](https://github.com/gmanldn/smoothcast/commit/1efdaa73b776386b72201fe906e41a0aa35ed572)
 
 - ⬜ **07:25:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ea77b00a8d77`](https://github.com/gmanldn/smoothcast/commit/ea77b00a8d774693b1305ece77fbfbe2d1d26712)
 
 - 🟩 **07:25:08 · Feature** — feat(persist): Store write failures carry a typed reason (disk full, permission denied, I/O) (Refs #701) (Refs #325) · [`e1d475c203b4`](https://github.com/gmanldn/smoothcast/commit/e1d475c203b48c3f3be47484c85e32c19c907ff5)
+
+- ⬜ **07:25:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`382e3a05b452`](https://github.com/gmanldn/smoothcast/commit/382e3a05b45200743c7b91dea4eee55e69592952)
 
 - 🟩 **07:24:52 · Feature** — feat(photos): pure EXIF orientation/GPS strip, slideshow plan and ephemeral store (Refs #381) · [`ddbb5a528ab2`](https://github.com/gmanldn/smoothcast/commit/ddbb5a528ab23ad8a7d816825b33df0965459e93)
 
