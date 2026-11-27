@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 51b36131b562e1fed5968fe9e941cea215cf33e5 -->
+<!-- sc-changelog-through: 412d9ae974a99c025d1e45acfcf91502fe500277 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:27:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:29:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:29:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`412d9ae974a9`](https://github.com/gmanldn/smoothcast/commit/412d9ae974a99c025d1e45acfcf91502fe500277)
+
+- 🟨 **06:29:21 · Documentation** — docs(setup): document sc.py --fresh and stale-instance reclaim (Refs #325) · [`4ac39ee0321d`](https://github.com/gmanldn/smoothcast/commit/4ac39ee0321d83f50554eeb617a98ffadb5953aa)
+
+- 🟩 **06:27:59 · Feature** — feat(privacy): pure role-aware snapshot redaction with canary leak check (Refs #329) · [`7a87a1651588`](https://github.com/gmanldn/smoothcast/commit/7a87a16515881e407ace8961e26785128eea43b1)
+
+- ⬜ **06:27:32 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8098bbfc7177`](https://github.com/gmanldn/smoothcast/commit/8098bbfc7177c04aacf01871a0ecea7935c3e21b)
 
 - ⬜ **06:27:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`51b36131b562`](https://github.com/gmanldn/smoothcast/commit/51b36131b562e1fed5968fe9e941cea215cf33e5)
 
