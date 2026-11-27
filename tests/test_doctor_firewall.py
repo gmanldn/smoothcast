@@ -27,3 +27,14 @@ def test_unknown_state_is_warn_not_pass_or_fail():
 def test_other_platforms_are_warn_with_manual_guidance():
     r = fw.firewall(fake({}), "win32")
     assert r.status == doctor.WARN and "win32" in r.detail
+
+
+def test_doctor_main_runs_the_firewall_check(monkeypatch, capsys):
+    import json
+    import doctor
+    import doctor_firewall
+    monkeypatch.setattr(doctor_firewall, "firewall",
+                        lambda: doctor.Result("firewall", doctor.PASS, "stub"))
+    doctor.main(["--json"])
+    names = [c["name"] for c in json.loads(capsys.readouterr().out)["checks"]]
+    assert "firewall" in names
