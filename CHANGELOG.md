@@ -8,11 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 6a89078cf06f0807a7a420596b507aeea99b6cc0 -->
+<!-- sc-changelog-through: 70218ff4a4686bac5d288b1d2d71c8ad45e9468c -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:07:49 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:10:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:10:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`70218ff4a468`](https://github.com/gmanldn/smoothcast/commit/70218ff4a4686bac5d288b1d2d71c8ad45e9468c)
+
+- 🟥 **16:10:25 · Fix** — fix(a11y): label the room-name entry and drop its quarantine entry (Refs #700) (Refs #325) · [`b95718ccf5a4`](https://github.com/gmanldn/smoothcast/commit/b95718ccf5a4ea3016489f4db9a76d0cc381ac74)
+
+- 🟪 **16:09:59 · Tests** — test(upload): over HTTP a 503 early-cast rejection is retried and accepted on the next chunk (Refs #686) · [`21987441f49e`](https://github.com/gmanldn/smoothcast/commit/21987441f49e316b43832224c1b3342340b833ea)
+
+- 🟦 **16:08:30 · Refactor** — refactor(runtime): update button check/apply run on the bounded network pool; raw-thread ratchet shrinks by 3 (Refs #696) · [`df6295eaaf78`](https://github.com/gmanldn/smoothcast/commit/df6295eaaf78d614b26fb25d618f51ae9d987ebb)
+
+- ⬜ **16:07:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b3b86580c7b2`](https://github.com/gmanldn/smoothcast/commit/b3b86580c7b222612950464a82fad0e4c43ace78)
 
 - ⬜ **16:07:49 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6a89078cf06f`](https://github.com/gmanldn/smoothcast/commit/6a89078cf06f0807a7a420596b507aeea99b6cc0)
 
