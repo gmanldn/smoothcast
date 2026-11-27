@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 38270735f2092089f58a34e1100d45923ac07410 -->
+<!-- sc-changelog-through: 6512e96c0729bf4793c1e2214d78fc265ebaaba2 -->
 
 ## 2026-11-27 · UTC
 
-- 🟨 **05:24:48 · Documentation** — docs(manual): publish expanded SmoothCast product manual and technical reference <!-- sc-changelog-pending -->
+- 🟥 **05:41:49 · Fix** — fix(gui): keep renamed room and guest labels in sync (Refs #709) <!-- sc-changelog-pending -->
+
+- 🟨 **05:32:46 · Documentation** — docs(manual): publish expanded SmoothCast product manual and technical reference · [`6512e96c0729`](https://github.com/gmanldn/smoothcast/commit/6512e96c0729bf4793c1e2214d78fc265ebaaba2)
 
 - 🟦 **05:24:48 · Performance** — perf(gui): defer network diagram rendering and keep labels readable (Refs #710) · [`38270735f209`](https://github.com/gmanldn/smoothcast/commit/38270735f2092089f58a34e1100d45923ac07410)
 

@@ -59,3 +59,55 @@ def test_desktop_rename_uses_existing_config_and_status(monkeypatch):
     assert calls == [("save", {"room_name": "Cinema"}), "publish", "Room name updated"]
     rename(owner, "Cinema")
     assert len(calls) == 3
+
+
+def test_guest_roster_rename_preserves_selection_and_avoids_unchanged_rebuild():
+    import ast
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    source = Path(__file__).resolve().parents[1] / "src" / "cast_portal_host.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+               and n.name == "PortalHostMixin")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
+                  and n.name == "_sync_portal_guest_roster")
+    invalid = 2**32 - 1
+    ns = {"Gtk": SimpleNamespace(StringList=SimpleNamespace(new=list),
+                                 INVALID_LIST_POSITION=invalid)}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), ns)
+    class Dropdown:
+        selected = 0
+        def __init__(self):
+            self.models = []
+        def get_selected(self):
+            return self.selected
+        def set_selected(self, value):
+            self.selected = value
+        def set_model(self, value):
+            self.models.append(value)
+            self.selected = 0
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+    drop = Dropdown()
+    owner = SimpleNamespace(portal_guest_dropdown=drop, portal_guest_ids=(),
+                            portal_revoke_button=SimpleNamespace(set_sensitive=lambda _: None))
+    sync = ns["_sync_portal_guest_roster"]
+    guests = [{"id": "a", "name": "Sam"}, {"id": "b", "name": "Jo"}]
+    sync(owner, guests)
+    drop.selected = 1
+    sync(owner, guests)
+    assert len(drop.models) == 1
+    guests[1]["name"] = "Joseph"
+    sync(owner, guests)
+    assert drop.models[-1] == ["Sam", "Joseph"]
+    assert owner.portal_guest_ids[drop.selected] == "b"
+    sync(owner, guests[::-1])
+    assert drop.selected == 0 and owner.portal_guest_ids[0] == "b"
+    sync(owner, guests[:1])
+    assert drop.selected == invalid
+    sync(owner, guests[:1])
+    assert drop.selected == invalid
+    sync(owner, [])
+    assert not drop.sensitive

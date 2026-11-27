@@ -117,6 +117,7 @@ _PANEL = r"""
     const roomName=typeof state.room?.name==="string"&&state.room.name.trim()?state.room.name:"Your room";
     put("homeHeading",roomName);
     put("meshRoomHeading",roomName+" · room control");
+    put("localLiveHeading",roomName+" · live activity");
     put("meshRoomTitle",state.active?(state.title||"Media title unavailable"):"Nothing playing");
     put("meshRoomReceiver","Selected: "+(state.receiver||"No receiver selected")+" · "+(state.state_label||state.state||"State unavailable"));
     const queued=Array.isArray(state.queue)?state.queue.length:null;

@@ -136,7 +136,6 @@ class PortalHostMixin:
         removed = current.revoke_guest(ids[selected])
         if removed:
             self.toast("Guest access revoked; playback continues")
-            self.portal_guest_ids = ()  # Rebuild roster on the next refresh.
             self._refresh_portal_activity()
         else:
             self.toast("That guest has already left")
@@ -169,6 +168,31 @@ class PortalHostMixin:
         self._refresh_portal_activity()
         self.toast("Everyone signed out. New room PIN ready; playback continues.")
 
+    def _sync_portal_guest_roster(self, participants) -> None:
+        """Refresh labels without moving a selection to a different guest."""
+        dropdown = getattr(self, "portal_guest_dropdown", None)
+        if dropdown is None:
+            return
+        roster = tuple((person["id"], str(person.get("name") or "Guest"))
+                       for person in participants if isinstance(person, dict)
+                       and isinstance(person.get("id"), str))
+        ids = tuple(guest_id for guest_id, _ in roster)
+        prior = getattr(self, "portal_guest_ids", ())
+        if ids == prior and roster == getattr(self, "_portal_guest_roster", None):
+            return
+        selected = dropdown.get_selected()
+        chosen = prior[selected] if 0 <= selected < len(prior) else None
+        self.portal_guest_ids = ids
+        self._portal_guest_roster = roster
+        dropdown.set_model(Gtk.StringList.new(
+            [name for _, name in roster] or ["No guests connected"]))
+        # A departed selected guest must not silently select someone else.
+        index = ids.index(chosen) if chosen in ids else (
+            0 if not prior and ids else Gtk.INVALID_LIST_POSITION)
+        dropdown.set_selected(index)
+        dropdown.set_sensitive(bool(ids))
+        self.portal_revoke_button.set_sensitive(bool(ids))
+
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""
         label = getattr(self, "portal_activity_label", None)
@@ -191,21 +215,7 @@ class PortalHostMixin:
         roster = ", ".join(names[:4])
         if len(names) > 4:
             roster += f", +{len(names) - 4} more"
-        ids = tuple(person["id"] for person in participants
-                    if isinstance(person, dict) and isinstance(person.get("id"), str))
-        if hasattr(self, "portal_guest_dropdown") and ids != getattr(self, "portal_guest_ids", ()):
-            prior = getattr(self, "portal_guest_ids", ())
-            selected = self.portal_guest_dropdown.get_selected()
-            chosen = prior[selected] if selected < len(prior) else None
-            labels = [str(person.get("name", "Guest")) for person in participants
-                      if isinstance(person, dict) and isinstance(person.get("id"), str)]
-            self.portal_guest_ids = ids
-            self.portal_guest_dropdown.set_model(
-                Gtk.StringList.new(labels if labels else ["No guests connected"]))
-            self.portal_guest_dropdown.set_selected(
-                ids.index(chosen) if chosen in ids else 0)
-            self.portal_guest_dropdown.set_sensitive(bool(ids))
-            self.portal_revoke_button.set_sensitive(bool(ids))
+        self._sync_portal_guest_roster(participants)
         summary = portal_uploads.format_portal_activity(activity)
         presence = f"In room: {roster}" if roster else "No guests connected"
         screens = getattr(getattr(self._portal, "server", None), "screens", None)
@@ -217,7 +227,9 @@ class PortalHostMixin:
                  if isinstance(row, dict) and row.get("ready")]
         shown = f" · Screens: {', '.join(ready)}" if ready else ""
         room_name = room_state.get("name", "Your room")
-        label.set_text(f"{room_name} · {presence} · {summary}{shown}")
+        activity_text = f"{room_name} · {presence} · {summary}{shown}"
+        if label.get_text() != activity_text:
+            label.set_text(activity_text)
         peers = getattr(getattr(self, "_portal", None), "peers", None)
         peer_list = peers.snapshot() if peers is not None else []
         available = getattr(getattr(self, "_portal", None),
