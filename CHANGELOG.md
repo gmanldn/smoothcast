@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2426f9e6b2fd3f04698c941e516c2fd978689921 -->
+<!-- sc-changelog-through: 3f711f42417b7578fa7097cdba33d4c85a632bce -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:26:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:26:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:26:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3f711f42417b`](https://github.com/gmanldn/smoothcast/commit/3f711f42417b7578fa7097cdba33d4c85a632bce)
+
+- ⬜ **07:26:35 · Maintenance** — chore(arch): reviewed complexity baseline (doctor CLI #211, stream-health I/O #49, Store #701); off quarantine (Refs #700) · [`247cf071d9c5`](https://github.com/gmanldn/smoothcast/commit/247cf071d9c5935072b2f30c1d86d87f087d8677)
 
 - ⬜ **07:26:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2426f9e6b2fd`](https://github.com/gmanldn/smoothcast/commit/2426f9e6b2fd3f04698c941e516c2fd978689921)
+
+- ⬜ **07:26:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`db1029327834`](https://github.com/gmanldn/smoothcast/commit/db10293278348d507b9da995826c907a01123ac3)
 
 - 🟩 **07:26:13 · Feature** — feat(arch): probed DRM render-node helper for hardware encode, not yet used by the streamer (Refs #703) (Refs #325) · [`a1037dbb37a2`](https://github.com/gmanldn/smoothcast/commit/a1037dbb37a2506a900ee2fb81d5979700d3f02b)
 
