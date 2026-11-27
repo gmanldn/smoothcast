@@ -1,0 +1,48 @@
+name: Mesh transfer performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      size:
+        description: "Seeded payload size"
+        type: choice
+        options: [64k, 2m, 64m]
+        default: 2m
+      rtt_ms:
+        description: "Injected round-trip latency in milliseconds"
+        type: choice
+        options: [0, 0.1, 1, 10, 100]
+        default: 1
+      bandwidth_mbps:
+        description: "Injected bandwidth cap, 0 for unshaped"
+        default: "100"
+  schedule:
+    - cron: "23 4 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Run deterministic loopback scenarios
+        run: >-
+          python scripts/ci/bench_mesh_transfers.py
+          --size "${{ github.event.inputs.size || '2m' }}"
+          --rtt-ms "${{ github.event.inputs.rtt_ms || '1' }}"
+          --bandwidth-mbps "${{ github.event.inputs.bandwidth_mbps || '100' }}"
+          --drop-first-upload --output mesh-transfer-report.json
+      - name: Publish runner-labelled report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mesh-transfer-${{ github.run_id }}
+          path: mesh-transfer-report.json
+          if-no-files-found: warn
+          retention-days: 30
