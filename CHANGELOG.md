@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 38fa14a5349808a7a5e46a156d0e2f8f5afe5e0e -->
+<!-- sc-changelog-through: 3ecb41e8a57516c6273d02ae879ea6b828e333a3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:54:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:56:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:56:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3ecb41e8a575`](https://github.com/gmanldn/smoothcast/commit/3ecb41e8a57516c6273d02ae879ea6b828e333a3)
+
+- 🟪 **15:56:09 · Tests** — test(arch): core-only-imports-core layering contract with 1 known violation (Refs #690) · [`f92f5165d0a8`](https://github.com/gmanldn/smoothcast/commit/f92f5165d0a893e317a94375f3d014730a66dbaa)
+
+- 🟩 **15:55:30 · Feature** — feat(upload): growing-file reader with watermark, stall/cancel/stale handling and MP4 faststart gate (Refs #572) · [`5dbf67bceac5`](https://github.com/gmanldn/smoothcast/commit/5dbf67bceac57dedf6236e95aa5ec56257faff18)
 
 - ⬜ **15:54:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`38fa14a53498`](https://github.com/gmanldn/smoothcast/commit/38fa14a5349808a7a5e46a156d0e2f8f5afe5e0e)
+
+- ⬜ **15:54:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`cf97bd28531a`](https://github.com/gmanldn/smoothcast/commit/cf97bd28531a173f7e6d677711e358d18f448bdd)
 
 - 🟪 **15:54:11 · Tests** — test(cast): every castctl control helper is accepted by the pychromecast backend; unknown verbs fail without raising (Refs #202) · [`b6ab068c737e`](https://github.com/gmanldn/smoothcast/commit/b6ab068c737e7072f5cba4dd120fca2ecbe85b98)
 
