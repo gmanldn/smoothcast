@@ -216,6 +216,25 @@ def test_status_dispatch_reads_snapshot_without_idle_callback(tmp_path):
     assert idle == []
 
 
+@pytest.mark.parametrize(("info", "expected"), [
+    ({"duration": 3723.2, "stream_type": "BUFFERED"}, "1:02:03"),
+    ({"duration": 0, "stream_type": "LIVE"}, "Live"),
+    ({"duration": None, "stream_type": "BUFFERED"}, "Length unknown"),
+])
+def test_published_external_status_has_an_explicit_total_length_label(tmp_path, info, expected):
+    window, uploads, _idle = _build_window(tmp_path)
+    window.external = True
+    window.device_info = info
+    window._portal_status = portal_status.PublishedStatus()
+    window._portal_handle = lambda _operation, _payload: {"duration": info.get("duration") or 0}
+    try:
+        window._publish_portal_status()
+        published = window._portal_status.read()
+        assert published["length_label"] == expected
+    finally:
+        uploads.close()
+
+
 def test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread(tmp_path):
     callbacks = Queue()
     window, uploads, _idle = _build_window(tmp_path, idle_add=callbacks.put)
