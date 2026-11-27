@@ -8,15 +8,27 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 74b9ca1f110d6e8269ce9cdc37edec4c1e22adb4 -->
+<!-- sc-changelog-through: f6798985267528ff21bbcfe2c1742f01d7c27f75 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:02:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:06:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:06:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f67989852675`](https://github.com/gmanldn/smoothcast/commit/f6798985267528ff21bbcfe2c1742f01d7c27f75)
+
+- 🟥 **07:06:33 · Fix** — fix(errors): castctl logs status-refresh and disconnect failures instead of swallowing (Refs #694) · [`2907d0bba615`](https://github.com/gmanldn/smoothcast/commit/2907d0bba6158641b92d297ac193f0ee2262d952)
+
+- 🟩 **07:06:02 · Feature** — feat(library): pure series parser, show grouping, next-episode and autoplay rules (Refs #368) · [`df7ba1df9aa7`](https://github.com/gmanldn/smoothcast/commit/df7ba1df9aa7a2861e14bbfb96b2cab65539d6bc)
+
+- 🟩 **07:04:57 · Feature** — feat(library): pure merged house catalogue with best-copy routing and offline reasons (Refs #367) · [`67e16cdbb725`](https://github.com/gmanldn/smoothcast/commit/67e16cdbb72514d0fcab3d2a6bf6c669f6b0e648)
+
+- 🟩 **07:03:03 · Feature** — feat(residents): per-person resume store with order-independent cross-node merge (Refs #365) · [`a4d9f77e08bd`](https://github.com/gmanldn/smoothcast/commit/a4d9f77e08bdcc47599cc6410a483acc700ff542)
 
 - ⬜ **07:02:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`74b9ca1f110d`](https://github.com/gmanldn/smoothcast/commit/74b9ca1f110d6e8269ce9cdc37edec4c1e22adb4)
 
 - 🟪 **07:02:23 · Tests** — test(arch): ratchet against new raw os.replace writers; allowlist only shrinks (Refs #701) · [`dcd0d324a691`](https://github.com/gmanldn/smoothcast/commit/dcd0d324a691904c94f0e7f0b907863a8ce5c84a)
+
+- ⬜ **07:02:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`37e724e1522c`](https://github.com/gmanldn/smoothcast/commit/37e724e1522c5ba5c94ca1eee7a70d63d89b5b86)
 
 - 🟩 **07:02:10 · Feature** — feat(kids): pure rating, bedtime (midnight-safe) and budget limits (Refs #364) · [`541a1787a8e5`](https://github.com/gmanldn/smoothcast/commit/541a1787a8e596090a032e7f4c8d9fabe857c09a)
 
