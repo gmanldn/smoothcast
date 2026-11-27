@@ -86,9 +86,9 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(router.route(["docs/agents/workflow.md"])[0], "workflow")
         self.assertEqual(router.route(["docs/agents/efficiency.md"])[0], "efficiency")
 
-    def test_root_sends_agents_to_agent_ready_issues_without_large_context(self):
+    def test_root_points_to_the_claim_aware_workflow_without_large_context(self):
         root = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("scripts/ticket_digest.py --next --label agent-ready", root)
+        self.assertIn("scripts/agent.py start", root)
         self.assertIn("docs/agents/efficiency.md", root)
         for relative, _ in router.SKILLS.values():
             self.assertIn(relative, root)

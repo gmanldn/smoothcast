@@ -16,14 +16,8 @@ The Verify workflow runs manually, not on every push, and does not promote
 to `main`. Use `scripts/agent.py ship --skip-checks` for an explicitly
 unverified fast push; plain `ship` runs optional affected checks.
 
-**Deferred testing.** Shipping completed work to `develop` is the priority;
-do not run the full suite per ticket or per push. Once the acceptance slice is
-implemented and shipped, move on: record the handover as *shipped to `develop`,
-untested*, and list exactly what was and was not run. Testing is deliberately
-lazy — it happens later, in batches, to close tickets or on owner request. The
-full suite runs only before a MINOR/MAJOR release bump. An untested change is
-not green; `--skip-checks` records why, and closure waits until tests actually
-run.
+Use focused checks for individual tickets. Batch deeper testing for acceptance
+or on owner request. Run the full suite before a MINOR or MAJOR release bump.
 
 When testing is requested, use the headless lanes (`scripts/ci/test_scope.py`):
 

@@ -57,17 +57,6 @@ to `main`. The owner manually decides when (and whether) to merge it.
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
    is not proof of functionality. [Claim and handover protocol](../COORDINATION.md).
 
-**Preferred complete loop (claims, isolated worktrees, SHA identity and handover):**
-
-```sh
-python3 scripts/agent.py start              # auto-select or: start 584
-cd /path/printed/by/start
-# implement and review the narrow acceptance slice
-python3 scripts/agent.py ship --message "fix: completed behaviour" --next none
-# give real evidence; close only when every acceptance criterion passes
-python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
-```
-
 ## Concurrency and token efficiency
 
 - Never lock the entire repository for an agent or run a long task in the
@@ -99,14 +88,9 @@ keeping the issue lease. See [format and recovery](../CHANGELOG.md).
 
 ## Lazy, risk-weighted CI — never a develop merge gate
 
-**Development never waits for CI or physical hardware qualification.** Push
-coherent changes immediately to `develop`; do not start long global
-pytest/GTK/native builds for every agent patch. Owner policy (27 Nov 2026):
-hardware/device tests are desirable but never gate shipment to `develop`.
-Record unrun hardware checks as UNVERIFIED; keep ticket acceptance and release
-qualification separate from shipping. A failed or unrun check is *not* a licence to say a ticket passed
-testing. Always describe actual evidence accurately.
-**Finish, then move on:** ship, record it untested, and test lazily to close tickets.
+Ship coherent changes to `develop` without waiting for CI or hardware. Use
+focused checks where useful. Record unrun checks as UNVERIFIED and close only
+with acceptance evidence.
 
 | Event | Work scheduled | Purpose |
 | --- | --- | --- |
