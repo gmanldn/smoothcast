@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e2a38bcf34e301646cf01f5400c4a9e46dde69f2 -->
+<!-- sc-changelog-through: eba4965906605e09f86312fa8fee4a2ad57edb0a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:03:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:04:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:04:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`eba496590660`](https://github.com/gmanldn/smoothcast/commit/eba4965906605e09f86312fa8fee4a2ad57edb0a)
+
+- 🟦 **16:04:08 · Refactor** — refactor(paths): control\_api and portal\_uploads use paths.APP\_DIR; allowlist shrinks to 4 (Refs #701) (Refs #325) · [`1910a690b139`](https://github.com/gmanldn/smoothcast/commit/1910a690b139e73fb4559f252d8c661cb0e8be01)
 
 - ⬜ **16:03:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e2a38bcf34e3`](https://github.com/gmanldn/smoothcast/commit/e2a38bcf34e301646cf01f5400c4a9e46dde69f2)
 
 - 🟦 **16:03:18 · Refactor** — refactor(store): error\_tail publish state uses Store (Refs #701) · [`b96e603d02d8`](https://github.com/gmanldn/smoothcast/commit/b96e603d02d83a0158a5bd724c7e2fcedced67e3)
+
+- ⬜ **16:03:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b37423710fe2`](https://github.com/gmanldn/smoothcast/commit/b37423710fe2481017b567d0f89e481ce0a4d5bb)
 
 - ⬜ **16:02:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08bff2e33299`](https://github.com/gmanldn/smoothcast/commit/08bff2e33299181dc64cfbb0fc8bc7f584a1cbe1)
 
