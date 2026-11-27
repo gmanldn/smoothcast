@@ -3912,8 +3912,8 @@ $("uploadButton").addEventListener("click",async()=>{
         transferView("transfer",state.received,file.size,"",queueOnly);
         if(state.ready_to_cast&&!casting){
           if(state.early_cast_accepted===false){
-            monitorText("transferDelivery","Early cast declined — retry after upload");
-            transferEvent("Early playback declined; continuing the upload");
+            monitorText("transferDelivery","Early cast not started yet — will retry, otherwise plays when the upload finishes");
+            transferEvent("Early playback not started yet; continuing the upload");
           }else{
             casting=true;
             monitorText("transferDelivery","Early playback requested — not confirmed");
