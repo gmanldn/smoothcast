@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f0a92cd4c98a5de8bc1d8e4217a1cb9727de1281 -->
+<!-- sc-changelog-through: f45f9e97f12af77daeac37a15dc925e31889cffe -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:59:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:00:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:00:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f45f9e97f12a`](https://github.com/gmanldn/smoothcast/commit/f45f9e97f12af77daeac37a15dc925e31889cffe)
+
+- 🟦 **16:00:00 · Refactor** — refactor(paths): demo, reliability and diagnostics use paths.APP\_DIR; allowlist shrinks to 6 (Refs #701) (Refs #325) · [`6f6712c727d5`](https://github.com/gmanldn/smoothcast/commit/6f6712c727d5662482b33769729f712f1c99941f)
 
 - ⬜ **15:59:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0a92cd4c98a`](https://github.com/gmanldn/smoothcast/commit/f0a92cd4c98a5de8bc1d8e4217a1cb9727de1281)
+
+- ⬜ **15:59:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4aca0c67b597`](https://github.com/gmanldn/smoothcast/commit/4aca0c67b5971cb228e43020e07274274b708ece)
 
 - 🟦 **15:59:12 · Refactor** — refactor(arch): hw\_encoder\_state no longer imports media\_tools at import time; layering debt now empty (Refs #690) · [`a9c0afe1d708`](https://github.com/gmanldn/smoothcast/commit/a9c0afe1d70805be4c2cc70d181b5ce329252302)
 
