@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cab53e513dcb0304ff14a35d387b0ba65d2a2780 -->
+<!-- sc-changelog-through: 4c20fe5365705eb648823dbaf28dfa8910962f53 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:38:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:40:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:40:38 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4c20fe536570`](https://github.com/gmanldn/smoothcast/commit/4c20fe5365705eb648823dbaf28dfa8910962f53)
+
+- 🟪 **18:40:33 · Tests** — test: inject transfer disconnect and verify retry recovery (Refs #573) · [`7cfc6261d0f1`](https://github.com/gmanldn/smoothcast/commit/7cfc6261d0f13e361ba24236c2f3f43644dfa293)
 
 - ⬜ **18:38:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cab53e513dcb`](https://github.com/gmanldn/smoothcast/commit/cab53e513dcb0304ff14a35d387b0ba65d2a2780)
+
+- ⬜ **18:38:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e6b98c99a21b`](https://github.com/gmanldn/smoothcast/commit/e6b98c99a21b4b11542aa6bcb426a9dbc0241faf)
 
 - 🟩 **18:38:47 · Feature** — feat: add shaped transfer benchmarks and baseline comparison (Refs #573) · [`e4ff2c93fdd4`](https://github.com/gmanldn/smoothcast/commit/e4ff2c93fdd4ff3158ff7c1a0bee553765206704)
 
