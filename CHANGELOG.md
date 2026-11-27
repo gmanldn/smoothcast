@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4d9bf74717c5b3bd9fd8d8508ce5b2e3ffd25d74 -->
+<!-- sc-changelog-through: e576230df224752937b3c4042dd912929535fbb7 -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **15:50:36 · Fix** — fix(web): fence mesh feed callbacks and stop hidden heartbeat polling (Refs #710) <!-- sc-changelog-pending -->
+- ⬜ **15:51:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:51:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e576230df224`](https://github.com/gmanldn/smoothcast/commit/e576230df224752937b3c4042dd912929535fbb7)
+
+- 🟦 **15:51:29 · Refactor** — refactor(settings): release-update checks read UpdateSettings, not raw cfg keys (Refs #693) (Refs #325) · [`f1cada395b84`](https://github.com/gmanldn/smoothcast/commit/f1cada395b84834b8dc057f0444d4fef823fc67f)
+
+- 🟥 **15:50:47 · Fix** — fix(web): fence mesh feed callbacks and stop hidden heartbeat polling (Refs #710) · [`c715d07c26fa`](https://github.com/gmanldn/smoothcast/commit/c715d07c26fa8cd45d1ac1163f965d10cfbaffb4)
 
 - ⬜ **15:49:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`46abce9827cb`](https://github.com/gmanldn/smoothcast/commit/46abce9827cb6e6c6e12f051e83a335422404393)
 
