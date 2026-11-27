@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 5aa73ce73f5460c604c459118c2fd6898437d1ca -->
+<!-- sc-changelog-through: 3a2cdec87d0a0674b1f948fbd59bc916046bfee8 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:51:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:52:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:52:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a2cdec87d0a`](https://github.com/gmanldn/smoothcast/commit/3a2cdec87d0a0674b1f948fbd59bc916046bfee8)
+
+- 🟩 **07:52:39 · Feature** — feat(doctor): read-only firewall check (ufw/firewalld) with honest WARN when unverifiable (Refs #211) · [`db2f79a1cd04`](https://github.com/gmanldn/smoothcast/commit/db2f79a1cd0411d8cadcb894ab7faecfcc3f3fc7)
 
 - ⬜ **07:51:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5aa73ce73f54`](https://github.com/gmanldn/smoothcast/commit/5aa73ce73f5460c604c459118c2fd6898437d1ca)
+
+- ⬜ **07:51:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1ac9a3237d3b`](https://github.com/gmanldn/smoothcast/commit/1ac9a3237d3bb378b0d0bdef7df3549e25b9d7f0)
 
 - 🟩 **07:51:09 · Feature** — feat(arch): PortalService adapter so the portal runs under the Supervisor (Refs #692) · [`352138071991`](https://github.com/gmanldn/smoothcast/commit/3521380719914dfb8869e1e8df7d055f76985799)
 
