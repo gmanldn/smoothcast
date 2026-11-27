@@ -127,6 +127,7 @@ py-modules = [
     "dlna",
     "doctor",
     "doctor_firewall",
+    "doctor_ssdp",
     "doctor_vpn",
     "drain",
     "encode_plan",

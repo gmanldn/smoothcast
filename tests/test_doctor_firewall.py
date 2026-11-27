@@ -35,6 +35,8 @@ def test_doctor_main_runs_the_firewall_check(monkeypatch, capsys):
     import doctor_firewall
     monkeypatch.setattr(doctor_firewall, "firewall",
                         lambda: doctor.Result("firewall", doctor.PASS, "stub"))
+    import doctor_ssdp
+    monkeypatch.setattr(doctor_ssdp, "ssdp", lambda: doctor.Result("ssdp", doctor.PASS, "stub"))
     doctor.main(["--json"])
     names = [c["name"] for c in json.loads(capsys.readouterr().out)["checks"]]
     assert "firewall" in names
