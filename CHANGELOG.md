@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 78ff032502ba04929b943ebe111c835bb9704c9e -->
+<!-- sc-changelog-through: 8ae1b7f5931ac86a826d66ac1a2087fae00f29a0 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:49:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:52:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:52:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8ae1b7f5931a`](https://github.com/gmanldn/smoothcast/commit/8ae1b7f5931ac86a826d66ac1a2087fae00f29a0)
+
+- 🟪 **16:52:11 · Tests** — test(arch): ratchet against new two-way imports; one known cycle frozen (Refs #690) · [`ac557b5e4e98`](https://github.com/gmanldn/smoothcast/commit/ac557b5e4e9869a8b244d6e17cfb46254351b62d)
+
+- 🟪 **16:50:41 · CI** — ci(security): portal-security job also runs the parser fuzz, egress policy and capability gate tests (Refs #702) · [`83c9705bda1e`](https://github.com/gmanldn/smoothcast/commit/83c9705bda1e2bcb2d0b4addc697634238992eb8)
 
 - ⬜ **16:49:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`78ff032502ba`](https://github.com/gmanldn/smoothcast/commit/78ff032502ba04929b943ebe111c835bb9704c9e)
+
+- ⬜ **16:49:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`120a3d50564a`](https://github.com/gmanldn/smoothcast/commit/120a3d50564ac99daddecdd6f12b4df2f70ddefa)
 
 - 🟥 **16:49:42 · Fix** — fix(audio): local preview meter uses the shared 6 dB default gain (Refs #693) · [`2c84cc0a4bd7`](https://github.com/gmanldn/smoothcast/commit/2c84cc0a4bd7183b839f12dabc3fe58dfd090faa)
 
