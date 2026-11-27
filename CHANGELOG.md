@@ -8,11 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e9a7f8b73d181d77101aef17449e68bb3fd4c258 -->
+<!-- sc-changelog-through: 4b96ee7e320808b709477ea9681c556150a57336 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:29:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:34:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:34:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4b96ee7e3208`](https://github.com/gmanldn/smoothcast/commit/4b96ee7e320808b709477ea9681c556150a57336)
+
+- 🟦 **17:34:27 · Refactor** — refactor(errors): justify boundary catches across fifteen more modules (Refs #694) · [`ef6cbef75ad1`](https://github.com/gmanldn/smoothcast/commit/ef6cbef75ad1ab8f760a746c8b5fa4fe964354ee)
+
+- 🟪 **17:34:03 · Tests** — test(cast): warmup test calls the window timer start with fakes instead of reading source text; unblocks the source-text ratchet (Refs #699) · [`e9084c5e65d8`](https://github.com/gmanldn/smoothcast/commit/e9084c5e65d855ac10bde7948bb708f299463daa)
+
+- 🟩 **17:31:59 · Feature** — feat(room): RoomService JSON facade over queue and playback with payload validation and one lock, shared by portal, GTK and mesh adapters (Refs #695) · [`c26872fa944c`](https://github.com/gmanldn/smoothcast/commit/c26872fa944c7531758e414f0d39d3a8a02baea3)
+
+- 🟦 **17:30:02 · Refactor** — refactor(arch): drop duplicate power\_backends module; power\_port is the single sleep-inhibit port (Refs #703) · [`ba7f0ed6eef8`](https://github.com/gmanldn/smoothcast/commit/ba7f0ed6eef898d484308789d8a385323024e329)
+
+- ⬜ **17:29:56 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f202a8c07bc5`](https://github.com/gmanldn/smoothcast/commit/f202a8c07bc585d75efc0b88f7b69dc6e21c257e)
 
 - ⬜ **17:29:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e9a7f8b73d18`](https://github.com/gmanldn/smoothcast/commit/e9a7f8b73d181d77101aef17449e68bb3fd4c258)
 
