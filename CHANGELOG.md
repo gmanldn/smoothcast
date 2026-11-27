@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 5b05e4c8ec05b422e75784e67e093f1bc162dc7f -->
+<!-- sc-changelog-through: c79c05e84030e1914a424de62bb4ab560cae5d0b -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:45:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:46:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:46:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c79c05e84030`](https://github.com/gmanldn/smoothcast/commit/c79c05e84030e1914a424de62bb4ab560cae5d0b)
+
+- 🟩 **06:46:05 · Feature** — feat(doctor): smoothcast doctor \[--json\] \[--receiver HOST\] CLI over the check engine (Refs #211) · [`cd17d48e48f0`](https://github.com/gmanldn/smoothcast/commit/cd17d48e48f0fe8bada98d297d2fc22a8716224a)
 
 - ⬜ **06:45:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5b05e4c8ec05`](https://github.com/gmanldn/smoothcast/commit/5b05e4c8ec05b422e75784e67e093f1bc162dc7f)
+
+- ⬜ **06:45:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1606f3c70bd8`](https://github.com/gmanldn/smoothcast/commit/1606f3c70bd80c334c5f59dcbe88dd30729ca31e)
 
 - 🟥 **06:45:36 · Fix** — fix(portal): dispatcher-side capability enforcement for ROUTE\_CAPABILITIES (Refs #702) · [`8a058ee07293`](https://github.com/gmanldn/smoothcast/commit/8a058ee0729391102ffa5cdb919f91f50b123ab5)
 
