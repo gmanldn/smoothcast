@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 99f203f663d90b4d3f131653c6238713fc0a30bf -->
+<!-- sc-changelog-through: b11c02fdd4a906d67710cb172cbfe74ba2f83574 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:28:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:35:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:35:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b11c02fdd4a9`](https://github.com/gmanldn/smoothcast/commit/b11c02fdd4a906d67710cb172cbfe74ba2f83574)
+
+- 🟥 **19:35:03 · Fix** — fix(update): defer bounce when a saved playback session exists (Refs #626) · [`e3c710b938d1`](https://github.com/gmanldn/smoothcast/commit/e3c710b938d1079dfded5421e52895250d643005)
 
 - ⬜ **19:28:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`99f203f663d9`](https://github.com/gmanldn/smoothcast/commit/99f203f663d90b4d3f131653c6238713fc0a30bf)
 
 - 🟩 **19:28:40 · Feature** — feat: share visual tokens between gtk and web (Refs #708) · [`6deffbec7d29`](https://github.com/gmanldn/smoothcast/commit/6deffbec7d2937323a425ea8a3eee9752dd9e1d0)
+
+- ⬜ **19:28:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bff51b906ced`](https://github.com/gmanldn/smoothcast/commit/bff51b906ced2f32c474a3f5cb6b7c709ca76311)
 
 - ⬜ **19:24:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`736fa00815b9`](https://github.com/gmanldn/smoothcast/commit/736fa00815b902783f74b2835aedd3f9b4303179)
 
