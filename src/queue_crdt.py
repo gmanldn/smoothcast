@@ -114,7 +114,8 @@ def rebalance_ops(state: dict, node: str, lamport: int) -> list[dict]:
 
 class Replica:
     def __init__(self, node: str) -> None:
-        self.node, self.state, self.log = node, new_state(), []
+        self.log: list[dict] = []
+        self.node, self.state = node, new_state()
 
     def _emit(self, op: dict) -> dict:
         apply(self.state, op)

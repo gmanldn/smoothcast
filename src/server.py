@@ -217,7 +217,7 @@ def record_segment(path: str, code: object) -> None:
     if not _MEDIA_SUFFIX.search(name):
         return
     try:
-        ok = int(code) < 400
+        ok = int(str(code)) < 400
     except (TypeError, ValueError):
         ok = False
     global _health_written
@@ -488,7 +488,7 @@ _KEPT_PLAYLIST = re.compile(rb"movie-[0-9a-f]{32}(?:-fmp4)?\.m3u8\Z")
 
 def kept_encoder_pids(root: Path, proc: Path = Path("/proc")) -> list[int]:
     """Orphaned FFmpeg processes writing a SmoothCast HLS generation under ``root``."""
-    found = []
+    found: list[int] = []
     prefix = os.fsencode(str(root)) + b"/"
     try:
         entries = [entry for entry in proc.iterdir() if entry.name.isdigit()]
