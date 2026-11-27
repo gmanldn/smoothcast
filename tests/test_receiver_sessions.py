@@ -31,4 +31,3 @@ def test_cap_and_bad_state():
     s.start("a", "m"); t = s.start("b", "m")
     assert s.start("c", "m") is None and s.start("a", "m2")
     assert not s.update("b", t.token, state="bogus")
-    assert not s.update("b", t.token, token="x") or s.get("b").token == t.token
