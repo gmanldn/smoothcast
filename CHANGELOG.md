@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 33faac9b73270af1359eaf6dc28b04be4f9dacf1 -->
+<!-- sc-changelog-through: c6b3227d6b14c7512caf33a5a1f5aa5d63d94873 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:58:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:01:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:01:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c6b3227d6b14`](https://github.com/gmanldn/smoothcast/commit/c6b3227d6b14c7512caf33a5a1f5aa5d63d94873)
+
+- 🟨 **17:01:49 · Documentation** — docs(uploads): document received/committed offsets and coalesced checkpoint contract (Refs #568) · [`4b0f53310ff3`](https://github.com/gmanldn/smoothcast/commit/4b0f53310ff3c0da6adc797feccad9845d803ca4)
+
+- 🟥 **17:01:34 · Fix** — fix(room): a rejected command key stays rejected on retry (found by property test); add events\_since and Replica for rejoin (Refs #695) · [`542303d8244e`](https://github.com/gmanldn/smoothcast/commit/542303d8244e711ed8350d205fc5e4f2462ab60a)
 
 - ⬜ **16:58:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`33faac9b7327`](https://github.com/gmanldn/smoothcast/commit/33faac9b73270af1359eaf6dc28b04be4f9dacf1)
+
+- ⬜ **16:58:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`82409d5e5e34`](https://github.com/gmanldn/smoothcast/commit/82409d5e5e342b5b84dc2492c627cbdbe183c73d)
 
 - 🟥 **16:58:33 · Fix** — fix(portal): repair syntax error in route table from previous patch (Refs #689) · [`0791e010c417`](https://github.com/gmanldn/smoothcast/commit/0791e010c417d76a7103bcb2083317772cd4ade9)
 
