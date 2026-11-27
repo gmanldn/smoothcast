@@ -59,6 +59,7 @@ py-modules = [
     "audio_downmix",
     "audio_monitor",
     "benchmark",
+    "bitrate_controller",
     "bookmark_ui",
     "bookmarks",
     "buffer_health",
