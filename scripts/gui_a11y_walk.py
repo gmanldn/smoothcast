@@ -35,7 +35,8 @@ def find_unnamed(nodes: list[dict]) -> list[dict]:
 def check_tab_order(stops: list[dict], controls: list[dict]) -> list[str]:
     """Keyboard-only audit of Tab stops (in press order) against showing controls.
     Pure: flags a trap (no focus movement), a repeat before the cycle completes,
-    and controls Tab never reached (excluding ones with a keyboard-less parent)."""
+    and enabled controls Tab never reached. A drop-down's inner toggle button
+    counts as reaching the combo box; disabled controls are rightly skipped."""
     problems: list[str] = []
     if not stops:
         return ["Tab never moved focus to any control"]
@@ -43,15 +44,15 @@ def check_tab_order(stops: list[dict], controls: list[dict]) -> list[str]:
     if len(stops) > 1 and stops[-1] == stops[-2]:
         problems.append(f"focus stuck on {stops[-1]['role']} {stops[-1]['name']!r}: Tab no longer moves")
     for stop in stops:
-        key = (stop["role"], stop["name"], stop.get("x"), stop.get("y"))
+        key = (stop["role"], stop["name"])  # layout may shift between laps
         if key in seen:
             if seen.index(key) != 0:
                 problems.append(f"focus loop skips back to {stop['name']!r} before the cycle ends")
             break
         seen.append(key)
-    reached = {(k[0], k[1]) for k in seen}
+    reached = set(seen) | {("combo box", name) for role, name in seen if role == "toggle button"}
     for control in controls:
-        if (control["role"], control["name"]) not in reached:
+        if control.get("enabled", True) and (control["role"], control["name"]) not in reached:
             problems.append(f"not reachable by Tab: {control['role']} {control['name']!r}")
     return problems
 
@@ -100,8 +101,7 @@ def _tab_stops(app, limit: int = 60) -> list[dict]:
         stops.append(stop)
         if len(stops) > 1 and stop == stops[-2]:
             break  # focus did not move: a keyboard trap, reported by check_tab_order
-        if len(stops) > 1 and (stop["role"], stop["name"], stop["x"], stop["y"]) == (
-                stops[0]["role"], stops[0]["name"], stops[0]["x"], stops[0]["y"]):
+        if len(stops) > 1 and (stop["role"], stop["name"]) == (stops[0]["role"], stops[0]["name"]):
             break
     return stops
 

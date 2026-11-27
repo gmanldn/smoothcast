@@ -454,6 +454,11 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             child = action_row.get_child_at_index(index)
             if child is not None:
                 child.set_focusable(False)  # the button inside is the focus stop
+                # GTK traps Tab when the only live stop shares a FlowBox with dead
+                # children, so a disabled button disables its FlowBoxChild too.
+                button = self.action_controls[index]
+                child.set_sensitive(button.get_sensitive())
+                button.connect("notify::sensitive", lambda b, _p, c=child: c.set_sensitive(b.get_sensitive()))
         body.append(action_row)
         return card
 

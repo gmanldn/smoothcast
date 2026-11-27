@@ -97,3 +97,15 @@ def test_tab_order_reports_trap_and_unreachable_controls():
 
 def test_tab_order_no_focus_at_all_is_a_problem():
     assert gui_a11y_walk.check_tab_order([], []) == ["Tab never moved focus to any control"]
+
+
+def test_tab_order_tolerates_layout_shift_between_laps():
+    stops = [_stop("A", y=470), _stop("B", y=598), _stop("A", y=455)]
+    assert gui_a11y_walk.check_tab_order(stops, [_node("button", "A"), _node("button", "B")]) == []
+
+
+def test_tab_order_skips_disabled_and_counts_dropdown_toggle_as_combo():
+    stops = [_stop("TV", role="toggle button"), _stop("A"), _stop("TV", role="toggle button")]
+    controls = [_node("combo box", "TV"), _node("button", "A"),
+                dict(_node("toggle button", "CC"), enabled=False)]
+    assert gui_a11y_walk.check_tab_order(stops, controls) == []
