@@ -35,6 +35,21 @@ class FFmpegVersionError(UserFacingError):
     """FFmpeg is missing, too old or reports an unrecognised build version."""
 
 
+BURST_MINIMUM = (6, 1)  # -readrate_initial_burst first shipped in FFmpeg 6.1
+
+
+def initial_burst_args(seconds: int = 10) -> list[str]:
+    """Let the first seconds encode at full speed so a cast starts sooner.
+
+    Uses only versions already verified by ``require_supported_ffmpeg`` (run
+    before every cast); never spawns a process. Any unknown or older binary
+    gets no burst.
+    """
+    if not _verified or min(_verified.values()) < BURST_MINIMUM:
+        return []
+    return ["-readrate_initial_burst", str(int(seconds))]
+
+
 def parse_version(output: str) -> tuple[int, int] | None:
     """Read the actual binary banner; never guess from a filename or package."""
     if not isinstance(output, str):

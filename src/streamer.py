@@ -36,6 +36,7 @@ import hdr_tonemap
 import lan_interfaces
 import language_prefs
 import loudness
+import paths
 import playback_state
 import process_identity
 import process_priority
@@ -690,6 +691,17 @@ def _usable_ipv4(value: str) -> bool:
         return False
     return not (addr.is_loopback or addr.is_link_local or
                 addr.is_unspecified or addr.is_multicast)
+
+
+def _may_still_be_arriving(path: pathlib.Path) -> bool:
+    """A guest upload may be cast while it is still arriving; only -readrate
+    keeps FFmpeg behind the transfer, so such a file must not burst-read."""
+    cache = os.environ.get("XDG_CACHE_HOME") or str(pathlib.Path.home() / ".cache")
+    root = pathlib.Path(cache) / paths.APP_DIR / "portal-uploads"
+    try:
+        return pathlib.Path(path).resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError, RuntimeError):
+        return True
 
 
 def require_compatible_ffmpeg() -> tuple[int, int]:
@@ -1858,6 +1870,9 @@ class Session:
             # setpts/atempo stream needs 2× input, otherwise the TV starves.
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
+        if not _may_still_be_arriving(media.path):
+            # The first two segments no longer take 8 s of wall clock.
+            args += ffmpeg_compat.initial_burst_args()
         if not audio_only:
             args += self._hwaccel_args(software)
         args += ["-i", str(media.path)]
