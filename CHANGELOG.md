@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d3374183c9d7b846966916ba218b204be31080bf -->
+<!-- sc-changelog-through: 7558cb664bd474a28130728eecb9fb6409e6d5ce -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:46:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:46:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`7558cb664bd4`](https://github.com/gmanldn/smoothcast/commit/7558cb664bd474a28130728eecb9fb6409e6d5ce)
+
+- 🟩 **16:46:16 · Feature** — feat(portal): declarative route table with policy in data (Refs #689) · [`0765c06e43a7`](https://github.com/gmanldn/smoothcast/commit/0765c06e43a791d7aaa23d27584c67c98b9663f5)
+
+- 🟨 **16:45:51 · Documentation** — docs(perf): record first isolated-Xvfb interaction run; every scenario breaches its SLO, no baseline committed (Refs #627) · [`b0bf6d886610`](https://github.com/gmanldn/smoothcast/commit/b0bf6d886610258e01ded41733cb2098c044abf3)
+
+- ⬜ **16:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d16fd0b3467a`](https://github.com/gmanldn/smoothcast/commit/d16fd0b3467a21d1edbd68002368755922937ce3)
 
 - ⬜ **16:43:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d3374183c9d7`](https://github.com/gmanldn/smoothcast/commit/d3374183c9d7b846966916ba218b204be31080bf)
 
