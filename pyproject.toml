@@ -278,6 +278,7 @@ py-modules = [
     "preferences_update_ui",
     "preflight",
     "privacy_modes",
+    "private_rooms",
     "process_identity",
     "process_priority",
     "progress_model",
