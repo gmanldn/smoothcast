@@ -62,7 +62,7 @@ class AppLifecycleMixin:
         if current is not None:
             try:
                 current.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort close during shutdown
                 pass
         if window is not None:
             import mpris

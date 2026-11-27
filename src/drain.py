@@ -77,5 +77,5 @@ def _targets(nodes, key):
 def _try(act, name, *args) -> bool:
     try:
         return bool(act[name](*args)) if name in ("start", "ready", "switch") else (act[name](*args), True)[1]
-    except Exception:
+    except Exception:  # noqa: BLE001 - a failing step reports False instead of raising
         return False

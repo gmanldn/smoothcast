@@ -147,7 +147,7 @@ def scope(source: str, action: str, *, command_id: str | None = None,
     record.mark("replayed" if record.stages else "received")
     try:
         yield record
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - record the failure on the trace, then re-raise
         status = getattr(exc, "status", None)
         record.mark("rejected", code=status if type(status) is int else None)
         raise

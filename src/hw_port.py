@@ -137,7 +137,7 @@ def select(ranked: list[HardwareEncoder]) -> Selection:
     for backend in ranked:
         try:
             ok, why = backend.available()
-        except Exception as exc:                       # a broken probe must not break casting
+        except Exception as exc:                       # a broken probe must not break casting  # noqa: BLE001 - a broken probe must not break casting
             ok, why = False, f"probe failed: {exc}"
         if ok:
             return Selection(backend, skipped)

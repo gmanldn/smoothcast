@@ -243,5 +243,5 @@ class MeshLibrary:
         with self._lock:
             try:
                 self.store.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort close
                 pass

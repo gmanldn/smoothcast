@@ -153,7 +153,7 @@ class LifecycleMixin(LifecycleActionsMixin):
         if self.monitor is not None:
             try:
                 self.monitor.stop()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort monitor stop
                 pass
             self.monitor = None
 
