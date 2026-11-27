@@ -32,7 +32,15 @@ def test_speakers_cannot_play_video_directly_but_can_play_music():
 def test_capable_streamers_keep_direct_play_for_modern_media():
     assert gate.direct_allowed(media(vcodec="hevc", height=2160), "mp4", "Chromecast Ultra")[0] is True
     hdr = media(vcodec="hevc", height=2160, color_transfer="smpte2084")
-    assert gate.direct_allowed(hdr, "mp4", "Chromecast with Google TV")[0] is True
+    assert gate.direct_allowed(hdr, "mp4", "Google TV Streamer")[0] is True
+
+
+def test_ambiguous_google_tv_model_stays_conservative_for_hdr_hevc():
+    # #11/#207: the bare "Chromecast with Google TV" is the HD/4K ambiguity, so
+    # its profile keeps the baseline class and vetoes direct HDR HEVC playback.
+    hdr = media(vcodec="hevc", height=2160, color_transfer="smpte2084")
+    allowed, note = gate.direct_allowed(hdr, "mp4", "Chromecast with Google TV")
+    assert allowed is False and note.startswith("Chromecast with Google TV:")
 
 
 def test_recognised_streamer_still_vetoes_what_it_documents_it_cannot_play():

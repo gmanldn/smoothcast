@@ -231,7 +231,9 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
             if "portal_link_youtube" in self._switches and "portal_link_magnet" in self._switches:
                 import link_diagnostics
                 link_diagnostics.describe_switches(self.owner, cfg, self._switches)
-            self._sync_update_status(cfg)
+            sync_updates = getattr(self, "_sync_update_status", None)
+            if callable(sync_updates):
+                sync_updates(cfg)
             self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
             refresh_search = getattr(self, "_refresh_subtitle_search_rows", None)
             if callable(refresh_search):
