@@ -283,6 +283,7 @@ py-modules = [
     "room_checkpoint",
     "room_checkpoint_ui",
     "room_event_replay",
+    "room_layout",
     "sc_core",
     "screenshot",
     "search_engine",
@@ -322,6 +323,7 @@ py-modules = [
     "utils",
     "version",
     "video_policy",
+    "volume_ceiling",
     "watch_history",
     "zoom_pan",
 ]
