@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0f6e51d9e9cd47dfabf74fa7b34cfd25c093ce3c -->
+<!-- sc-changelog-through: 03e4e93751c24b3c579b33a184ddfc40737e1506 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:22:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟩 **06:24:00 · Feature** — feat(brand): apply SmoothCast Glacier and Ink web palette (Refs #708) <!-- sc-changelog-pending -->
 
 - ⬜ **06:22:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0f6e51d9e9cd`](https://github.com/gmanldn/smoothcast/commit/0f6e51d9e9cd47dfabf74fa7b34cfd25c093ce3c)
+
+- ⬜ **06:22:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`03e4e93751c2`](https://github.com/gmanldn/smoothcast/commit/03e4e93751c24b3c579b33a184ddfc40737e1506)
 
 - 🟥 **06:22:42 · Fix** — fix(portal): finished portal uploads unused for two weeks are reclaimed at start-up; the private upload folder no longer grows without bound (13 GB seen) (Refs #686) · [`d81dc8c74635`](https://github.com/gmanldn/smoothcast/commit/d81dc8c74635545038d46e38d4f3bc9e9aeeff06)
 
