@@ -19,9 +19,9 @@ def d(**changes):
     return us.describe(replace(BASE, **changes))
 
 
-def test_running_line_names_version_short_commit_and_channel():
+def test_running_line_names_version_exact_commit_and_channel():
     s = d()
-    assert s.running_line == "SmoothCast 1.2.52 (aaaaaaa) on develop"
+    assert s.running_line == f"SmoothCast 1.2.52 ({A}) on develop"
     assert s.channel_line == "Channel: develop (default)"
     assert d(channel="main").channel_line == "Channel: main (released builds only)"
     assert "not recognised" in d(channel="weird").channel_line

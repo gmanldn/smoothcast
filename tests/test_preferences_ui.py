@@ -9,6 +9,7 @@ from pathlib import Path
 import unittest
 
 import preference_choices
+from settings import UpdateSettings
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,8 +71,9 @@ class PreferenceChoiceTests(unittest.TestCase):
         self.assertIn('self._choice(updates, "update_channel", "Update channel"', prefs)
         self.assertIn('self.owner.cfg["update_channel"] = str(value)', prefs)
         self.assertIn('save_config(self.owner.cfg)', prefs)
-        self.assertIn('channel=cfg.get("update_channel", "develop")',
-                      source("cast_control.py"))
+        self.assertEqual(UpdateSettings.from_config({"update_channel": "main"}).channel, "main")
+        self.assertEqual(UpdateSettings.from_config({"update_channel": "invalid"}).channel,
+                         "develop")
 
     def test_gtk_module_is_parsable_without_importing_gtk(self):
         ast.parse(source("preferences_ui.py"))
