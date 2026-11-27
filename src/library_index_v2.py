@@ -22,6 +22,7 @@ import library_folders
 import media_names
 import search_engine
 import media_tools
+import task_runtime
 
 VIDEO_EXT = {".mkv", ".mp4", ".mov", ".avi", ".webm", ".m4v", ".ts", ".mpeg", ".mpg", ".wmv"}
 AUDIO_EXT = {".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".wma"}
@@ -155,6 +156,7 @@ class LibraryIndexer:
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
+        self._scope: task_runtime.Scope | None = None
         self.rescan_seconds = 15 * 60
         with self._lock:
             search_engine.ensure_schema(self._conn)
@@ -414,20 +416,28 @@ class LibraryIndexer:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="library-indexer", daemon=True)
-        self._thread.start()
+        self._scope = task_runtime.shared().scope()
+        self._thread = task_runtime.shared().spawn_daemon(
+            "library-indexer", self._scope, self._run, thread_name="library-indexer")
 
-    def _run(self) -> None:
-        while not self._stop.is_set():
+    def _run(self, scope: task_runtime.Scope) -> None:
+        while not self._stop.is_set() and not scope.cancelled:
             try:
                 self.scan_all()
             except Exception:  # Never let indexing take the app down.
                 pass
-            self._wake.wait(self.rescan_seconds)
+            waited = 0.0
+            while (waited < self.rescan_seconds and not self._wake.is_set()
+                   and not scope.cancelled and not self._stop.is_set()):
+                self._wake.wait(min(1.0, self.rescan_seconds - waited))
+                waited += 1.0
             self._wake.clear()
+        self._stop.set()
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
         self._wake.set()
+        if self._scope is not None:
+            self._scope.cancel()
         if self._thread:
             self._thread.join(timeout)
