@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a1eb001dc594ed6a77fbee8d0cd9c307aa70c0ab -->
+<!-- sc-changelog-through: 8899446c76672a869ef5be32088472755a1b1ef8 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:03:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:05:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:05:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8899446c7667`](https://github.com/gmanldn/smoothcast/commit/8899446c76672a869ef5be32088472755a1b1ef8)
+
+- 🟪 **18:05:14 · Tests** — test(agents): align hygiene gate with current develop-only policy (Refs #700) · [`20199530b869`](https://github.com/gmanldn/smoothcast/commit/20199530b869f3013fff0af9dc1dea94742c7f40)
+
+- ⬜ **18:03:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a18ebbff3625`](https://github.com/gmanldn/smoothcast/commit/a18ebbff36259773a4db58c59da21b10fa896a1c)
 
 - ⬜ **18:03:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a1eb001dc594`](https://github.com/gmanldn/smoothcast/commit/a1eb001dc594ed6a77fbee8d0cd9c307aa70c0ab)
 
