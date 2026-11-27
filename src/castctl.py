@@ -239,18 +239,32 @@ def log_backend_failure(message: str, *, exc_info: bool = False) -> None:
         pass
 
 
+def _record_code(code: str, context: object) -> None:
+    """Tag catt failures with the same catalogue codes as the PyChromecast backend (#207)."""
+    try:
+        import errors
+
+        errors.record(code, context)
+    except Exception:
+        pass
+
+
 def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     if not device.strip():
         return False, NO_DEVICE_MESSAGE
     try:
         result = _run(["-d", device, *args], timeout=timeout)
     except subprocess.TimeoutExpired:
+        _record_code("cast.receiver_offline", {"command": args[:1], "timeout": timeout})
         return False, COMMAND_TIMEOUT_MESSAGE
     except OSError:
         log_backend_failure("Could not start the Cast command helper", exc_info=True)
+        _record_code("cast.command_failed", {"command": args[:1], "helper": "unavailable"})
         return False, "Could not start the Cast helper. Check the SmoothCast installation."
     if result.returncode != 0:
-        log_backend_failure(f"Cast command helper exited with code {result.returncode}")
+        tail = " ".join((result.stderr or result.stdout or "").split())[-160:]
+        log_backend_failure(f"Cast command helper exited with code {result.returncode}: {tail}")
+        _record_code("cast.command_failed", {"command": args[:1], "exit": result.returncode})
         return False, "The receiver command failed. Check the receiver connection and try again."
     return True, (result.stdout or result.stderr or "").strip()
 
