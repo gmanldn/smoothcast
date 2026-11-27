@@ -111,3 +111,52 @@ def test_guest_roster_rename_preserves_selection_and_avoids_unchanged_rebuild():
     assert drop.selected == invalid
     sync(owner, [])
     assert not drop.sensitive
+
+
+def test_named_room_is_visible_before_login_and_escaped():
+    import portal
+
+    room = PortalRoom()
+    assert room.name == DEFAULT_ROOM_NAME
+    assert b'<h2 id="joinTitle">Join the house</h2>' in portal._page()
+    room.set_name("<Cinema & __PIN_REQUIRED__>")
+    page = portal._page(room_name=room.name, pin_required=False).decode("utf-8")
+    assert '<h2 id="joinTitle">Join &lt;Cinema &amp; __PIN_REQUIRED__&gt;</h2>' in page
+    assert '<Cinema &' not in page
+    assert 'Change my display name' in page
+    room.set_name("Kitchen")
+    assert b'<h2 id="joinTitle">Join Kitchen</h2>' in portal._page(room_name=room.name, pin_required=True)
+
+
+def test_live_room_label_updates_join_title_without_rebuilding(monkeypatch):
+    import shutil
+    import subprocess
+
+    import pytest
+    import portal
+
+    if shutil.which("node") is None:
+        pytest.skip("requires Node.js")
+    page = portal._page().decode("utf-8")
+    helper = page[page.index("function renderRoomIdentity("):page.index("function renderRoom(room){")]
+    harness = r"""
+const assert=require("node:assert/strict");
+let writes=0;
+const node={value:"Join the house",get textContent(){return this.value},set textContent(v){writes++;this.value=v}};
+const $=id=>id==="joinTitle"?node:null;
+"""
+    scenario = r"""
+renderRoomIdentity({name:"Cinema"});
+assert.equal(node.value,"Join Cinema");
+renderRoomIdentity({name:"Cinema"});
+assert.equal(writes,1);
+renderRoomIdentity({name:"<Lounge>"});
+assert.equal(node.value,"Join <Lounge>");
+renderRoomIdentity({name:"Your room"});
+assert.equal(node.value,"Join the house");
+renderRoomIdentity(null);
+assert.equal(writes,3);
+"""
+    result = subprocess.run(["node", "-"], input=harness + helper + scenario,
+                            capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr

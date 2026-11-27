@@ -8,13 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 5b8e2402001652abac67f2192cc9df1059a296bf -->
+<!-- sc-changelog-through: e836471a988eb8a2f901e9ffc9584edfa2c16be7 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:56:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **15:17:56 · Fix** — fix(gui): show the named room before joining and clarify profile controls (Refs #709) <!-- sc-changelog-pending -->
+
+- 🟩 **14:34:41 · Feature** — feat(win): fail-closed FFmpeg archive verifier/stager with PE x64 and capability checks (Refs #529) · [`e836471a988e`](https://github.com/gmanldn/smoothcast/commit/e836471a988eb8a2f901e9ffc9584edfa2c16be7)
 
 - ⬜ **07:56:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5b8e24020016`](https://github.com/gmanldn/smoothcast/commit/5b8e2402001652abac67f2192cc9df1059a296bf)
+
+- ⬜ **07:56:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0429fc5601bb`](https://github.com/gmanldn/smoothcast/commit/0429fc5601bbd7c0dc03ee91b2d43ef70986659f)
 
 - 🟩 **07:56:06 · Feature** — feat(settings): AudioSettings and PlaybackSettings with safe coercion and clamping (Refs #693) · [`fdad33070ed4`](https://github.com/gmanldn/smoothcast/commit/fdad33070ed47d0bafdd0f4eec3e434904a9107d)
 

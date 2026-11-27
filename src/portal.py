@@ -162,19 +162,29 @@ def page_build() -> str:
     ).hexdigest()[:12]
 
 
-def _page() -> bytes:
+def _page(*, room_name: object = None, pin_required: bool | None = None) -> bytes:
     # Keep optional panels inside #dashboard: their grid placement and login
     # visibility must follow the rest of the authenticated room controls.
     dashboard_close = '</div>\n<dialog id="shortcutsHelp"'
     markup = _HTML.replace("<!--SC_MESH_DETAILS-->", portal_mesh_panel.panel_html(), 1)
     markup = markup.replace(dashboard_close, portal_screen_page.panel_html() + dashboard_close, 1)
-    return (markup.replace("__SC_BUILD__", page_build())
+    markup = (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_VERSION__", version.identity_label())
             .replace("<!--SC_DEMO-->", _demo_badge())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
             .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
-            ).encode("utf-8")
+            )
+    if pin_required is not None:
+        markup = markup.replace("__PIN_REQUIRED__", "1" if pin_required else "0")
+    # Insert user text last, after build/PIN substitutions. It is text in HTML,
+    # never script source, an attribute, or a DNS identity.
+    from html import escape
+
+    name = portal_room.clean_room_name(room_name)
+    title = "Join the house" if name == portal_room.DEFAULT_ROOM_NAME else f"Join {name}"
+    return markup.replace('<h2 id="joinTitle">Join the house</h2>',
+                          f'<h2 id="joinTitle">{escape(title)}</h2>', 1).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -1100,8 +1110,7 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/silence.wav":
             return self._send(200, SILENT_WAV, content_type="audio/wav")
         if path in {"/", "/index.html"}:
-            page = _page().replace(
-                b"__PIN_REQUIRED__", b"1" if self.server.pin_required else b"0")
+            page = _page(room_name=self.server.room.name, pin_required=self.server.pin_required)
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
@@ -2157,7 +2166,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
-<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
+<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
 <div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <h2 id="quickCastHeading">Cast from this device</h2>
@@ -2276,7 +2285,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form></section>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">To rename the shared room, use Room → Rename on the computer running SmoothCast.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
@@ -3061,7 +3070,14 @@ function renderGlance(room){
   const online=people.filter(p=>p.online).length;
   set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
 }
-function renderRoom(room){lastRoom=room;renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+function renderRoomIdentity(room){
+  if(typeof room?.name!=="string"||!room.name.trim())return;
+  const name=room.name;
+  const title=name==="Your room"?"Join the house":"Join "+name;
+  const join=$("joinTitle");
+  if(join&&join.textContent!==title)join.textContent=title;
+}
+function renderRoom(room){lastRoom=room;renderRoomIdentity(room);renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
 if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});

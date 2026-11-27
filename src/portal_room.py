@@ -84,6 +84,12 @@ class PortalRoom:
         self.seq = 0
         self._name = DEFAULT_ROOM_NAME
 
+    @property
+    def name(self) -> str:
+        """Current public label without copying presence or activity."""
+        with self._lock:
+            return self._name
+
     def set_name(self, value: object) -> bool:
         """Host-owned metadata only: retain participants, votes and history."""
         name = clean_room_name(value)
