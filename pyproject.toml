@@ -293,6 +293,7 @@ py-modules = [
     "queue_row_ui",
     "queue_undo",
     "queue_votes",
+    "radio",
     "receiver_memory",
     "receiver_profiles",
     "receiver_sessions",
