@@ -175,3 +175,25 @@ def _no_public_tcp(monkeypatch):
         return real(self, address)
 
     monkeypatch.setattr(socket.socket, "connect", guarded)
+
+
+_TIER_SECONDS: dict = {}
+
+
+def pytest_runtest_logreport(report):
+    """Sum call-phase seconds per tier so slow tiers are visible (#699)."""
+    if report.when != "call":
+        return
+    tier = next((k for k in ("e2e", "integration", "contract", "unit")
+                 if k in report.keywords), "untiered")
+    seconds, count = _TIER_SECONDS.get(tier, (0.0, 0))
+    _TIER_SECONDS[tier] = (seconds + report.duration, count + 1)
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Report-only time budget per tier; never fails the run (#699)."""
+    if not _TIER_SECONDS:
+        return
+    terminalreporter.section("test time per tier (report only)")
+    for tier, (seconds, count) in sorted(_TIER_SECONDS.items(), key=lambda kv: -kv[1][0]):
+        terminalreporter.line(f"{tier:<12}{count:>6} tests{seconds:>9.1f}s")
