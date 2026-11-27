@@ -1148,15 +1148,11 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 encoder_text = f"{engine} · {speed} · {fps} fps"
             else:
                 encoder_text = "local MP4 preparation" if session.mode == "dlna" else "device-native"
-        if self.external and info:
-            title = f"{str(info.get('title') or 'external stream')} · external"
-            if self.np_title.get_text() != title:
-                self.np_title.set_text(title)
-            hint = "Another app started this stream — controls are limited"
-            if self.np_meta.get_text() != hint:
-                self.np_meta.set_text(hint)
-        position = self.tracker.value()
-        position_text = "unknown" if position is None else f"{fmt_time(position)} of {fmt_time(self.tracker.duration)}"
+        position, duration = self._portal_timing() if self.external else (
+            self.tracker.value(), self.tracker.duration)
+        position_text = "unknown" if position is None else (
+            f"{fmt_time(position)} of {fmt_time(duration) if duration else 'unknown'}"
+        )
         if self.tracker.known and session and session.mode == "transcode":
             position_text += " (estimated)"
         # Buffer health — how far ahead the encoder is from playback position.

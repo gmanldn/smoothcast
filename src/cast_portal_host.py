@@ -14,12 +14,12 @@ from cast_widgets import Async
 class PortalHostMixin:
     def _portal_timing(self) -> tuple[float | None, float]:
         """Position and total runtime for guests; external media uses the receiver's own length."""
-        position = self.tracker.value()
-        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
-        runtime = getattr(self, "_external_runtime", None) if self.external else None
-        if runtime and not duration:
-            position, duration = (position or runtime[0]), runtime[1]
-        return position, duration
+        if self.external:
+            clock = getattr(self, "_external_display_clock", None)
+            if clock is not None:
+                return clock.value(), clock.duration
+            return getattr(self, "_external_runtime", None) or (None, 0.0)
+        return self.tracker.value(), self.tracker.duration or (self.media.duration if self.media else 0.0)
 
     def _shutdown_plan(self):
         """The one ordered, deadline-bounded shutdown plan for this window (#465)."""

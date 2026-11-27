@@ -687,6 +687,9 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         self.poll_busy = False
         self.device_info = None
         self.device_state = "OFFLINE"
+        clock = getattr(self, "_external_display_clock", None)
+        if clock is not None:
+            clock.set_state(False)
         self._set_device_badge("OFFLINE", "offline")
         self._refresh_controls()
         self._console(f"Device status unavailable: {message}")
@@ -773,6 +776,7 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                 or self._join_slate_showing(info))  # our own idle slate is not user playback (#420)
         if idle:
             self._external_runtime = None
+            self._external_display_clock = None
             if self.external:
                 self.external = False
             # An idle receiver must not leave an old URL cast marked as owned.
@@ -801,7 +805,26 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         # Without a matching saved stream the receiver is playing other media.
         self.external = True
         self.tracker.clear()
-        self._external_runtime = playback_state.external_runtime(info)
+        self._external_runtime = None
+        clock = playback_state.external_display_clock(info, self.device_state)
+        self._external_display_clock = clock
+        # Paint the first receiver sample immediately, including paused media.
+        # The separate display clock never makes the external stream seekable.
+        if hasattr(self, "np_title"):
+            title, size = playback_state.external_media_labels(info)
+            self.np_title.set_text(title)
+            self.np_title.set_tooltip_text(title)
+            length = fmt_time(clock.duration) if clock.duration else "unavailable"
+            self.np_meta.set_text(f"{size} · Length: {length} · External stream")
+        if hasattr(self, "seekbar"):
+            position = clock.value()
+            self.seekbar.set_state(position, clock.duration, None)
+            if not getattr(self.seekbar, "scrubbing", False):
+                self.elapsed_label.set_text(fmt_time(position))
+                self.remaining_label.set_text(
+                    f"-{fmt_time(clock.duration - position)}"
+                    if position is not None and clock.duration else "--:--"
+                )
 
 
     def _device(self) -> str:

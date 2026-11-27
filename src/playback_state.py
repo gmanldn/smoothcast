@@ -187,3 +187,48 @@ def external_runtime(info: dict | None) -> tuple[float, float] | None:
     if not math.isfinite(position) or position < 0:
         position = 0.0
     return min(position, total), total
+
+
+def external_display_clock(info: dict | None, state: str):
+    """Receiver-only display clock; never grants ownership or seek capability.
+
+    Position and duration are independent: live streams may report a position
+    but no length; some receivers report a length before the first position.
+    """
+    from position_tracker import PositionTracker
+
+    def seconds(key):
+        if not isinstance(info, dict) or isinstance(info.get(key), bool):
+            return None
+        try:
+            value = float(info.get(key))
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return value if math.isfinite(value) and 0 <= value <= MAX_EXTERNAL_RUNTIME else None
+
+    tracker = PositionTracker()
+    total = seconds("duration") or 0.0
+    position = seconds("current_time")
+    if position is not None:
+        tracker.start(min(position, total) if total else position, total,
+                      playing=state == "PLAYING")
+    else:
+        tracker.duration = total
+    return tracker
+
+
+def external_media_labels(info: dict | None) -> tuple[str, str]:
+    """Use reported metadata only; never fetch a foreign content URL."""
+    fields = info if isinstance(info, dict) else {}
+    title = fields.get("title")
+    title = title.strip()[:256] if isinstance(title, str) else ""
+    size = fields.get("size_bytes")
+    if isinstance(size, str) and size.isascii() and size.isdecimal() and len(size) <= 19:
+        size = int(size)
+    if type(size) is not int or not 0 < size < 2**63:
+        return title or "External stream", "Size unavailable"
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB", "EB"):
+        if size < 1000 or unit == "EB":
+            return title or "External stream", f"{size:.2f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1000
+    return title or "External stream", "Size unavailable"

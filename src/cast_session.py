@@ -937,6 +937,8 @@ class SessionMixin(AbRepeatUiMixin):
         if previewing and not duration:
             duration = self.queue_durations.get(self._preview_path, 0.0)
         position = self._preview_position if previewing else self.tracker.value()
+        if self.external:
+            position, duration = self._portal_timing()
         if previewing:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
@@ -1159,6 +1161,8 @@ class SessionMixin(AbRepeatUiMixin):
             self._url_cast_url = url
             self._url_cast_seen = False
             self.tracker.clear()
+            self._external_display_clock = None
+            self._external_runtime = None
             self.np_title.set_text("Remote stream")
             self.toast(f"Remote stream sent to {device}")
             self._console(f"Remote stream sent to {device}")

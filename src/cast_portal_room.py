@@ -100,6 +100,10 @@ class PortalRoomMixin:
                 console(f"Could not publish room status: {exc}")
             return
         if isinstance(state, dict):
+            if self.external:
+                from playback_state import external_media_labels
+
+                state["title"], state["media_size"] = external_media_labels(self.device_info)
             snapshot.publish(state)
     def _portal_upload_target(self) -> dict:
         """Read GTK-owned selection/status only; never perform network I/O here."""
