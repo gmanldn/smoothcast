@@ -2043,9 +2043,24 @@ class Session:
         )
         _save_session(self.state)
 
-    def _wait_for_segments(self, timeout: float) -> bool:
-        deadline = time.monotonic() + timeout
+    def _wait_for_segments(self, timeout: float, *, max_wait: float = 120.0) -> bool:
+        # A busy CPU or subtitle burn-in can make a healthy encoder slower than
+        # the initial window. While FFmpeg visibly advances, extend the wait
+        # (bounded); a stalled encoder writes no progress and still times out.
+        start = time.monotonic()
+        deadline = start + timeout
+        hard_cap = start + max(timeout, max_wait)
+        last_progress: tuple[float, int | None] | None = None
         while time.monotonic() < deadline:
+            try:
+                current = self._read_progress()
+                marker = (current.out_time, current.frame)
+            except Exception:
+                marker = None
+            if marker is not None and marker != (0.0, None):
+                if last_progress is not None and marker != last_progress:
+                    deadline = max(deadline, min(hard_cap, time.monotonic() + 10.0))
+                last_progress = marker
             playlist = ROOT / getattr(self, "_playlist_name", HLS_NAME)
             pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
             if playlist.exists() and len(list(ROOT.glob(pattern))) >= 2:
