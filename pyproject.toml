@@ -268,6 +268,7 @@ py-modules = [
     "queue_metadata",
     "queue_prewarm_ui",
     "queue_row_ui",
+    "queue_undo",
     "queue_votes",
     "receiver_memory",
     "receiver_profiles",
