@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: eb35cff3297c46be59625a51e266c53dea510179 -->
+<!-- sc-changelog-through: 74082d951b4fda329e3da9b18d64bdfbf02ace90 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:09:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:11:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:11:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`74082d951b4f`](https://github.com/gmanldn/smoothcast/commit/74082d951b4fda329e3da9b18d64bdfbf02ace90)
+
+- 🟦 **07:11:35 · Refactor** — refactor(persist): node trust and resident profiles saved through the atomic owner-only Store (Refs #701) (Refs #325) · [`d97c72744e87`](https://github.com/gmanldn/smoothcast/commit/d97c72744e877733f0d33dd0712988735bdcd43d)
+
+- 🟩 **07:10:20 · Feature** — feat(rooms): pure follow-me handoff state machine, stop source only after target confirmed (Refs #372) · [`adc7dcb319b0`](https://github.com/gmanldn/smoothcast/commit/adc7dcb319b00e385822a8bea5d7394fce2c2da9)
 
 - 🟩 **07:09:27 · Feature** — feat(arch): typed Settings groups (update, portal); update\_facts reads through them (Refs #693) · [`eb35cff3297c`](https://github.com/gmanldn/smoothcast/commit/eb35cff3297c46be59625a51e266c53dea510179)
+
+- ⬜ **07:09:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0f7f106d982a`](https://github.com/gmanldn/smoothcast/commit/0f7f106d982a0dc7781c5fa1fca4625b8ab5eeb1)
 
 - 🟩 **07:09:04 · Feature** — feat(rooms): pure speaker preset save/prune/recall planning with ceilings and guest gate (Refs #371) · [`01041af8d15c`](https://github.com/gmanldn/smoothcast/commit/01041af8d15c94dc752c69c08f08418a78ac4eff)
 
