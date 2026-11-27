@@ -31,7 +31,7 @@ def apply_gtk(css: bytes) -> bytes:
                       f".card {{\n    padding: {SPACING['xl']}px;\n    border-radius: {RADIUS['md']}px;".encode())
     css = css.replace(b"font-size: 1.65em;", f"font-size: {TYPE['hero'].replace('rem', 'em')};".encode())
     css = css.replace(b"font-size: 0.8em;", f"font-size: {TYPE['eyebrow']};".encode())
-    return snap_gtk_radii(css)
+    return snap_gtk_spacing(snap_gtk_radii(css))
 
 
 def snap(px: int) -> int:
@@ -48,3 +48,22 @@ def snap_gtk_radii(css: bytes) -> bytes:
     def one(match: re.Match[bytes]) -> bytes:
         return match.group(1) + str(snap(int(match.group(2)))).encode() + b"px"
     return re.sub(rb"(border-radius:\s*)(\d+)px", one, css)
+
+
+_SPACE_STEPS = sorted(SPACING.values())
+
+
+def snap_space(px: int) -> int:
+    """Nearest spacing token; 0 and 1-2px hairline offsets stay as written."""
+    if px <= 2:
+        return px
+    return min(_SPACE_STEPS, key=lambda v: (abs(v - px), v))
+
+
+def snap_gtk_spacing(css: bytes) -> bytes:
+    """Rewrite every ``padding``/``margin`` pixel length in a GTK stylesheet onto the scale."""
+    def declaration(match: re.Match[bytes]) -> bytes:
+        values = re.sub(rb"(\d+)px", lambda m: str(snap_space(int(m.group(1)))).encode() + b"px",
+                        match.group(2))
+        return match.group(1) + values
+    return re.sub(rb"((?:padding|margin)(?:-[a-z]+)?:\s*)([^;{}]+)", declaration, css)

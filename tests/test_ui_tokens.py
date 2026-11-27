@@ -33,3 +33,16 @@ def test_gtk_and_web_consume_shared_component_tokens():
 def test_snap():
     assert ui_tokens.snap(99) == 999 and ui_tokens.snap(0) == 0
     assert ui_tokens.snap(8) == 10 and ui_tokens.snap(16) == 14
+
+
+def test_gtk_spacing_all_on_scale():
+    allowed = set(ui_tokens.SPACING.values()) | {0, 1, 2}
+    for decl in re.findall(rb"(?:padding|margin)(?:-[a-z]+)?:\s*([^;{}]+)", ui_theme.CSS):
+        assert {int(n) for n in re.findall(rb"(\d+)px", decl)} <= allowed, decl
+
+
+def test_snap_space():
+    assert ui_tokens.snap_space(0) == 0 and ui_tokens.snap_space(2) == 2
+    assert ui_tokens.snap_space(18) == 16 and ui_tokens.snap_space(5) == 4 and ui_tokens.snap_space(10) == 8
+    assert ui_tokens.snap_gtk_spacing(b".a { padding: 6px 14px; margin-top: 2px; }") == \
+        b".a { padding: 4px 12px; margin-top: 2px; }"
