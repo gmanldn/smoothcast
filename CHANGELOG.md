@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 08fbeb200f0f18190bbf73381823923e81ffdb55 -->
+<!-- sc-changelog-through: 4e4fe6709c433880434803d47eead660feef2ffa -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:36:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:39:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:39:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4e4fe6709c43`](https://github.com/gmanldn/smoothcast/commit/4e4fe6709c433880434803d47eead660feef2ffa)
+
+- 🟥 **19:39:42 · Fix** — fix(update): report saved playback handoff deferral clearly (Refs #626) · [`afc2b4dd3a58`](https://github.com/gmanldn/smoothcast/commit/afc2b4dd3a5810372fa7a8b34b5da1169159f68c)
+
+- ⬜ **19:36:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`29a911f88aae`](https://github.com/gmanldn/smoothcast/commit/29a911f88aaea4d705320cddc209ef6d53316566)
 
 - ⬜ **19:36:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08fbeb200f0f`](https://github.com/gmanldn/smoothcast/commit/08fbeb200f0f18190bbf73381823923e81ffdb55)
 
