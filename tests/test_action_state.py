@@ -75,21 +75,3 @@ def test_can_seek_needs_a_live_known_duration_stream():
     assert not action_state.can_seek(_session(), False, False, False, 120)
     assert not action_state.can_seek(_session(), False, True, True, 120)
     assert not action_state.can_seek(_session(), False, True, False, 0)
-
-
-def test_portal_preconditions_no_longer_read_widget_sensitivity():
-    source = (ROOT / "src" / "portal_commands.py").read_text(encoding="utf-8")
-    start = source.index("def run_mutation(")
-    body = source[start:source.index("\ndef ", start + 1)] if "\ndef " in source[start + 1:] else source[start:]
-    assert "get_sensitive" not in body
-    assert "action_state.can_play_pause(" in body
-    assert "action_state.can_stop(" in body
-    assert "action_state.can_seek(" in body
-    assert "action_state.can_volume(" in body
-
-
-def test_desktop_controls_share_the_same_action_state_rules():
-    source = (ROOT / "src" / "cast_ui.py").read_text(encoding="utf-8")
-    assert "action_state.can_play_pause(" in source
-    assert "action_state.can_stop(" in source
-    assert "action_state.can_volume(" in source

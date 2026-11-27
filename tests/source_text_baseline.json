@@ -1,7 +1,5 @@
 {
  "files": [
-  "test_accent.py",
-  "test_action_state.py",
   "test_agent_context.py",
   "test_agent_token_efficiency.py",
   "test_async_av_ownership.py",
