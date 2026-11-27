@@ -286,6 +286,7 @@ py-modules = [
     "shutdown_plan",
     "sleep_fade",
     "slider_accessibility",
+    "slo_gate",
     "startup_cleanup",
     "startup_timeline",
     "state_labels",
