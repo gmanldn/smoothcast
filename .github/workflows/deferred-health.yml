@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: smoothcast-deferred-develop
@@ -38,6 +39,51 @@ jobs:
         run: |
           echo "Verified develop SHA: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           echo "This is a deferred diagnostic, never permission to merge main." >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish exact develop CI verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          python3 scripts/ci/head_verdict.py --json --head "$(git rev-parse HEAD)" \
+            > "$RUNNER_TEMP/develop-verdict.json"
+          result=$?
+          set -e
+          python3 - "$RUNNER_TEMP/develop-verdict.json" "$result" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          if path.stat().st_size:
+              verdict = json.loads(path.read_text(encoding="utf-8"))
+              print("### Exact develop CI verdict")
+              print(f"- Head: `{verdict['head']}`")
+              print(f"- Software: **{verdict['software']}**; release: **{verdict['release']}**")
+              print(f"- Verdict: **{verdict['verdict']}**")
+              if verdict.get("url"):
+                  print(f"- Verify run: {verdict['url']}")
+              for blocker in verdict.get("blockers", []):
+                  print(f"- Blocker: {blocker}")
+          else:
+              print("### Exact develop CI verdict unavailable")
+              print("`head_verdict.py` could not read a conclusive exact-head verdict.")
+          PY
+          exit "$result"
+      - name: Publish recent commit-to-red timing
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/commits?sha=develop&per_page=100" \
+            --jq '.[] | [.sha, .commit.committer.date] | @tsv' \
+            > "$RUNNER_TEMP/develop-commits.tsv"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=develop&per_page=100" \
+            --jq '.workflow_runs[] | [.head_sha, (.conclusion // ""), .updated_at, .event] | @tsv' \
+            > "$RUNNER_TEMP/develop-runs.tsv"
+          python3 scripts/ci/time_to_red.py \
+            --commits-tsv "$RUNNER_TEMP/develop-commits.tsv" \
+            --runs-tsv "$RUNNER_TEMP/develop-runs.tsv" \
+            >> "$GITHUB_STEP_SUMMARY"
       - name: Install headless diagnostics
         run: python -m pip install -e '.[dev]'
       - name: Fast static safeguards

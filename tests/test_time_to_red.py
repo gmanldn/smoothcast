@@ -1,3 +1,5 @@
+from contextlib import redirect_stdout
+from io import StringIO
 import importlib.util
 from pathlib import Path
 
@@ -36,3 +38,45 @@ def test_summary_flags_only_runs_over_the_fifteen_minute_budget():
 
 def test_empty_summary():
     assert T.summarise({}, [])["worst_min"] is None
+
+
+def test_nightly_report_uses_only_push_failures_and_marks_sample_bound(tmp_path):
+    commits = tmp_path / "commits.tsv"
+    runs = tmp_path / "runs.tsv"
+    commits.write_text(f"a\t{C}\n", encoding="utf-8")
+    runs.write_text(
+        "a\tfailure\t2026-11-27T10:12:30Z\tpush\n"
+        "a\tfailure\t2026-11-27T10:01:00Z\tschedule\n",
+        encoding="utf-8",
+    )
+
+    output = T.report(str(commits), str(runs))
+
+    assert "Observed 1 recent commits and 1 push workflow runs" in output
+    assert "worst: 12.5 min" in output
+    assert "Over the 15 minute budget: none" in output
+    assert "first API page" in output
+
+
+def test_nightly_report_rejects_malformed_api_export(tmp_path):
+    commits = tmp_path / "commits.tsv"
+    runs = tmp_path / "runs.tsv"
+    commits.write_text("missing timestamp\n", encoding="utf-8")
+    runs.write_text("", encoding="utf-8")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="2 tab-separated columns"):
+        T.report(str(commits), str(runs))
+
+
+def test_nightly_report_fails_when_observed_time_to_red_exceeds_budget(tmp_path):
+    commits = tmp_path / "commits.tsv"
+    runs = tmp_path / "runs.tsv"
+    commits.write_text(f"a\t{C}\n", encoding="utf-8")
+    runs.write_text("a\tfailure\t2026-11-27T10:16:00Z\tpush\n", encoding="utf-8")
+
+    with redirect_stdout(StringIO()):
+        result = T.main(["--commits-tsv", str(commits), "--runs-tsv", str(runs)])
+
+    assert result == 1
