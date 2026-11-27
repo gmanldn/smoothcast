@@ -171,7 +171,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
     config_home = (Path(home_value) / ".config" if home is not None else
                    Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"))
     learning_path = (Path(receiver_learning) if receiver_learning is not None else
-                     config_home / "cast-control" / receiver_memory.STATE_NAME)
+                     config_home / paths.APP_DIR / receiver_memory.STATE_NAME)
     payload: dict = {
         "smoothcast": {"version": __version__, "label": label()},
         "generated": int(time.time()),

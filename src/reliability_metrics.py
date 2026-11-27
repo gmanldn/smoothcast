@@ -5,6 +5,7 @@ are explicit so callers can run disk work in an existing background worker.
 """
 from __future__ import annotations
 
+import paths
 from collections.abc import Mapping
 from datetime import datetime, timezone
 import json
@@ -292,7 +293,7 @@ def default_path() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "cast-control" / "reliability.json"
+    return base / paths.APP_DIR / "reliability.json"
 
 
 def sys_platform() -> str:

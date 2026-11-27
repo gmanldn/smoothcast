@@ -11,6 +11,7 @@ forgotten discovery path fails closed instead of reaching a real receiver.
 """
 from __future__ import annotations
 
+import paths
 import hmac
 import ipaddress
 import os
@@ -126,7 +127,7 @@ def demo_target() -> tuple[str, int, str]:
     import json
     import demo_runtime
     base = Path(os.environ.get("XDG_CONFIG_HOME") or "")
-    config = json.loads((base / "cast-control" / "config.json").read_text(encoding="utf-8"))
+    config = json.loads((base / paths.APP_DIR / "config.json").read_text(encoding="utf-8"))
     for target in config.get("cast_targets") or []:
         host = str(target.get("host", ""))
         assert_loopback(host)
