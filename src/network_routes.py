@@ -17,6 +17,7 @@ import sys
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
+import address_policy
 import castctl
 from server import HEALTH_BODY, HEALTH_PATH, PORT
 
@@ -192,6 +193,7 @@ def report(
         "selected_interface": name,
         "route_error": route_error,
         "vpn_interface_suspected": bool(_VPN_INTERFACE.match(name)) if name else None,
+        "route_warning": address_policy.route_warning(name) if name else None,
         "local_hls_health": local_health,
         "second_host_health_url": second_host_url,
         "inbound_hls_reachability": "not_verified_from_second_host",

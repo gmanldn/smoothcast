@@ -198,3 +198,9 @@ def test_cli_diagnostic_path_is_explicit_and_never_opens_gtk():
     main.assert_called_once_with(["192.168.1.41"])
     with mock.patch.object(sys, "argv", ["smoothcast", "--version"]):
         assert cli.main() == 0
+
+
+def test_route_warning_only_for_tunnel_interfaces():
+    import address_policy
+    assert address_policy.route_warning("wg0") is not None
+    assert address_policy.route_warning("eth0") is None
