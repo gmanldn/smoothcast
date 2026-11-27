@@ -38,7 +38,7 @@ def redact(text: str) -> str:
             text = text.replace(home, "~")
         text = _WINDOWS_PATH.sub(lambda m: f".../{m.group(1)}", text)
         return _POSIX_PATH.sub(lambda m: f".../{m.group(1)}", text)
-    except Exception:
+    except Exception:  # noqa: BLE001 - describing a failure must never raise
         return ""
 
 
@@ -72,7 +72,7 @@ def _detail(exc: object) -> str:
         seen.add(id(current))
         try:
             text = str(current)
-        except Exception:
+        except Exception:  # noqa: BLE001 - str() of a hostile exception may raise
             text = ""
         name = type(current).__name__
         parts.append(f"{name}: {redact(text)}" if text else name)
@@ -106,7 +106,7 @@ def describe(exc: object) -> UserFailure:
             return UserFailure(spec.message, spec.steps, _detail(exc), True, code)
         errors.record(errors.FALLBACK.code)
         return UserFailure(TITLE, STEPS, _detail(exc))
-    except Exception:
+    except Exception:  # noqa: BLE001 - fall back to the generic failure
         return UserFailure(TITLE, STEPS, "")
 
 

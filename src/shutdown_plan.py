@@ -44,7 +44,7 @@ class ShutdownPlan:
             def target() -> None:
                 try:
                     fn()
-                except Exception as exc:        # a failing step must never block the exit
+                except Exception as exc:        # a failing step must never block the exit  # noqa: BLE001 - a failing step must never block the exit
                     outcome["error"] = type(exc).__name__
             worker = threading.Thread(target=target, name=f"smoothcast-shutdown-{name}", daemon=True)
             worker.start()
@@ -54,7 +54,7 @@ class ShutdownPlan:
         else:
             try:
                 fn()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failing step must never block the exit
                 error = type(exc).__name__
         elapsed = self._clock() - begin
         overran = elapsed > deadline or not finished
@@ -144,5 +144,5 @@ def begin_ledger() -> str:
     """Startup hook: classify the previous exit; never raises."""
     try:
         return ShutdownLedger().begin()
-    except Exception:
+    except Exception:  # noqa: BLE001 - startup hook never raises
         return "none"

@@ -70,7 +70,7 @@ class HeartbeatCoordinator:
         self._primary_since = self._started_mono
         try:
             self.beat()                   # first heartbeat is available immediately
-        except Exception as exc:          # a bad first sample must not stop startup
+        except Exception as exc:          # a bad first sample must not stop startup  # noqa: BLE001 - a bad first sample must not stop startup
             self._record_error(exc)
         self._thread = threading.Thread(target=self._loop, name="smoothcast-mesh-heartbeat",
                                         daemon=True)
@@ -148,7 +148,7 @@ class HeartbeatCoordinator:
                 return
             try:
                 self.beat()
-            except Exception as exc:          # a bad sample must never end the thread
+            except Exception as exc:          # a bad sample must never end the thread  # noqa: BLE001 - a bad sample must never end the thread
                 self._record_error(exc)
 
     def _record_error(self, exc: BaseException) -> None:
@@ -157,7 +157,7 @@ class HeartbeatCoordinator:
         if self._on_error is not None:
             try:
                 self._on_error(exc)
-            except Exception:
+            except Exception:  # noqa: BLE001 - an error callback must not raise
                 pass
 
 
