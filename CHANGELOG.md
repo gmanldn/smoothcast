@@ -8,13 +8,25 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4c9361b1e77f19e53d8b68a66962cc3e0aa8b557 -->
+<!-- sc-changelog-through: 81ef38363e98d7411f65c7d3348bfb6a0cb34e57 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:41:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:47:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:47:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`81ef38363e98`](https://github.com/gmanldn/smoothcast/commit/81ef38363e98d7411f65c7d3348bfb6a0cb34e57)
+
+- 🟥 **17:47:05 · Fix** — fix(stream): the live cast encoder runs at normal priority so a busy host no longer starves it below real time (0.52x observed at nice 10); background conversions stay low (Refs #686) (Refs #247) · [`00c82e3c414e`](https://github.com/gmanldn/smoothcast/commit/00c82e3c414e90d378ba1db970419d29cc8f1b84)
+
+- 🟩 **17:45:09 · Feature** — feat(arch): supervisor.bounded() for deadline-limited closes, reused by Supervisor.stop (Refs #692) · [`9ca270116fc8`](https://github.com/gmanldn/smoothcast/commit/9ca270116fc83ce275ed35d8d38615dd8f72799f)
+
+- 🟦 **17:43:48 · Refactor** — refactor(settings): typed VideoSettings group for quality, rotation, aspect and cover art; cast\_av reads it (Refs #693) · [`3c01805dae92`](https://github.com/gmanldn/smoothcast/commit/3c01805dae926970d94df3d7fb0565555f7c7684)
+
+- 🟩 **17:42:16 · Feature** — feat(network): node profiles show uptime from the announced boot epoch, in the headline, GTK popover and web panel (Refs #710) · [`04965f6e2ae0`](https://github.com/gmanldn/smoothcast/commit/04965f6e2ae0277de0151a958b29c24df3c985d0)
 
 - ⬜ **17:41:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4c9361b1e77f`](https://github.com/gmanldn/smoothcast/commit/4c9361b1e77f19e53d8b68a66962cc3e0aa8b557)
+
+- ⬜ **17:41:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0651d1fb673d`](https://github.com/gmanldn/smoothcast/commit/0651d1fb673dc57831dd85562c879673f5e628c9)
 
 - 🟦 **17:41:20 · Refactor** — refactor(errors): justify castctl boundary catches (Refs #694) · [`221c8aef1d00`](https://github.com/gmanldn/smoothcast/commit/221c8aef1d0058f3a141f8e01e52487d4f102881)
 
