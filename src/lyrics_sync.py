@@ -7,11 +7,10 @@ file from exhausting memory: 5000 lines, 500 chars per line, 512 KB of text acce
 from __future__ import annotations
 
 import bisect
-import json
-import os
 import re
-import tempfile
 from pathlib import Path
+
+import store
 
 MAX_LINES, MAX_LINE_CHARS, MAX_BYTES = 5000, 500, 512 * 1024
 OFFSET_MAX_S = 5.0
@@ -117,7 +116,7 @@ class Offsets:
         self.path, self.d = (Path(path) if path else None), {}
         if self.path:
             try:
-                self.d = {k: float(v) for k, v in json.loads(self.path.read_text("utf-8")).items()}
+                self.d = {k: float(v) for k, v in store.Store(self.path).read().items()}
             except (OSError, ValueError, AttributeError, TypeError):
                 pass
 
@@ -138,12 +137,6 @@ class Offsets:
     def _save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".lyr")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(self.d, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        # Store.write is atomic, owner-only and never raises on a full or
+        # read-only disk; a failed save must not crash the GTK handler.
+        store.Store(self.path).write(self.d)

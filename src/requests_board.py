@@ -6,13 +6,12 @@ No download or acquisition integration by design.
 """
 from __future__ import annotations
 
-import json
-import os
 import re
 import secrets
-import tempfile
 import unicodedata
 from pathlib import Path
+
+import store
 
 MAX_OPEN, MAX_TEXT, GUEST_TTL_S, NOTE_TTL_S = 100, 80, 14 * 86400, 30 * 86400
 EMPTY = "No requests yet. Ask for something you'd like to watch or hear."
@@ -38,7 +37,7 @@ class Board:
         self.notes: list[dict] = []
         if self.path:
             try:
-                d = json.loads(self.path.read_text("utf-8"))
+                d = store.Store(self.path).read()
                 self.reqs, self.notes = dict(d.get("reqs", {})), list(d.get("notes", []))
             except (OSError, ValueError, AttributeError, TypeError):
                 pass
@@ -105,12 +104,5 @@ class Board:
     def _save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".req")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"reqs": self.reqs, "notes": self.notes}, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        # Store.write is atomic, owner-only and never raises on a full disk.
+        store.Store(self.path).write({"reqs": self.reqs, "notes": self.notes})

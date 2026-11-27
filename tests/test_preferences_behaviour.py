@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import picture_adjustments
+import portal_room
 import preference_choices
 from gui_source import main_window_methods
 
@@ -39,6 +40,7 @@ def extracted_preferences(*names):
         "preference_choices": preference_choices,
         "picture_adjustments": picture_adjustments,
         "save_config": mock.Mock(),
+        "clean_room_name": portal_room.clean_room_name,
         "GLib": SimpleNamespace(Variant=lambda fmt, value: (fmt, value)),
         "Gtk": SimpleNamespace(StringList=SimpleNamespace(new=list)),
     }
@@ -89,6 +91,8 @@ def test_reopening_reads_latest_config_and_updates_on_main_context():
     prefs.subtitle_file = mock.Mock()
     prefs.gain = mock.Mock()
     prefs.portal_port_spin = mock.Mock()
+    prefs.room_name_row = mock.Mock()
+    prefs._saved_room_name = ""
     prefs.update_status_row = mock.Mock()
     prefs._picture_spins = {"picture_brightness": mock.Mock()}
     prefs._combos = {"quality": mock.Mock(), "color_scheme": mock.Mock()}

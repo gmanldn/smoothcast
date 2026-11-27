@@ -6,10 +6,9 @@ source-time position; video stays copied and only audio is re-encoded.
 """
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from pathlib import Path
+
+import store
 
 LEVELS = ("off", "light", "strong")
 LABEL, SUBLABEL = "Night mode", "Softer bangs, clearer voices"
@@ -65,7 +64,7 @@ class Rooms:
         self.path, self.d = (Path(path) if path else None), {}
         if self.path:
             try:
-                self.d = json.loads(self.path.read_text("utf-8"))
+                self.d = store.Store(self.path).read()
             except (OSError, ValueError):
                 self.d = {}
             if not isinstance(self.d, dict):
@@ -92,12 +91,6 @@ class Rooms:
     def _save(self) -> None:
         if not self.path:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".nm")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(self.d, fh)
-            os.replace(tmp, self.path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        # Store.write is atomic, owner-only and never raises on a full or
+        # read-only disk; a failed save must not crash the GTK handler.
+        store.Store(self.path).write(self.d)

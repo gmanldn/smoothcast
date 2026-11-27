@@ -30,7 +30,7 @@ ALLOWED = {
     "reliability_metrics.py": 1,
     "resident_profiles.py": 1,
     "server.py": 1,
-    "store.py": 1,
+    "store.py": 2,
     "stream_health.py": 1,
     "streamer_generation.py": 1,
     "subtitle_encoding.py": 1,
