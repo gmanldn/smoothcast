@@ -129,6 +129,11 @@ class PortalRoomMixin:
             measured = stream_health.read_snapshot(paths.cache_dir())
             if measured is not None:
                 state["stream_health"] = measured
+            chapters = getattr(getattr(self, "media", None), "chapters", ()) or ()
+            if chapters and not self.external:
+                # Same chapters the desktop menu shows, so the web room can jump to them (#39).
+                state["chapters"] = [{"start": round(float(c.start), 2), "title": str(c.title)[:80]}
+                                     for c in chapters[:128]]
             if self.external:
                 from playback_state import external_details, external_media_labels
 
