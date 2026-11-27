@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3a31538a4a494b10a318c29bec09a14b12ce8a88 -->
+<!-- sc-changelog-through: 9eb28b06e0b5c54ba73150ee88904cb0f288a993 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:14:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:22:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:22:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9eb28b06e0b5`](https://github.com/gmanldn/smoothcast/commit/9eb28b06e0b5c54ba73150ee88904cb0f288a993)
+
+- 🟪 **18:22:13 · Tests** — test: exercise installed shortcuts behaviorally (Refs #699) · [`9bf3fcc4dbd4`](https://github.com/gmanldn/smoothcast/commit/9bf3fcc4dbd47f44022c608671f12a072f9ab60d)
 
 - ⬜ **18:14:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a31538a4a49`](https://github.com/gmanldn/smoothcast/commit/3a31538a4a494b10a318c29bec09a14b12ce8a88)
 
 - 🟥 **18:14:40 · Fix** — fix: check official develop when restarting installed SmoothCast (Refs #579) · [`4e88d9063820`](https://github.com/gmanldn/smoothcast/commit/4e88d90638201b0000e08f446a3cf7f1764a9d3c)
+
+- ⬜ **18:14:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7f93af38790a`](https://github.com/gmanldn/smoothcast/commit/7f93af38790a7b59c4adefe2578c8044d3a73316)
 
 - ⬜ **18:13:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3d21204b8e28`](https://github.com/gmanldn/smoothcast/commit/3d21204b8e28bac06f24af287c4d9d5b1bdf7413)
 
