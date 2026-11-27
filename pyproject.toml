@@ -243,6 +243,7 @@ py-modules = [
     "peer_discovery",
     "peer_discovery_ui",
     "peer_protocol",
+    "person_resume",
     "picture_adjustments",
     "picture_check",
     "pip_support",
