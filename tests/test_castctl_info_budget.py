@@ -4,6 +4,14 @@ import castctl
 OK = {"player_state": "PLAYING"}
 
 
+class NoMirror:
+    def info(self, host, timeout):
+        return None
+
+    def close(self):
+        pass
+
+
 class Clock:
     def __init__(self):
         self.now = 100.0
@@ -16,6 +24,7 @@ def _setup(monkeypatch):
     clock = Clock()
     monkeypatch.setattr(castctl.time, "monotonic", clock.monotonic)
     backend = castctl.CattBackend()
+    backend._mirror = NoMirror()
     monkeypatch.setattr(castctl, "_backend", backend)
     monkeypatch.setattr(castctl, "log_backend_failure", lambda *a, **k: None)
     threads = []

@@ -4,9 +4,18 @@ import castctl
 OK = {"player_state": "PLAYING"}
 
 
+class NoMirror:
+    def info(self, host, timeout):
+        return None
+
+    def close(self):
+        pass
+
+
 def _backend(monkeypatch, ads=()):
     backend = castctl.CattBackend()
     backend._advertisements = tuple(ads)
+    backend._mirror = NoMirror()
     monkeypatch.setattr(castctl, "_backend", backend)
     monkeypatch.setattr(castctl, "log_backend_failure", lambda *a, **k: None)
     castctl._info_failures.clear()
@@ -59,3 +68,32 @@ def test_rediscovery_is_throttled_and_survives_scan_failure(monkeypatch):
     assert backend.refreshed_route("TV") == "TV"
     assert backend.refreshed_route("TV") == "TV"
     assert len(scans) == 1
+
+
+def test_failed_catt_read_falls_back_to_the_direct_status_mirror(monkeypatch):
+    backend = _backend(monkeypatch)
+    seen = []
+
+    class Mirror(NoMirror):
+        def info(self, host, timeout):
+            seen.append(host)
+            return OK
+
+    backend._mirror = Mirror()
+    monkeypatch.setattr(castctl, "_catt_info", lambda d, timeout=8: None)
+    monkeypatch.setattr(backend, "refreshed_route", lambda name: "192.168.1.20")
+    assert backend.info("TV") == OK
+    assert seen == ["192.168.1.20"]
+
+
+def test_mirror_never_used_without_a_verified_private_address(monkeypatch):
+    backend = _backend(monkeypatch)
+
+    class Mirror(NoMirror):
+        def info(self, host, timeout):
+            raise AssertionError("unverified name must not reach the mirror")
+
+    backend._mirror = Mirror()
+    monkeypatch.setattr(castctl, "_catt_info", lambda d, timeout=8: None)
+    monkeypatch.setattr(backend, "refreshed_route", lambda name: name)
+    assert backend.info("TV") is None

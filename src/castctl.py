@@ -16,7 +16,7 @@ import time
 
 import frozen_runtime
 from dataclasses import dataclass
-from typing import Callable, Protocol, cast, runtime_checkable
+from typing import Any, Callable, Protocol, cast, runtime_checkable
 
 from progress_model import ReceiverInfo
 
@@ -287,6 +287,7 @@ class CattBackend:
     def __init__(self) -> None:
         self._advertisements: tuple[Device, ...] = ()
         self._last_refresh: dict[str, float] = {}
+        self._mirror = _StatusMirror()
 
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
@@ -339,21 +340,39 @@ class CattBackend:
         if result is not None or not device.strip():
             return result
         # catt's own name lookup can fail where a verified address works.
-        if deadline - time.monotonic() < REDISCOVERY_BUDGET:
+        route = device
+        if deadline - time.monotonic() >= REDISCOVERY_BUDGET:
+            route = self.refreshed_route(device)
+            remaining = deadline - time.monotonic()
+            if route != device and remaining >= 1.0:
+                retried = _catt_info(route, remaining)
+                if retried is not None:
+                    _info_failures.pop(device, None)
+                    return retried
+        elif time.monotonic() - self._last_refresh.get(device, -1e9) >= 15.0:
             # No room for discovery plus a retry here; learn the route in the
             # background so the next call (via catt_command) can use it.
-            if time.monotonic() - self._last_refresh.get(device, -1e9) >= 15.0:
-                threading.Thread(target=self.refreshed_route, args=(device,),
-                                 name="cast-route-refresh", daemon=True).start()
-            return None
-        route = self.refreshed_route(device)
+            threading.Thread(target=self.refreshed_route, args=(device,),
+                             name="cast-route-refresh", daemon=True).start()
+        return self._mirror_info(device, route, deadline)
+
+    def _mirror_info(self, device: str, route: str, deadline: float) -> ReceiverInfo | None:
+        """Read status over a persistent read-only connection when catt fails.
+
+        Spawning catt costs seconds of Python start-up on a loaded host; a kept
+        connection answers instantly. Only a private IPv4 address that is the
+        target itself or passed the receiver identity check is used.
+        """
+        host = _private_ipv4(route) or _private_ipv4(device)
+        if host is None and deadline - time.monotonic() >= 2.5:
+            host = _private_ipv4(self.receiver_route(device))
         remaining = deadline - time.monotonic()
-        if route == device or remaining < 1.0:
+        if host is None or remaining < 0.5:
             return None
-        retried = _catt_info(route, remaining)
-        if retried is not None:
+        status = self._mirror.info(host, remaining)
+        if status:
             _info_failures.pop(device, None)
-        return retried
+        return status
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         return _catt_command(device, *args, timeout=timeout)
@@ -366,6 +385,85 @@ class CattBackend:
 
     def close(self) -> None:
         self._advertisements = ()
+        self._mirror.close()
+
+
+def _private_ipv4(value: str) -> str | None:
+    try:
+        return validate_manual_target(value)
+    except ValueError:
+        return None
+
+
+class _StatusMirror:
+    """Kept read-only PyChromecast connections, keyed by verified host.
+
+    Never launches apps or sends media commands; catt keeps media ownership.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._casts: dict[str, object] = {}
+
+    def info(self, host: str, timeout: float) -> ReceiverInfo | None:
+        deadline = time.monotonic() + timeout
+        try:
+            import pychromecast
+            from pychromecast_backend import PyChromecastBackend
+
+            with self._lock:
+                chromecast = self._casts.get(host)
+            if chromecast is None:
+                chromecast = pychromecast.get_chromecast_from_host(
+                    (host, 8009, None, None, None), tries=1,
+                    timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
+                with self._lock:
+                    self._casts[host] = chromecast
+            cc = cast(Any, chromecast)
+            cc.wait(timeout=max(0.1, deadline - time.monotonic()))
+            cast_status = cc.status
+            media = cc.media_controller
+            app_id = getattr(cast_status, "app_id", None)
+            if app_id and getattr(media.status, "media_session_id", None) is None:
+                # A freshly joined app reports its media session shortly after.
+                try:
+                    media.update_status()
+                except Exception:
+                    pass
+                wait_until = min(deadline, time.monotonic() + 1.5)
+                while (time.monotonic() < wait_until
+                       and getattr(media.status, "media_session_id", None) is None):
+                    time.sleep(0.05)
+            status = PyChromecastBackend._status_dict(
+                cast(Any, None), media.status, cast_status)
+            # A kept connection's last report ages; extrapolate like the receiver.
+            adjusted = getattr(media.status, "adjusted_current_time", None)
+            if isinstance(adjusted, (int, float)) and "current_time" in status:
+                status["current_time"] = adjusted
+            for key in ("display_name", "status_text"):
+                value = getattr(cast_status, key, None)
+                if value:
+                    status[key] = value  # type: ignore[literal-required]
+            return status
+        except Exception as exc:
+            self._drop(host)
+            _info_failed(host, f"direct status connection failed: {type(exc).__name__}")
+            return None
+
+    def _drop(self, host: str) -> None:
+        with self._lock:
+            chromecast = self._casts.pop(host, None)
+        if chromecast is not None:
+            try:
+                cast(Any, chromecast).disconnect(timeout=1)
+            except Exception:
+                pass
+
+    def close(self) -> None:
+        with self._lock:
+            hosts = list(self._casts)
+        for host in hosts:
+            self._drop(host)
 
 
 _backend: CastBackend = CattBackend()
