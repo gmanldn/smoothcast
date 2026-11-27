@@ -70,7 +70,7 @@ class EntryName:
         make_zc, make_info = factories
         try:
             zeroconf = make_zc(self.bind_ip)
-        except Exception:
+        except Exception:  # noqa: BLE001 - zeroconf failure means no .local name; the portal still works by IP
             return
         for name in candidate_names():
             try:
@@ -79,13 +79,13 @@ class EntryName:
                     addresses=[socket.inet_aton(self.bind_ip)], port=self.port,
                     properties={"path": "/", "entry": name}, server=f"{name}.")
                 zeroconf.register_service(info)             # type: ignore[attr-defined]
-            except Exception:
+            except Exception:  # noqa: BLE001 - name taken or refused: try the next candidate
                 continue                                    # taken or refused: try the next name
             self._zc, self._info, self.name = zeroconf, info, name
             return
         try:
             zeroconf.close()                                # type: ignore[attr-defined]
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort close of a registration that failed
             pass
 
     def _release(self) -> None:
@@ -97,9 +97,9 @@ class EntryName:
         try:
             if info is not None:
                 zeroconf.unregister_service(info)           # type: ignore[attr-defined]
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort unregister during shutdown
             pass
         try:
             zeroconf.close()                                # type: ignore[attr-defined]
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort close during shutdown
             pass
