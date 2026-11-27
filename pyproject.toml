@@ -271,6 +271,7 @@ py-modules = [
     "receiver_profiles",
     "receiver_sessions",
     "reliability_metrics",
+    "remote_link",
     "replica_manager",
     "replica_store",
     "responsive_layout",
