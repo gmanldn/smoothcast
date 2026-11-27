@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 11ea3152ad345d9ec3046c4952a90515fe296775 -->
+<!-- sc-changelog-through: 564905802c8c9a61aecd2c2a0f3f1d8cfc3a5af7 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:43:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:43:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:43:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`564905802c8c`](https://github.com/gmanldn/smoothcast/commit/564905802c8c9a61aecd2c2a0f3f1d8cfc3a5af7)
+
+- 🟩 **15:43:43 · Feature** — feat(portal): web room chapter jump through the fenced seek envelope; parity row added (Refs #635) · [`ab1e5ec1ed43`](https://github.com/gmanldn/smoothcast/commit/ab1e5ec1ed43591d472de97747e86d86ea342a84)
 
 - ⬜ **15:43:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`11ea3152ad34`](https://github.com/gmanldn/smoothcast/commit/11ea3152ad345d9ec3046c4952a90515fe296775)
+
+- ⬜ **15:43:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`9d4c3e9c57a2`](https://github.com/gmanldn/smoothcast/commit/9d4c3e9c57a2b90200d5680af64b8c80dd046302)
 
 - 🟨 **15:42:42 · Documentation** — docs: record Cast backend dependency pins and licences (Refs #202) · [`a9516374a3f1`](https://github.com/gmanldn/smoothcast/commit/a9516374a3f1fd1dbcd0a7010f2caaccf725af94)
 
