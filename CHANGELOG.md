@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d466985106c2f20757847cd759819b7889712287 -->
+<!-- sc-changelog-through: 15887829be0d5d45e02947d137497556e8bd9a99 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:09:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:11:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:11:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`15887829be0d`](https://github.com/gmanldn/smoothcast/commit/15887829be0d5d45e02947d137497556e8bd9a99)
+
+- 🟦 **17:11:38 · Refactor** — refactor(errors): justify the 12 boundary catches in pychromecast\_backend (Refs #694) · [`0322ab5aaf0e`](https://github.com/gmanldn/smoothcast/commit/0322ab5aaf0ebcdb7370eaf94bd6e574b3ef06c3)
+
+- 🟦 **17:11:13 · Refactor** — refactor(runtime): egress proxy accept loop and per-connection tunnels run under task\_runtime.spawn\_daemon; close cancels the scope; raw-thread allowance removed (Refs #696) · [`6dca7bb93473`](https://github.com/gmanldn/smoothcast/commit/6dca7bb9347315aa4c4277a33748fecea7fa2a9b)
 
 - ⬜ **17:09:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d466985106c2`](https://github.com/gmanldn/smoothcast/commit/d466985106c2f20757847cd759819b7889712287)
+
+- ⬜ **17:09:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7119d92eeffd`](https://github.com/gmanldn/smoothcast/commit/7119d92eeffdb9c3990a834cd5346759cf21daa2)
 
 - 🟦 **17:09:39 · Refactor** — refactor(errors): justify boundary catches in sc\_core and cast\_mesh (Refs #694) · [`bfe21937f4ee`](https://github.com/gmanldn/smoothcast/commit/bfe21937f4ee24287c7ac1414cccb831a7918388)
 
