@@ -367,11 +367,17 @@ class CattBackend:
         # The whole call, retry included, stays within the caller's budget:
         # pollers such as the 40 s cast confirmation depend on it.
         deadline = time.monotonic() + timeout
+        if timeout < 0.5:
+            if device.strip():
+                _info_failed(device, "status read exhausted its timeout budget")
+            return None
         # Once a direct connection proved itself for this receiver, answer from
         # it: its pushed status is current and costs no helper start-up.
+        failed_host = None
         host = self._mirror_routes.get(device)
         if host is not None:
             if self._mirror.connected(host):
+                failed_host = host
                 status = self._mirror.info(host, min(timeout, 2.0))
                 if status:
                     _info_failures.pop(device, None)
@@ -381,14 +387,25 @@ class CattBackend:
         # catt's start-up alone can take most of the budget on a loaded host,
         # leaving the fallback below no time to prove the direct route. Try a
         # known safe address first with a bounded slice, then catt (#712).
-        host = self._direct_host(device) if device.strip() else None
-        if host is not None:
-            status = self._mirror.info(host, min(4.0, max(0.5, timeout / 2)))
+        remaining = deadline - time.monotonic()
+        host = None
+        if remaining >= 0.5 and device.strip():
+            # Verifying a discovered name may itself take two seconds.
+            if remaining >= 2.5 or _private_ipv4(device) is not None:
+                host = self._direct_host(device)
+        remaining = deadline - time.monotonic()
+        if host is not None and host != failed_host and remaining >= 0.5:
+            status = self._mirror.info(host, min(remaining, 4.0, max(0.5, timeout / 2)))
             if status:
                 _info_failures.pop(device, None)
                 self._mirror_routes[device] = host
                 return status
-        result = _catt_info(device, max(0.5, deadline - time.monotonic()))
+        remaining = deadline - time.monotonic()
+        if remaining < 0.5:
+            if device.strip():
+                _info_failed(device, "status read exhausted its timeout budget")
+            return None
+        result = _catt_info(device, remaining)
         if result is not None or not device.strip():
             return result
         # catt's own name lookup can fail where a verified address works.
