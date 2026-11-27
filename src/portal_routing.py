@@ -36,7 +36,7 @@ ROUTES: tuple[Route, ...] = (
     _get("/api/openapi.json", "openapi", auth=False),
     _get("/silence.wav", "silence", auth=False),
     _get("/api/config", "config", auth=False),
-    _get("/api/session", "session", throttle="read")  # cookie-checked by its own handler,
+    _get("/api/session", "session", throttle="read"),  # cookie-checked by its own handler
     _get("/api/libraries", "libraries", throttle="read"),
     _get("/api/libraries/", "libraries", prefix=True, throttle="read"),
     _get("/api/search/stream", "search_stream", throttle="read"),
