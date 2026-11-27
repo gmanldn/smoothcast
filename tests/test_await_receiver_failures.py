@@ -1,0 +1,79 @@
+"""Receiver confirmation failures stay distinct and diagnosable (no real receiver)."""
+import pytest
+
+import castctl
+import playback_state
+import streamer
+
+URL = "http://192.0.2.1:8000/stream.m3u8"
+
+
+def _session(caster=None):
+    session = streamer.Session.__new__(streamer.Session)
+    session.caster = caster
+    return session
+
+
+def _await(monkeypatch, replies, **kwargs):
+    feed = iter(replies)
+    last = {"v": replies[-1]}
+
+    def fake_info(device, timeout=8):
+        last["v"] = next(feed, last["v"])
+        return last["v"]
+
+    monkeypatch.setattr(castctl, "info", fake_info)
+    with pytest.raises(streamer.StreamPreparationError) as error:
+        _session(**kwargs)._await_receiver(
+            "TV", lambda info: playback_state.hls_session_matches(info, URL, "Film"),
+            timeout=0.3, interval=0.01)
+    return error.value
+
+
+@pytest.mark.parametrize("reply", [None, {}])
+def test_no_status_is_offline_and_carries_the_recorded_reason(monkeypatch, reply):
+    castctl._info_failures["TV"] = "status helper timed out after 8s"
+    error = _await(monkeypatch, [reply])
+    assert error.code == "cast.receiver_offline"
+    assert "status helper timed out after 8s" in str(error)
+    castctl._info_failures.pop("TV", None)
+
+
+def test_no_status_without_a_recorded_reason_keeps_the_plain_message(monkeypatch):
+    castctl._info_failures.pop("TV", None)
+    error = _await(monkeypatch, [None])
+    assert error.code == "cast.receiver_offline"
+    assert str(error).startswith("Receiver did not return status")
+
+
+def test_status_without_player_state_is_not_called_offline(monkeypatch):
+    error = _await(monkeypatch, [{"volume_level": 30, "app_id": "CC1AD845"}])
+    assert error.code == "cast.command_failed"
+    assert "did not report playback state" in str(error)
+
+
+def test_other_media_is_not_confirmed(monkeypatch):
+    other = {"player_state": "PLAYING", "content_id": "http://x/other", "title": "Film"}
+    error = _await(monkeypatch, [other])
+    assert error.code == "cast.command_failed"
+    assert "did not confirm playback" in str(error)
+
+
+def test_status_arriving_late_still_confirms(monkeypatch):
+    ok = {"player_state": "PLAYING", "content_id": URL, "title": "Film"}
+    replies = iter([None, None, ok])
+    monkeypatch.setattr(castctl, "info", lambda device, timeout=8: next(replies, ok))
+    _session()._await_receiver(
+        "TV", lambda info: playback_state.hls_session_matches(info, URL, "Film"),
+        timeout=1.0, interval=0.01)
+
+
+def test_helper_exit_zero_without_match_ends_instead_of_hanging(monkeypatch):
+    class Done:
+        stdout = None
+
+        def poll(self):
+            return 0
+
+    error = _await(monkeypatch, [None], caster=Done())
+    assert error.code == "cast.receiver_offline"
