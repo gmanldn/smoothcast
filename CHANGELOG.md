@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e3cb8c1d6d9e7e2f30e2344e6f73fa2274fe356e -->
+<!-- sc-changelog-through: 5b05e4c8ec05b422e75784e67e093f1bc162dc7f -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:45:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:45:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5b05e4c8ec05`](https://github.com/gmanldn/smoothcast/commit/5b05e4c8ec05b422e75784e67e093f1bc162dc7f)
+
+- 🟥 **06:45:36 · Fix** — fix(portal): dispatcher-side capability enforcement for ROUTE\_CAPABILITIES (Refs #702) · [`8a058ee07293`](https://github.com/gmanldn/smoothcast/commit/8a058ee0729391102ffa5cdb919f91f50b123ab5)
+
+- 🟩 **06:44:46 · Feature** — feat(audio): pure Bass/Mid/Treble tone knobs with headroom limiter and revisioned room state (Refs #346) · [`49f1995c619f`](https://github.com/gmanldn/smoothcast/commit/49f1995c619fe65743b7e83637321173b8bc4607)
 
 - ⬜ **06:43:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e3cb8c1d6d9e`](https://github.com/gmanldn/smoothcast/commit/e3cb8c1d6d9e7e2f30e2344e6f73fa2274fe356e)
+
+- ⬜ **06:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ba5478e77d86`](https://github.com/gmanldn/smoothcast/commit/ba5478e77d86a8c93548a5023f14b7bb766868d9)
 
 - 🟩 **06:43:39 · Feature** — feat(stream): publish measured stream-health from the HLS server and attach it to the room status as stream\_health (Refs #49) · [`3bdacaf4592b`](https://github.com/gmanldn/smoothcast/commit/3bdacaf4592b6c3a320593c3abb4d65d4b605d92)
 
