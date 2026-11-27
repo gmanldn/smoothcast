@@ -123,3 +123,30 @@ def to_json(results: list[Result]) -> str:
 
 def exit_code(results: list[Result]) -> int:
     return {PASS: 0, WARN: 1, FAIL: 2}[overall(results)]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``smoothcast doctor [--json] [--receiver HOST]``: read-only, headless."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="smoothcast doctor",
+                                     description="Read-only environment checks with remediation.")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--receiver", metavar="HOST", help="also check this receiver is reachable")
+    args = parser.parse_args(argv)
+    cache = Path.home() / ".cache" / "cast-control"
+    checks: list[Callable[[], Result]] = [
+        python_version, ffmpeg, lambda: disk_space(cache), temp_writable, listener, clock]
+    if args.receiver:
+        checks.append(lambda: receiver(args.receiver))
+    results = run(checks)
+    if args.json:
+        print(to_json(results))
+    else:
+        mark = {PASS: "ok  ", WARN: "warn", FAIL: "FAIL"}
+        for r in results:
+            print(f"[{mark.get(r.status, r.status)}] {r.name}: {r.detail}")
+            if r.fix and r.status != PASS:
+                print(f"       fix: {r.fix}")
+        print(f"overall: {overall(results)}")
+    return exit_code(results)

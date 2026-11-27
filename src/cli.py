@@ -93,6 +93,10 @@ def _main() -> int:
         # Jellyfin/Plex/Kodi watch-state import, dry run by default (#435); no GTK.
         import importers
         return importers.main(sys.argv[2:])
+    if sys.argv[1:2] == ["doctor"]:
+        # Read-only environment diagnosis (#211); no GTK, no receiver control.
+        import doctor
+        return doctor.main(sys.argv[2:])
     if sys.argv[1:2] == ["export"]:
         # Plain-file export of queue/history/rooms/preferences (#435); no GTK.
         import exporters
