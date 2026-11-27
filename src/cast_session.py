@@ -35,6 +35,7 @@ import subtitle_style
 import subtitle_restart
 
 import playback_state
+import settings
 
 import watch_history
 
@@ -129,6 +130,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
             return reason
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
+        typed = settings.Settings.from_config(cfg)
         previous = self.session
         prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
         display_name = getattr(self, "_portal_queue_display_names", {}).get(str(path))
@@ -143,7 +145,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         delay = subtitle_delay.get(cfg, path)
         adelay = audio_delay.get(cfg, path)
         preset = subtitle_style.from_config(cfg)
-        speed = float(cfg.get("playback_speed", 1.0))
+        speed = typed.playback.speed
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
         aspect_mode = cfg.get("aspect_override", "original")
         saved_audio = cfg.get("audio_track_by_file")
@@ -322,8 +324,8 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=cfg["audio"], subs_file=effective_subs_path,
                     burn_subs=effective_burn, title=title,
-                    audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-                    audio_loudness=str(cfg.get("audio_loudness", "off")),
+                    audio_gain_db=typed.audio.gain,
+                    audio_loudness=typed.audio.loudness,
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -687,12 +689,13 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
         cfg = dict(self.cfg)  # frozen before background restart
+        typed = settings.Settings.from_config(cfg)
         picture_config = picture_adjustments.for_path(cfg, file_path)
         audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
             else float(state.speed) if state and state.speed
-            else float(self.cfg.get("playback_speed", 1.0))
+            else typed.playback.speed
         )
         rotation = int(self.cfg.get("rotation", 0))
         aspect_mode = getattr(state, "aspect_mode", "original")
@@ -720,8 +723,8 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=audio, subs_file=captions.external,
                     burn_subs=captions.burn, title=title,
-                    audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-                    audio_loudness=str(self.cfg.get("audio_loudness", "off")),
+                    audio_gain_db=typed.audio.gain,
+                    audio_loudness=typed.audio.loudness,
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
