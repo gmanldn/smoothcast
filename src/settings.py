@@ -5,7 +5,7 @@ groups read it once, coerce every value to a safe type and apply the documented
 default, so call sites stop repeating ``cfg.get("key", default)`` with subtly
 different defaults and ``is True`` / ``is not False`` conventions.
 
-Pure and GTK-free. Groups so far: update, link/portal. Add groups as call sites
+Pure and GTK-free. Groups so far: update, link/portal, audio, playback. Add groups as call sites
 migrate; never read these keys by literal outside this module.
 """
 from __future__ import annotations
@@ -58,12 +58,53 @@ class PortalSettings:
                    link_magnet=_flag(cfg, "portal_link_magnet", True))
 
 
+def _number(cfg: dict, key: str, default: float, lo: float, hi: float) -> float:
+    value = cfg.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return default
+    return min(hi, max(lo, float(value)))
+
+
+LOUDNESS_MODES = ("off", "programme", "album")
+
+
+@dataclass(frozen=True)
+class AudioSettings:
+    gain: float = 6.0              # dB of make-up gain
+    loudness: str = "off"          # EBU R128 mode (#139)
+    music_autogain: bool = False
+
+    @classmethod
+    def from_config(cls, cfg: dict) -> "AudioSettings":
+        mode = cfg.get("audio_loudness", "off")
+        return cls(gain=_number(cfg, "audio_gain", 6.0, 0.0, 24.0),
+                   loudness=mode if mode in LOUDNESS_MODES else "off",
+                   music_autogain=_flag(cfg, "music_autogain", False))
+
+
+@dataclass(frozen=True)
+class PlaybackSettings:
+    speed: float = 1.0
+    sleep_fade_seconds: int = 30   # 0 = off (#270)
+    loop: bool = False
+    loop_all: bool = False
+
+    @classmethod
+    def from_config(cls, cfg: dict) -> "PlaybackSettings":
+        return cls(speed=_number(cfg, "playback_speed", 1.0, 0.25, 4.0),
+                   sleep_fade_seconds=int(_number(cfg, "sleep_fade_seconds", 30, 0, 600)),
+                   loop=_flag(cfg, "loop", False), loop_all=_flag(cfg, "loop_all", False))
+
+
 @dataclass(frozen=True)
 class Settings:
     update: UpdateSettings
     portal: PortalSettings
+    audio: AudioSettings = AudioSettings()
+    playback: PlaybackSettings = PlaybackSettings()
 
     @classmethod
     def from_config(cls, cfg: object) -> "Settings":
         data = cfg if isinstance(cfg, dict) else {}
-        return cls(update=UpdateSettings.from_config(data), portal=PortalSettings.from_config(data))
+        return cls(update=UpdateSettings.from_config(data), portal=PortalSettings.from_config(data),
+                   audio=AudioSettings.from_config(data), playback=PlaybackSettings.from_config(data))
