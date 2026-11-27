@@ -9,8 +9,7 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[1] / "src"
 ALLOWED = {
     "paths.py", "mpris.py", "control_api.py",   # mpris: a D-Bus desktop-entry id, not a path
-    "streamer.py", 
-    "cast_widgets.py", 
+    "streamer.py", "cast_widgets.py",  # cast_widgets: the GApplication id
     "portal_uploads.py", "server.py",
 }
 
