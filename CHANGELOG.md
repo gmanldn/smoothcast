@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1c38bc888d403f5347d24f1a7d663752d3823f93 -->
+<!-- sc-changelog-through: 53c4bceece6c1c6dfbffd0de29a4567b08899126 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:22:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:22:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:22:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`53c4bceece6c`](https://github.com/gmanldn/smoothcast/commit/53c4bceece6c1c6dfbffd0de29a4567b08899126)
+
+- 🟩 **07:22:36 · Feature** — feat(ship): warn on pre-existing red that is not in the quarantine list (Refs #700) · [`aa08a81bfdb6`](https://github.com/gmanldn/smoothcast/commit/aa08a81bfdb6289622e435311b3fc8669782e746)
+
+- ⬜ **07:22:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`09c666cb7770`](https://github.com/gmanldn/smoothcast/commit/09c666cb7770b4baa34860d64d91ef13057cd529)
 
 - ⬜ **07:22:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1c38bc888d40`](https://github.com/gmanldn/smoothcast/commit/1c38bc888d403f5347d24f1a7d663752d3823f93)
 
