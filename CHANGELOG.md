@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 82c41421ffe11a61965d39fa155dbd7806c9caab -->
+<!-- sc-changelog-through: 31ca4719ce39132abd0c818e460ce0467c97e48e -->
 
 ## 2026-11-27 · UTC
 
-- 🟦 **05:47:20 · Performance** — perf(web): defer network profiles and fence stale diagram updates (Refs #710) <!-- sc-changelog-pending -->
+- 🟥 **05:54:47 · Fix** — fix(agents): restore root instruction budget without relaxing policies (Refs #706) <!-- sc-changelog-pending -->
+
+- 🟦 **05:47:31 · Performance** — perf(web): defer network profiles and fence stale diagram updates (Refs #710) · [`31ca4719ce39`](https://github.com/gmanldn/smoothcast/commit/31ca4719ce39132abd0c818e460ce0467c97e48e)
 
 - 🟥 **05:41:58 · Fix** — fix(gui): keep renamed room and guest labels in sync (Refs #709) · [`82c41421ffe1`](https://github.com/gmanldn/smoothcast/commit/82c41421ffe11a61965d39fa155dbd7806c9caab)
 
