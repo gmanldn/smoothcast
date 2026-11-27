@@ -126,7 +126,6 @@ py-modules = [
     "guest_messages",
     "gui_link_add",
     "gui_test_safety",
-    "handoff_prewarm",
     "hdr_tonemap",
     "hls_pause_recovery",
     "house_cli",
@@ -288,6 +287,7 @@ py-modules = [
     "version",
     "video_policy",
     "watch_history",
+    "zoom_pan",
 ]
 
 [tool.setuptools.package-dir]
