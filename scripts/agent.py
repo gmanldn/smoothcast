@@ -1014,6 +1014,16 @@ def commit_private_slice(a: argparse.Namespace) -> int:
         print("untracked file(s) would be left out of this commit and break importers "
               f"(#700); name them with --files or delete them: {', '.join(loose)[:400]}")
         return 2
+    # A module added to or removed from src/ must appear in pyproject py-modules (#690).
+    moved = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=AD", "--", "src"],
+                           cwd=ROOT, capture_output=True, text=True).stdout.split()
+    if any(m.startswith("src/") and m.endswith(".py") and "/" not in m[4:] for m in moved):
+        sync = subprocess.run([sys.executable, "scripts/ci/sync_pyproject.py"],
+                              cwd=ROOT, capture_output=True, text=True)
+        if sync.returncode == 0:
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=ROOT, capture_output=True, text=True)
+        else:
+            print("WARNING: could not sync pyproject py-modules: " + (sync.stderr or sync.stdout).strip()[:200])
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
     if diff.returncode == 0:
         print("no changes to commit; shipping any existing unpublished commits")
