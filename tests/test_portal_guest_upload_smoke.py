@@ -210,7 +210,7 @@ def test_guest_upload_real_browser_smoke(guest_room, monkeypatch, tmp_path):
                 page.locator("#uploadCastNow").click()
             chooser.value.set_files(str(video))
             expect(page.locator("#transferDelivery")).to_have_text(
-                "Playback requested — receiver not confirmed")
+                "Play requested — waiting for the TV or speaker")
             expect(page.locator("#videoFile")).to_have_value("")
             expect(page.locator("#videoFile")).to_be_enabled()
             expect(page.locator("#uploadButton")).to_be_disabled()
