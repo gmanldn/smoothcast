@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 517a9af33f16d7ba0b0fc1929102fb6590f9fdc6 -->
+<!-- sc-changelog-through: ee36b0d96b76dccf04e12830dde3304c4229f510 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:48:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:50:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:50:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ee36b0d96b76`](https://github.com/gmanldn/smoothcast/commit/ee36b0d96b76dccf04e12830dde3304c4229f510)
+
+- 🟪 **07:50:00 · Tests** — test(arch): ratchet freezes sys.path mutation in src and setup at 3 (Refs #690) · [`aba08883f4ca`](https://github.com/gmanldn/smoothcast/commit/aba08883f4caeec6661560799f023c7632fddecd)
+
+- 🟩 **07:49:34 · Feature** — feat(presence): opt-in who's-home store with expiry and no history beyond last\_seen (Refs #432) · [`985c071d047a`](https://github.com/gmanldn/smoothcast/commit/985c071d047a3989912c6772d30506e60e2d73e5)
+
+- ⬜ **07:48:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2432503087e9`](https://github.com/gmanldn/smoothcast/commit/2432503087e981569e062e111b48f419ce6119ad)
 
 - ⬜ **07:48:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`517a9af33f16`](https://github.com/gmanldn/smoothcast/commit/517a9af33f16d7ba0b0fc1929102fb6590f9fdc6)
 
