@@ -15,6 +15,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+def classify_error(exc: OSError) -> str:
+    """A stable, user-presentable reason for a failed save (#701)."""
+    import errno
+    code = getattr(exc, "errno", None)
+    if code in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
+        return "disk_full"
+    if code in (errno.EACCES, errno.EPERM, errno.EROFS):
+        return "permission_denied"
+    return "io_error"
+
+
 class Store:
     def __init__(self, path: Path | str, schema: int = 1, *,
                  migrate: Callable[[dict, int], dict | None] | None = None) -> None:
@@ -22,6 +33,7 @@ class Store:
         self.schema = int(schema)
         self._migrate = migrate
         self._lock = threading.Lock()
+        self.last_error: str | None = None  # reason for the latest failed write
 
     def read(self, default: dict[str, Any] | None = None) -> dict[str, Any]:
         fallback = dict(default or {})
@@ -69,12 +81,14 @@ class Store:
                     handle.flush()
                     os.fsync(handle.fileno())
                 os.replace(tmp, self.path)
-            except OSError:
+            except OSError as exc:
+                self.last_error = classify_error(exc)
                 try:
                     tmp.unlink()
                 except OSError:
                     pass
                 return False
+        self.last_error = None
         return True
 
     def update(self, change: Callable[[dict], None], default: dict[str, Any] | None = None) -> bool:
