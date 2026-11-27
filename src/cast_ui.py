@@ -707,6 +707,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         editor = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         popover_name.set_child(editor)
         entry = Gtk.Entry(placeholder_text="Room name", max_length=40)
+        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Room name"])
         editor.append(Gtk.Label(label="Room name", xalign=0.0))
         editor.append(entry)
         save = Gtk.Button(label="Save")
