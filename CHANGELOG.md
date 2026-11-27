@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 98a9b700089769aba708d17c51817dec790007f1 -->
+<!-- sc-changelog-through: ce183aaea1468eacdbc7adc90b0b98cfef4d9ba2 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:18:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:18:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:18:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ce183aaea146`](https://github.com/gmanldn/smoothcast/commit/ce183aaea1468eacdbc7adc90b0b98cfef4d9ba2)
+
+- 🟦 **07:18:53 · Refactor** — refactor(paths): error log, link sandbox and loudness cache use paths; ratchet shrinks (Refs #701) (Refs #325) · [`a068ca992fbc`](https://github.com/gmanldn/smoothcast/commit/a068ca992fbcbfdbd327c19a286494ee09885d9e)
+
+- 🟩 **07:18:36 · Feature** — feat(playback): pure skip intro/recap/credits markers from chapters and audio-hash matching (Refs #377) · [`94b9e560868a`](https://github.com/gmanldn/smoothcast/commit/94b9e560868add3d573fa0052ab30dc9a36bf749)
 
 - ⬜ **07:18:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`98a9b7000897`](https://github.com/gmanldn/smoothcast/commit/98a9b700089769aba708d17c51817dec790007f1)
 
 - 🟪 **07:18:05 · Tests** — test(arch): unit/contract/integration/e2e tiers auto-tagged, hermetic public-TCP guard; allow two new writers in ratchet (Refs #699) · [`6be0d1c4cf57`](https://github.com/gmanldn/smoothcast/commit/6be0d1c4cf577bc7aeaa2fe5e84caa78138a50f4)
+
+- ⬜ **07:18:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2606e0a7af83`](https://github.com/gmanldn/smoothcast/commit/2606e0a7af83f3541ccabaab6b007d8c8ef64917)
 
 - 🟩 **07:17:14 · Feature** — feat(rooms): pure private-room visibility, 404 policy, temporary share and host stop log (Refs #376) · [`a8ee581ef73b`](https://github.com/gmanldn/smoothcast/commit/a8ee581ef73baa1734439610c9b76d476a927cb3)
 
