@@ -171,7 +171,7 @@ def install_excepthook() -> None:
             return
         try:
             log("uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
-        except Exception:
+        except Exception:  # noqa: BLE001 - logging is best-effort; the original traceback still reaches stderr
             # Logging is best-effort; preserve the original traceback at stderr
             # even with a full disk, bad permissions or a broken log backend.
             pass
@@ -189,7 +189,7 @@ def install_excepthook() -> None:
         try:
             log("uncaught thread exception",
                 exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
-        except Exception:
+        except Exception:  # noqa: BLE001 - logging is best-effort; the previous hook still runs
             pass
         finally:
             previous_thread_hook(args)

@@ -207,7 +207,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
                     )
                 for warning in report.errors:
                     print(f"SmoothCast startup recovery: {warning}", file=sys.stderr)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a cleanup failure must not prevent opening the application
                 # A cleanup failure must not prevent opening the application.
                 print(f"SmoothCast startup recovery failed: {exc}", file=sys.stderr)
         GLib.set_prgname(APP_ID)
@@ -220,7 +220,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
                 Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(
                     str(_icon.parent)
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 - an icon-theme failure only loses the icon
             pass
         error_log.install_excepthook()
         # Preserve the private error log hooks, then schedule civil desktop
@@ -366,7 +366,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         if window is None:
             try:
                 window = MainWindow(self)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - report, release the app id and fail loudly
                 # A window that cannot be built must never leave this process as
                 # a windowless D-Bus primary: every later launch would forward
                 # here and show nothing. Fail loudly and release the app id.
@@ -478,7 +478,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         try:
             window.reload_house_services()
             window.toast("Services restarted; playback continues")
-        except Exception as exc:  # a failed bounce must never disturb the session
+        except Exception as exc:  # a failed bounce must never disturb the session  # noqa: BLE001 - a failed service bounce must never disturb the session
             error_log.log(f"Service restart failed: {exc}")
         self._restart_mpris()
         return False
@@ -527,7 +527,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
             # The scripted journey must not stall the main loop (#442).
             self._check_jank_gate()
             GLib.idle_add(self._finish_selftest_failures, observed)
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:  # pragma: no cover - defensive  # noqa: BLE001 - self-test reports any failure and fails the run
             self.selftest_failed = True
             self._stop_jank_monitor()
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
@@ -541,7 +541,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
             print("SELFTEST: desktop failure toast was civil and rate limited")
             error_banner_ui.show_details(self.window, observed[0], retry=("Try again", lambda: None))
             print("SELFTEST: failure details dialog built")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - self-test reports any failure and fails the run
             self.selftest_failed = True
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
         finally:
@@ -642,7 +642,7 @@ def main() -> int:
     app = CastControlApp(selftest=selftest)
     try:
         result = app.run(argv)
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:  # pragma: no cover - defensive  # noqa: BLE001 - last-resort handler: report and exit non-zero
         print(f"Cast Control error: {exc}", file=sys.stderr)
         return 1
     if app.fatal:

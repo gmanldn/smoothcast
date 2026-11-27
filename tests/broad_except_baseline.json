@@ -1,23 +1,8 @@
 {
  "files": {
-  "cache_policy.py": 1,
-  "cast_control.py": 7,
   "cast_discovery.py": 2,
-  "cast_portal.py": 5,
-  "cast_portal_host.py": 4,
-  "cast_portal_queue.py": 2,
-  "cast_portal_room.py": 1,
-  "cast_session.py": 4,
-  "cast_ui.py": 3,
-  "control_api.py": 1,
+  "cast_session.py": 2,
   "dlna.py": 4,
-  "error_log.py": 2,
-  "errors.py": 2,
-  "low_end_policy.py": 1,
-  "mesh_service.py": 11,
-  "network_routes.py": 1,
-  "portal.py": 14,
-  "portal_uploads.py": 2,
   "startup_cleanup.py": 1,
   "streamer.py": 6
  }

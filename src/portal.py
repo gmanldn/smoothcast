@@ -260,7 +260,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             result = self.dispatch(envelope.action, {"action": envelope.action, **envelope.payload})
         except PortalRequestError as exc:
             raise portal_commands.CommandError(exc.status, exc.message) from exc
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any dispatch failure becomes a 503 command error
             raise portal_commands.CommandError(
                 503, "SmoothCast could not accept that command") from exc
         session_id, revision, _owner = self.fence.rotate()
@@ -575,7 +575,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     status, result = 202, str(message or "Queue updated")
                 except PortalRequestError as exc:
                     status, result = exc.status, exc.message
-                except Exception:
+                except Exception:  # noqa: BLE001 - any queue edit failure becomes a 503
                     status, result = 503, "SmoothCast could not accept that queue edit"
                 if status >= 400:
                     command_trace.stage("rejected", code=status)
@@ -651,7 +651,7 @@ def _guarded(method):
             if not self._started:
                 return self._exception_error(exc)
             return None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - described by failure_boundary and answered below
             failure = failure_boundary.describe(exc)
         route = "/".join(self._path().split("/")[:3])
         if self.server.failures.allow(failure):
@@ -777,7 +777,7 @@ class _Handler(BaseHTTPRequestHandler):
         provider = getattr(self.server, "nodes_provider", None)
         try:
             nodes = list(provider()) if provider else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unavailable node provider shows no nodes
             nodes = []
         rows = "".join(
             f'<li><a href="{html.escape(str(n.get("url", "")), quote=True)}">'
@@ -843,7 +843,7 @@ class _Handler(BaseHTTPRequestHandler):
                 state = self.server.status_snapshot()
                 if state is None:
                     raise PortalRequestError(503, "Status snapshot is not ready")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any status failure becomes a 503 not-ready
             raise PortalRequestError(503, "SmoothCast is not ready to report playback state") from exc
         queue = state.get("queue") if isinstance(state.get("queue"), list) else []
         live_ids: set[str] = set()
@@ -1027,7 +1027,7 @@ class _Handler(BaseHTTPRequestHandler):
         cursor = (query.get("cursor") or [None])[0]
         try:
             return self._send(200, engine(text, limit, cursor))
-        except Exception:
+        except Exception:  # noqa: BLE001 - search failure becomes a 503
             return self._error(503, "Search is unavailable right now.")
 
     def _body(self) -> dict:
@@ -1335,7 +1335,7 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.uploads.finish_dispatch(
                             self._cookie_token() or "", upload_id, accepted=False)
                         raise
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - undo the dispatch bookkeeping and answer 503
                         self.server.uploads.finish_dispatch(
                             self._cookie_token() or "", upload_id, accepted=False)
                         raise PortalRequestError(503, "SmoothCast could not start this upload") from exc
@@ -1530,7 +1530,7 @@ class _Handler(BaseHTTPRequestHandler):
                                 "reason": room_activity.reason_for_status(exc.status),
                             })
                             return self._exception_error(exc)
-                        except Exception:
+                        except Exception:  # noqa: BLE001 - record an uncertain outcome and answer an error
                             self.server.room.record(participant_id, "action", {
                                 "action": action, "outcome": "uncertain", "reason": "error",
                             })
@@ -1617,7 +1617,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
             accepted, transient = True, False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - early-cast failure is recorded as not accepted
             accepted = False
             transient = isinstance(exc, PortalRequestError) and exc.status in (409, 503)
         self.server.uploads.mark_early_cast(upload_id, accepted=accepted, transient=transient)
@@ -1768,7 +1768,7 @@ class Portal:
                 self.bind_ip, self.name, self.port, zeroconf=self._zeroconf,
             )
             self.peer_discovery_available = True
-        except Exception:
+        except Exception:  # noqa: BLE001 - peer discovery is optional; run without it
             self.peers = None
         self.server.peer_directory = self.peers
         self.thread = threading.Thread(target=self.server.serve_forever,
@@ -1813,11 +1813,11 @@ class Portal:
             )
             zeroconf = Zeroconf(interfaces=[self.bind_ip])
             zeroconf.register_service(info)
-        except Exception:
+        except Exception:  # noqa: BLE001 - service registration is optional; close what opened
             if zeroconf is not None:
                 try:
                     zeroconf.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort close
                     pass
             return
         self._zeroconf = zeroconf
@@ -1831,11 +1831,11 @@ class Portal:
         try:
             if info is not None:
                 zeroconf.unregister_service(info)
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort unregister
             pass
         try:
             zeroconf.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort close
             pass
 
     def stop(self) -> None:

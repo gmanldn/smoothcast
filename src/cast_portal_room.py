@@ -117,7 +117,7 @@ class PortalRoomMixin:
             room.set_name(self.cfg.get("room_name"))
         try:
             state = self._portal_handle("status", {})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a failed status publish is logged to the console
             console = getattr(self, "_console", None)
             if console is not None:
                 console(f"Could not publish room status: {exc}")

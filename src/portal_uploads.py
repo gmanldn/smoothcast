@@ -618,7 +618,7 @@ class UploadManager:
                     upload.committed = received
                     upload.last_checkpoint = now
                 upload.received = received
-            except BaseException:
+            except BaseException:  # noqa: BLE001 - roll back the in-memory append then re-raise
                 # The append is one in-memory transaction too: never report
                 # bytes that rollback removed from the partial file.
                 upload.received = previous_received
@@ -734,7 +734,7 @@ class UploadManager:
                 try:
                     import streamer
                     media = streamer.ffprobe(upload.complete_path)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - an unprobeable upload is discarded
                     if upload.complete_path != upload.partial_path:
                         upload.complete_path.unlink(missing_ok=True)
                     upload.complete_path = None

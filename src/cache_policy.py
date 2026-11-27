@@ -62,7 +62,7 @@ def hold_scratch_lease(directory: Path) -> IO[bytes] | None:
         else:
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
         return os.fdopen(fd, "r+b", buffering=0)
-    except BaseException:
+    except BaseException:  # noqa: BLE001 - close the descriptor then re-raise
         os.close(fd)
         raise
 

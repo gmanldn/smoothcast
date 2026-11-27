@@ -198,7 +198,7 @@ class PortalQueueMixin:
                 self._portal_queue_display_names[str(path)] = title
                 self._portal_enqueue_contributed(str(path), contributor, "library")
                 receipt["stage"] = "ready" if str(path) in self.queue else "failed"
-            except Exception:
+            except Exception:  # noqa: BLE001 - queue acceptance unconfirmed is reported as uncertain
                 receipt["stage"] = "uncertain"
                 self.toast("Library copy finished but queue acceptance could not be confirmed.", error=True)
 
@@ -210,7 +210,7 @@ class PortalQueueMixin:
 
         try:
             self._portal_run_async(work, done, failed)
-        except Exception:
+        except Exception:  # noqa: BLE001 - mark the fetch failed then re-raise
             pending.discard(key)
             receipt["stage"] = "failed"
             raise

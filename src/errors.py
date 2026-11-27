@@ -211,7 +211,7 @@ def record(code: str, context: object = None) -> None:
     canonical = code if type(code) is str and code in CATALOGUE else FALLBACK.code
     try:
         facts = _bounded_context(context)
-    except Exception:
+    except Exception:  # noqa: BLE001 - unbounded context is dropped, never raised
         facts = {}
     entry = (time.time(), canonical, facts)
     with _RECENT_LOCK:
@@ -268,6 +268,6 @@ def describe(exc: object) -> ErrorSpec:
             # Do not trust arbitrary messages or remediation supplied by an
             # exception; the catalogue is the sole authority for public copy.
             return CATALOGUE.get(spec.code, FALLBACK)
-    except Exception:
+    except Exception:  # noqa: BLE001 - an untrusted exception falls back to the catalogue default
         pass
     return FALLBACK

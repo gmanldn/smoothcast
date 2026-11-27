@@ -92,7 +92,7 @@ class PortalHostMixin:
             try:
                 indexer = library_index_v2.LibraryIndexer(
                     busy=lambda: bool(getattr(self, "session", None) and self.busy))
-            except Exception:
+            except Exception:  # noqa: BLE001 - library indexing is optional; run without it
                 return
             self._library_indexer = indexer
             indexer.start()
@@ -113,7 +113,7 @@ class PortalHostMixin:
             try:
                 mesh = mesh_library.MeshLibrary(
                     indexer, busy=lambda: bool(getattr(self, "session", None) and self.busy))
-            except Exception:
+            except Exception:  # noqa: BLE001 - mesh library is optional; run without it
                 return
             self._mesh_library = mesh
             mesh.start()
@@ -206,7 +206,7 @@ class PortalHostMixin:
         uploads = getattr(getattr(self, "_portal", None), "uploads", None)
         try:
             activity = uploads.snapshot() if uploads is not None else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unreadable upload snapshot shows no activity
             activity = []
         room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
         room_state = room.snapshot() if room is not None else {}
@@ -222,7 +222,7 @@ class PortalHostMixin:
         screens = getattr(getattr(self._portal, "server", None), "screens", None)
         try:
             screen_rows = screens.snapshot() if screens is not None else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unreadable screens snapshot shows no screens
             screen_rows = []
         ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
                  if isinstance(row, dict) and row.get("ready")]

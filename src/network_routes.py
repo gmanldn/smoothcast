@@ -147,7 +147,7 @@ def active_port() -> int:
         import streamer
         state = streamer.load_session()
         port = urlsplit(state.stream_url).port if state and state.stream_url else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - unreadable session falls back to the default port
         return PORT
     return port if port and 1024 <= port <= 65535 else PORT
 
