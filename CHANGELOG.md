@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8899446c76672a869ef5be32088472755a1b1ef8 -->
+<!-- sc-changelog-through: 13fc306185b3c2b2268ff7525ca59e0faf0f4354 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:05:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:06:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:06:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`13fc306185b3`](https://github.com/gmanldn/smoothcast/commit/13fc306185b3c2b2268ff7525ca59e0faf0f4354)
+
+- 🟪 **18:06:41 · Tests** — test: recover browser upload checkpoint coverage (Refs #568) · [`31723d987d76`](https://github.com/gmanldn/smoothcast/commit/31723d987d76cba7dd7f4231896b9bee7db9c5de)
 
 - ⬜ **18:05:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8899446c7667`](https://github.com/gmanldn/smoothcast/commit/8899446c76672a869ef5be32088472755a1b1ef8)
 
 - 🟪 **18:05:14 · Tests** — test(agents): align hygiene gate with current develop-only policy (Refs #700) · [`20199530b869`](https://github.com/gmanldn/smoothcast/commit/20199530b869f3013fff0af9dc1dea94742c7f40)
+
+- ⬜ **18:05:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bcec07b92944`](https://github.com/gmanldn/smoothcast/commit/bcec07b929441b5969e304801b8197f01da8c227)
 
 - ⬜ **18:03:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a18ebbff3625`](https://github.com/gmanldn/smoothcast/commit/a18ebbff36259773a4db58c59da21b10fa896a1c)
 
