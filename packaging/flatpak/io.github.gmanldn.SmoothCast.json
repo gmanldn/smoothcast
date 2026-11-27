@@ -70,6 +70,7 @@
         "install -Dm644 packaging/flatpak/io.github.gmanldn.SmoothCast.desktop /app/share/applications/io.github.gmanldn.SmoothCast.desktop",
         "install -Dm644 data/cast-control.png /app/share/icons/hicolor/128x128/apps/io.github.gmanldn.SmoothCast.png",
         "python3 -c 'import cli, catt, pychromecast, zeroconf, psutil, segno, gi; gi.require_version(\"Gtk\", \"4.0\"); gi.require_version(\"Adw\", \"1\"); from gi.repository import Gtk, Adw'",
+        "cd /tmp && python3 -I -c 'import importlib.util, pathlib, smoothcast_assets; names = (\"portal\", \"portal_room\", \"portal_screen_page\", \"portal_media\", \"portal_mesh_http\", \"portal_update_http\", \"portal_mesh_panel\", \"portal_screens_http\", \"portal_uploads\", \"portal_commands\"); assert all((s := importlib.util.find_spec(n)) and s.origin and pathlib.Path(s.origin).is_relative_to(\"/app\") for n in names), \"Missing installed portal module\"; icon = smoothcast_assets.icon_path(); assert icon.is_relative_to(\"/app\") and icon.read_bytes()[:8] == bytes.fromhex(\"89504e470d0a1a0a\"), \"Missing installed icon\"'",
         "command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null && command -v ffplay >/dev/null",
         "ffmpeg -hide_banner -encoders | grep -q libx264 && ffmpeg -hide_banner -encoders | grep -q h264_vaapi"
       ],
