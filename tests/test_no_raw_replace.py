@@ -17,7 +17,6 @@ ALLOWED = {
     "cast_app_lifecycle.py": 1,
     "config_control.py": 1,
     "diagnostics.py": 1,
-    "error_tail.py": 1,
     "house_fetch.py": 1,
     "link_provision.py": 1,
     "low_end_policy.py": 1,
