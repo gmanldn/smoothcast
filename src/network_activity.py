@@ -86,7 +86,7 @@ def snapshot(
             continue
         seen.add(identity)
         jobs.append(("Google Cast", device.name, host,
-                     lambda host=host: cast_status(host, timeout=3)))
+                     lambda host=host: cast_status(host, timeout=10)))
     for renderer in dlna_renderers:
         host = str(renderer.host or "").strip()
         identity = ("DLNA", host)

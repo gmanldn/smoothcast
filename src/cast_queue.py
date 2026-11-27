@@ -615,6 +615,12 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
     def _poll_done(self, info) -> None:
         self.poll_busy = False
+        # A busy receiver often misses one status read; keep the last good
+        # reading for two misses instead of flashing the device "Offline".
+        if info is None and self.device_info is not None and getattr(self, "_poll_misses", 0) < 2:
+            self._poll_misses = getattr(self, "_poll_misses", 0) + 1
+            return
+        self._poll_misses = 0
         previous = self.device_state
         self.device_info = info
         self.device_state = castctl.player_state(info)
@@ -665,6 +671,13 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             self._syncing = False
             self._apply_volume_icon()
         self._detect_external()
+        if self.external and info:
+            title, _size = playback_state.external_media_labels(info)
+            details = playback_state.external_details(info)
+            if self.np_title.get_text() != title:
+                self.np_title.set_text(title)
+            if details and self.np_meta.get_text() != details:
+                self.np_meta.set_text(details)
         if self.session is None and self._url_cast_url is not None:
             if playback_state.url_cast_matches(info, self._url_cast_url):
                 self._url_cast_seen = True

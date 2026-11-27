@@ -18,7 +18,7 @@ def test_snapshot_reports_only_active_discovered_cast_and_dlna_receivers():
     )
 
     def cast_status(target, timeout=0):
-        assert timeout == 3
+        assert timeout == 10
         return {
             "player_state": "PLAYING" if target.endswith(".8") else "IDLE",
             "title": "  A Film\nTitle ", "current_time": "61.5", "duration": 3600,
