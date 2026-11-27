@@ -68,13 +68,13 @@ marked so two launchers can never bounce between each other.
   runtime exists, the launcher stops and asks you to rerun the platform setup.
 - **Updates:** before a GUI start, the launcher compares the installed copy with
   the checkout recorded as its source. It never downgrades a newer
-  installation, and it refuses to start a checkout that its own local
-  `origin/develop` tracking ref proves is behind (only a real `develop`
-  checkout is compared; a detached HEAD or another branch is never refused
-  this way. Pull `develop`, then restart).
-  It makes no network request and no unsigned auto-pull. Windows and macOS need
-  an explicit rerun of setup to install a changed build; Linux may refresh
-  automatically only when no running SmoothCast would be disturbed.
+  installation. A checkout that is behind its local `origin/develop` tracking
+  ref, dirty, or on another branch is still usable: the launcher skips the
+  automatic refresh and starts the installed build with a notice instead of
+  refusing to launch. Pull `develop` and commit or stash changes, then restart
+  to update. It makes no network request and no unsigned auto-pull. Windows and
+  macOS need an explicit rerun of setup to install a changed build; Linux may
+  refresh automatically only when no running SmoothCast would be disturbed.
 - **`--portable`:** `smoothcast --portable [args]` explicitly runs from the
   checkout. It skips installed-copy discovery, uses or provisions the
   checkout's own `.venv` (in-place, without shortcuts) and never registers or
