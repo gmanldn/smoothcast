@@ -11,7 +11,8 @@ def test_sessions_are_isolated_with_distinct_tokens():
 
 def test_failure_and_stop_do_not_leak_across_receivers():
     s = Sessions()
-    a, b = s.start("tv", "x"), s.start("kitchen", "y")
+    a = s.start("tv", "x")
+    s.start("kitchen", "y")
     s.fail("tv", a.token, "encoder died")
     assert s.get("tv").state == "error" and s.get("kitchen").state == "starting"
     assert s.stop("tv") and s.get("kitchen") and s.get("tv") is None
@@ -28,6 +29,7 @@ def test_stale_token_cannot_act_on_replacement():
 
 def test_cap_and_bad_state():
     s = Sessions(max_sessions=2)
-    s.start("a", "m"); t = s.start("b", "m")
+    s.start("a", "m")
+    t = s.start("b", "m")
     assert s.start("c", "m") is None and s.start("a", "m2")
     assert not s.update("b", t.token, state="bogus")
