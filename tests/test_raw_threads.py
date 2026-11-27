@@ -25,7 +25,6 @@ ALLOWED = {
     "mesh_acquisition_bridge.py": 1,
     "mesh_acquisition_executor.py": 1,
     "mesh_acquisition_transfer.py": 1,
-    "mesh_heartbeat.py": 1,
     "mesh_http.py": 1,
     "mesh_service.py": 2,
     "portal.py": 1,

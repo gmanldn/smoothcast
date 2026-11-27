@@ -20,6 +20,8 @@ import threading
 import time
 from typing import Any
 
+import task_runtime
+
 INTERVAL_S = 1.0
 JOIN_TIMEOUT_S = 1.5
 MAX_ACTIVITIES = 6
@@ -49,7 +51,7 @@ class HeartbeatCoordinator:
         self._wall = wall
         self._on_error = on_error
         self._lock = threading.Lock()
-        self._stop = threading.Event()
+        self._scope: task_runtime.Scope | None = None
         self._thread: threading.Thread | None = None
         self.epoch = secrets.token_hex(4)
         self.seq = 0
@@ -64,7 +66,6 @@ class HeartbeatCoordinator:
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
-        self._stop.clear()
         self._started_mono = self._clock()
         self._primary_id = None
         self._primary_since = self._started_mono
@@ -72,12 +73,14 @@ class HeartbeatCoordinator:
             self.beat()                   # first heartbeat is available immediately
         except Exception as exc:          # a bad first sample must not stop startup  # noqa: BLE001 - a bad first sample must not stop startup
             self._record_error(exc)
-        self._thread = threading.Thread(target=self._loop, name="smoothcast-mesh-heartbeat",
-                                        daemon=True)
-        self._thread.start()
+        runtime = task_runtime.shared()
+        self._scope = runtime.scope()
+        self._thread = runtime.spawn_daemon("mesh-heartbeat", self._scope, self._loop,
+                                            thread_name="smoothcast-mesh-heartbeat")
 
     def stop(self) -> None:
-        self._stop.set()
+        if self._scope is not None:
+            self._scope.cancel()
         thread, self._thread = self._thread, None
         if thread is not None and thread is not threading.current_thread():
             try:
@@ -142,9 +145,9 @@ class HeartbeatCoordinator:
         with self._lock:
             self._snapshot = beat
 
-    def _loop(self) -> None:
-        while not self._stop.is_set():
-            if self._stop.wait(self._interval):
+    def _loop(self, scope: task_runtime.Scope) -> None:
+        while not scope.cancelled:
+            if scope.wait(self._interval):
                 return
             try:
                 self.beat()
