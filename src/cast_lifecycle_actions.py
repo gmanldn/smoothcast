@@ -13,6 +13,31 @@ from cast_widgets import APP_NAME, ICON_NAME
 from gi.repository import Adw, Gtk
 
 
+def desktop_shortcuts() -> list[tuple[str, str]]:
+    """Return the complete set of shortcuts shown in the desktop cheatsheet."""
+    return shortcut_map.desktop_labels() + [
+        ("K", "Play or pause"),
+        ("<Shift>Left", "Skip back 30 seconds"),
+        ("<Shift>Right", "Skip forward 30 seconds"),
+        ("J", "Skip back 10 seconds"),
+        ("L", "Skip forward 10 seconds"),
+        ("comma", "Step back one frame"),
+        ("period", "Step forward one frame"),
+        ("Home", "Back to start"),
+        ("G", "Subtitle delay back"),
+        ("H", "Subtitle delay forward"),
+        ("<Shift>G", "Audio delay back"),
+        ("<Shift>H", "Audio delay forward"),
+        ("S", "Stop the stream"),
+        ("<Control>o", "Open a video"),
+        ("<Control>a", "Add videos to queue"),
+        ("<Control>f", "Search queue"),
+        ("<Control>w", "Stop the stream"),
+        ("<Control>q", "Quit"),
+        ("<Control>question", "This shortcuts window"),
+    ]
+
+
 class LifecycleActionsMixin:
     def action_open(self, *_args) -> None:
         self.open_video()
@@ -33,25 +58,7 @@ class LifecycleActionsMixin:
         box.set_margin_bottom(18)
         box.set_margin_start(18)
         box.set_margin_end(18)
-        shortcuts = shortcut_map.desktop_labels() + [
-            ("K", "Play or pause"),
-            ("<Shift>Left", "Skip back 30 seconds"),
-            ("<Shift>Right", "Skip forward 30 seconds"),
-            ("J", "Skip back 10 seconds"),
-            ("L", "Skip forward 10 seconds"),
-            ("comma", "Step back one frame"),
-            ("period", "Step forward one frame"),
-            ("Home", "Back to start"),
-            ("G", "Subtitles 100 ms earlier"),
-            ("H", "Subtitles 100 ms later"),
-            ("S", "Stop the stream"),
-            ("<Control>o", "Open a video"),
-            ("<Control>a", "Add videos to queue"),
-            ("<Control>f", "Search queue"),
-            ("<Control>w", "Stop the stream"),
-            ("<Control>q", "Quit"),
-            ("<Control>question", "This shortcuts window"),
-        ]
+        shortcuts = desktop_shortcuts()
         for accel, title in shortcuts:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
             label = Gtk.Label(label=title, xalign=0.0, hexpand=True)

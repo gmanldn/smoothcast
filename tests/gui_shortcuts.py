@@ -8,9 +8,15 @@ from __future__ import annotations
 import cast_ui
 
 
-class _Recorder:
+class _Recorder(cast_ui.UiMixin):
+    def __init__(self):
+        self.registered_controller = None
+
     def __getattr__(self, name):
         return lambda *a, **kw: None
+
+    def add_controller(self, controller):
+        self.registered_controller = controller
 
 
 def installed_shortcuts(window=None, monkeypatch=None) -> dict:
