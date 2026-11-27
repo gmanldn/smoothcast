@@ -2189,7 +2189,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking needs a connected TV or speaker and a known length.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
 <div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
+<div id="chapterRow" hidden><label for="chapterJump">Chapter</label><select id="chapterJump" disabled title="Jump to a chapter of the current film"></select></div><div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
 <label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the volume on the TV or speaker, not this device.</span>
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
@@ -3186,12 +3186,33 @@ function extraTransportEnvelope(action,state,seek,volume){
 }
 const extraTransportControls=[["seekBackTen","seek_back"],["seekForwardTen","seek_forward"],["toggleMute","mute"]];
 function renderExtraTransport(state){
+  renderChapters(state);
   const valid=state&&typeof state.session_id==="string"&&/^[a-f0-9]{32}$/.test(state.session_id)&&
     Number.isSafeInteger(state.revision)&&state.revision>=0;
   for(const [id,action] of extraTransportControls){
     const button=$(id);if(button)button.disabled=!valid||!shortcutCommand(action,state,0,0);
   }
 }
+function renderChapters(state){
+  const row=$("chapterRow"),pick=$("chapterJump");if(!row||!pick)return;
+  const list=state&&state.active&&state.can_seek&&Array.isArray(state.chapters)?state.chapters.filter(c=>c&&Number.isFinite(c.start)&&c.start>=0):[];
+  row.hidden=!list.length;if(!list.length)return;
+  if(pick===document.activeElement&&pick.options.length===list.length)return;
+  const sig=JSON.stringify(list);
+  if(pick.dataset.sig!==sig){
+    pick.dataset.sig=sig;pick.textContent="";
+    list.forEach((c,i)=>{const o=document.createElement("option");o.value=String(c.start);o.textContent=(i+1)+". "+(c.title||"Chapter")+" · "+clock(c.start);pick.append(o)});
+  }
+  const pos=Number(state.position)||0;let at=0;list.forEach((c,i)=>{if(c.start<=pos+0.5)at=i});pick.selectedIndex=at;
+  pick.disabled=!shortcutCommand("seek_forward",state,0,0);
+}
+$("chapterJump")?.addEventListener("change",()=>{
+  const pick=$("chapterJump"),state=shortcutState;
+  if(busy||stalePage||!csrf||!state||!pick||pick.disabled||typeof state.session_id!=="string"||!Number.isSafeInteger(state.revision))return;
+  const start=Number(pick.value);if(!Number.isFinite(start)||start<0)return;
+  void act("seek",undefined,{client_id:extraTransportClient,command_id:"control-"+(++extraTransportSequence),
+    expected_session_id:state.session_id,expected_revision:state.revision,payload:{value:start}});
+});
 for(const [id,action] of extraTransportControls){
   $(id)?.addEventListener("click",()=>{
     if(busy||stalePage||!csrf||editingControls.has("seek"))return;
