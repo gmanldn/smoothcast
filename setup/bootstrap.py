@@ -624,6 +624,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
             missing = check_tools(env)
             if missing:
                 raise SetupError("Media dependencies are missing: " + ", ".join(missing))
+            interrupt.checkpoint()
             return installed
         except BaseException:
             # Never delete a pre-existing environment. Only the replacement tree

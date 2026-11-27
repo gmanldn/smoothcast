@@ -83,6 +83,34 @@ class SetupContractTests(unittest.TestCase):
             self.assertEqual(marker.read_text(), "original")
             self.assertIs(signal.getsignal(signal.SIGINT), previous)
 
+    def test_ctrl_c_during_final_validation_rolls_back_before_success_return(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            venv = root / ".venv"
+            venv.mkdir()
+            marker = venv / "keep-me"
+            marker.write_text("original")
+            executable = venv / "bin/python"
+
+            def create_venv(_command, **_kwargs):
+                executable.parent.mkdir(parents=True)
+                executable.touch()
+
+            def cancel_check(_env):
+                signal.raise_signal(signal.SIGINT)
+                return []
+
+            previous = signal.getsignal(signal.SIGINT)
+            with mock.patch.object(bootstrap, "VENV", venv), \
+                 mock.patch.object(bootstrap, "venv_python", return_value=executable), \
+                 mock.patch.object(bootstrap, "works", return_value=True), \
+                 mock.patch.object(bootstrap, "checked_run", side_effect=create_venv), \
+                 mock.patch.object(bootstrap, "check_tools", side_effect=cancel_check):
+                with self.assertRaises(KeyboardInterrupt):
+                    bootstrap.ensure_venv(Path(sys.executable), {})
+            self.assertEqual(marker.read_text(), "original")
+            self.assertIs(signal.getsignal(signal.SIGINT), previous)
+
     def test_all_three_entry_points_exist_and_invoke_same_bootstrap(self):
         for path, target in (
             ("linuxsetup.sh", "linux"),
