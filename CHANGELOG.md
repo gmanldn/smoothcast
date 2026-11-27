@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 5791e2f4f6b53fb9124e8188f1c14fc84912b189 -->
+<!-- sc-changelog-through: 76f4878e1d9db68c666d7927efc37b885b464313 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:40:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:41:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:41:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`76f4878e1d9d`](https://github.com/gmanldn/smoothcast/commit/76f4878e1d9db68c666d7927efc37b885b464313)
+
+- 🟪 **15:41:24 · Tests** — test(portal): upload recovery harness supplies the confirmed receiver required by the #572 retry fence, so the reconcile and fallback tests exercise the retry again (Refs #686) · [`86b2fe60c2fe`](https://github.com/gmanldn/smoothcast/commit/86b2fe60c2fec91793e1dbea8465f290effef442)
 
 - ⬜ **15:40:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5791e2f4f6b5`](https://github.com/gmanldn/smoothcast/commit/5791e2f4f6b53fb9124e8188f1c14fc84912b189)
+
+- ⬜ **15:40:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`799cf39d3d8d`](https://github.com/gmanldn/smoothcast/commit/799cf39d3d8d06cf7b02b9a53a031bcf22b07327)
 
 - 🟥 **15:40:20 · Fix** — fix(portal): a guest whose session or CSRF token is rejected on an action again gets 403 'Your session has ended. Reload the page and join the room again.' instead of 401 'Session expired'; reads keep 401. Restores the reply central authorization changed in 8a058ee0 (Refs #702) (Refs #686) · [`13e40ab359b2`](https://github.com/gmanldn/smoothcast/commit/13e40ab359b202304f9c9ce43985bf3294d97798)
 
