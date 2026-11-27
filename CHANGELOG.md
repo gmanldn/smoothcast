@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3160ac3dc39a4f0a0937a6b3e65e0b8316a70785 -->
+<!-- sc-changelog-through: bd730391397d0d4e4561e034c0b5595d9051490d -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:35:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:36:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:36:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd730391397d`](https://github.com/gmanldn/smoothcast/commit/bd730391397d0d4e4561e034c0b5595d9051490d)
+
+- 🟥 **07:36:00 · Fix** — fix(ship): refuse to commit while new src/tests/scripts files are untracked and unnamed (Refs #700) · [`ca22093a3375`](https://github.com/gmanldn/smoothcast/commit/ca22093a3375e1530e009606680344a260c9d050)
 
 - ⬜ **07:35:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3160ac3dc39a`](https://github.com/gmanldn/smoothcast/commit/3160ac3dc39a4f0a0937a6b3e65e0b8316a70785)
+
+- ⬜ **07:35:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`fc704d3ac5a4`](https://github.com/gmanldn/smoothcast/commit/fc704d3ac5a4915a3cfbea7fa114e177f32b5258)
 
 - 🟪 **07:34:59 · Tests** — test(arch): core purity ratchet for 15 pure modules (Refs #690) · [`b5b503fedf15`](https://github.com/gmanldn/smoothcast/commit/b5b503fedf1566c70f0e227c324284e7be16ff8e)
 
