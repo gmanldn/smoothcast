@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 9c8cf43ba048cfdc19b3bcba335dcc62be975887 -->
+<!-- sc-changelog-through: a7d83051a33638e0c517968f905e35f848ae28af -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:53:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:54:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:54:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a7d83051a336`](https://github.com/gmanldn/smoothcast/commit/a7d83051a33638e0c517968f905e35f848ae28af)
+
+- 🟦 **07:54:48 · Refactor** — refactor(arch): update\_managed loads setup modules by path, no sys.path mutation; ratchet 3-&gt;2 (Refs #690) · [`e0669995d6f6`](https://github.com/gmanldn/smoothcast/commit/e0669995d6f68829b7fb1d349106061d6168c1be)
+
+- 🟩 **07:54:18 · Feature** — feat(a11y): pure AT-SPI tree auditor, queue-row announcement and text-scale clip check (Refs #449) · [`1663cde80bf5`](https://github.com/gmanldn/smoothcast/commit/1663cde80bf5cc33eaefa54dfa3ab055507b92da)
 
 - ⬜ **07:53:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9c8cf43ba048`](https://github.com/gmanldn/smoothcast/commit/9c8cf43ba048cfdc19b3bcba335dcc62be975887)
+
+- ⬜ **07:53:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b04565e4c059`](https://github.com/gmanldn/smoothcast/commit/b04565e4c0599305570f6b4d7691c486efd490cb)
 
 - 🟩 **07:53:46 · Feature** — feat(health): honest plain-text rows for the stream-health console (Refs #49) · [`d1a6bc137f62`](https://github.com/gmanldn/smoothcast/commit/d1a6bc137f62f97e4c80a90ebbd09134f8dcc14c)
 
