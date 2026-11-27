@@ -56,6 +56,7 @@ py-modules = [
     "art_source",
     "aspect_override",
     "async_jobs",
+    "attempt_log",
     "audio_delay",
     "audio_downmix",
     "audio_monitor",
@@ -123,6 +124,7 @@ py-modules = [
     "direct_probe",
     "dlna",
     "doctor",
+    "encode_plan",
     "encoder_ladder",
     "entry_name",
     "equalizer",
@@ -374,6 +376,7 @@ py-modules = [
     "version",
     "video_policy",
     "volume_ceiling",
+    "warm_registry",
     "watch_history",
     "zoom_pan",
 ]
