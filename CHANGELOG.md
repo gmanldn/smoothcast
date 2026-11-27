@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1547376a0baa97ade53449083c2cee00fd6fbf7b -->
+<!-- sc-changelog-through: f270b476f9b22bec31084ad6ac95d0b08976f37c -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:40:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:41:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:41:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f270b476f9b2`](https://github.com/gmanldn/smoothcast/commit/f270b476f9b22bec31084ad6ac95d0b08976f37c)
+
+- 🟥 **07:40:56 · Fix** — fix(persist): night mode, lyrics sync nudges and the room requests board save through store.Store, so a full or read-only disk no longer raises out of a GTK or portal handler and saves are fsynced and owner-only (Refs #686) · [`db46ca635fc2`](https://github.com/gmanldn/smoothcast/commit/db46ca635fc279dba4bb47e9c01045deb052fb51)
+
+- 🟩 **07:40:34 · Feature** — feat(mesh): known\_nodes TOFU pinning, quarantine ids and MESH\_DESIGN trust tiers for auto-membership (Refs #418) · [`615a1946faf0`](https://github.com/gmanldn/smoothcast/commit/615a1946faf0ec597a814a5ed778b4c34249afd6)
 
 - ⬜ **07:40:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1547376a0baa`](https://github.com/gmanldn/smoothcast/commit/1547376a0baa97ade53449083c2cee00fd6fbf7b)
+
+- ⬜ **07:40:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`113db534bc58`](https://github.com/gmanldn/smoothcast/commit/113db534bc5808ba67c656a6362ab5809103426d)
 
 - 🟩 **07:40:23 · Feature** — feat(arch): bounded task runtime (scopes, deadlines, bounded shutdown) and raw-thread ratchet (Refs #696) · [`328dab94d036`](https://github.com/gmanldn/smoothcast/commit/328dab94d0367872f6d51bdc1b142fd75327659a)
 
