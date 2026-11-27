@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 473ad5e018c811126102bfb22eb2cd43cf44f2bf -->
+<!-- sc-changelog-through: fccd3cdd72b9d674d0a86590d955893ff1f18de0 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:13:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:15:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:15:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fccd3cdd72b9`](https://github.com/gmanldn/smoothcast/commit/fccd3cdd72b9d674d0a86590d955893ff1f18de0)
+
+- 🟦 **07:15:01 · Refactor** — refactor(paths): five duplicated config.json locators use paths.config\_dir (Refs #701) (Refs #325) · [`4bbd0824b7f3`](https://github.com/gmanldn/smoothcast/commit/4bbd0824b7f383a23419def1a09d659140e53ec3)
+
+- 🟩 **07:14:06 · Feature** — feat(guests): pure scoped, expiring guest passes with hashed tokens and permission table (Refs #374) · [`6bc7efc3ef5d`](https://github.com/gmanldn/smoothcast/commit/6bc7efc3ef5de13d66bdee72cc01bbea36b223e6)
 
 - 🟥 **07:13:40 · Fix** — fix(test): quarantine hook no longer shadows the platform-gap hook (Refs #700) · [`473ad5e018c8`](https://github.com/gmanldn/smoothcast/commit/473ad5e018c811126102bfb22eb2cd43cf44f2bf)
+
+- ⬜ **07:13:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`3597ce590828`](https://github.com/gmanldn/smoothcast/commit/3597ce5908284327141aa4b869ffdd537bddab8f)
 
 - ⬜ **07:13:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ff9b0b8262cc`](https://github.com/gmanldn/smoothcast/commit/ff9b0b8262cc518233514635bbe3aa01cd433cfe)
 
