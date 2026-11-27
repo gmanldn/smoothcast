@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a6a60f0781cbd4db8502e2aa82bdefb1b58f4918 -->
+<!-- sc-changelog-through: 5e89c097913cff34f319b5acf6218f9eec92e83f -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:02:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:03:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:03:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5e89c097913c`](https://github.com/gmanldn/smoothcast/commit/5e89c097913cff34f319b5acf6218f9eec92e83f)
+
+- 🟥 **18:03:06 · Fix** — fix(ci): restore agent control-plane checks (Refs #700) · [`a648b36632cc`](https://github.com/gmanldn/smoothcast/commit/a648b36632cc88eacaa057c5dab4c9f88e9581f8)
 
 - ⬜ **18:02:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a6a60f0781cb`](https://github.com/gmanldn/smoothcast/commit/a6a60f0781cbd4db8502e2aa82bdefb1b58f4918)
 
 - 🟥 **18:02:13 · Fix** — fix: close SmoothCast cleanly on terminal Ctrl+C (Refs #717) · [`dd256b09bc66`](https://github.com/gmanldn/smoothcast/commit/dd256b09bc663c865e27431d3b27067b0c66372c)
+
+- ⬜ **18:02:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`89afbdbd774d`](https://github.com/gmanldn/smoothcast/commit/89afbdbd774d68a61de54bc11cba5519ddca5339)
 
 - ⬜ **18:01:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08f1567163d0`](https://github.com/gmanldn/smoothcast/commit/08f1567163d04a1ffd7c7b7149208901cf8fae79)
 
