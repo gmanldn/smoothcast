@@ -122,18 +122,22 @@ class OptOutTests(RepoCase):
         self.assertIn("v1.0.2 downloaded", notice)
 
     def test_settings_exist_with_the_documented_defaults_and_reach_the_updater(self):
-        source = (ROOT / "src" / "cast_widgets.py").read_text("utf-8")
-        self.assertIn('"check_release_updates": False', source)
-        self.assertIn('"release_check_verify": True', source)
-        control = (ROOT / "src" / "cast_control.py").read_text("utf-8")
-        self.assertIn('enabled=bool(cfg.get("check_release_updates", False))', control)
-        self.assertIn('verify=bool(cfg.get("release_check_verify", True))', control)
-        self.assertIn("from update_control import check_release", control)
-        self.assertNotIn("from update_control import refresh_checkout", control)
-        self.assertNotIn('cfg.get("auto_update", True)', control)
-        self.assertNotIn('cfg.get("auto_update", False)', control)
-        self.assertNotIn('cfg.get("verify_updates", False)', control)
-        self.assertNotIn('cfg.get("verify_updates", True)', control)
+        import cast_widgets
+        import settings
+        self.assertIs(cast_widgets.DEFAULTS["check_release_updates"], False)
+        self.assertIs(cast_widgets.DEFAULTS["release_check_verify"], True)
+        defaults = settings.UpdateSettings.from_config({})
+        self.assertFalse(defaults.check_releases)            # opt-in
+        self.assertTrue(defaults.verify_release)             # verified unless explicitly disabled
+        # Legacy keys never switch checking on or verification off.
+        legacy = settings.UpdateSettings.from_config({"auto_update": True, "verify_updates": False})
+        self.assertFalse(legacy.check_releases)
+        self.assertTrue(legacy.verify_release)
+        # Only a real boolean opts in, and a junk value never weakens verification.
+        self.assertTrue(settings.UpdateSettings.from_config({"check_release_updates": True}).check_releases)
+        self.assertFalse(settings.UpdateSettings.from_config({"check_release_updates": "yes"}).check_releases)
+        self.assertTrue(settings.UpdateSettings.from_config({"release_check_verify": "no"}).verify_release)
+        self.assertFalse(settings.UpdateSettings.from_config({"release_check_verify": False}).verify_release)
 
 
     def test_channel_develop_discovery_is_read_only_even_without_version_bump(self):

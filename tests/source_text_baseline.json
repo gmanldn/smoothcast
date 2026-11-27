@@ -95,7 +95,6 @@
   "test_subtitle_workflow.py",
   "test_transport_feedback.py",
   "test_transport_serialization.py",
-  "test_update_verification.py",
   "test_url_cast_ownership.py",
   "test_verified_hls_adoption.py",
   "test_video_policy.py",
