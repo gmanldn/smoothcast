@@ -324,6 +324,27 @@ class OutputContractTests(unittest.TestCase):
             self.assertIn(needle, out.getvalue())
 
 
+class LatencyPersistenceTests(unittest.TestCase):
+    def test_command_latency_persists_across_success_and_failure(self):
+        import latency_stats
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+
+            def fail(_args):
+                raise cc.CliError(cc.EXIT_FAILED, "receiver refused")
+
+            with mock.patch.object(cc.paths, "cache_dir", return_value=cache), \
+                    mock.patch.dict(cc.HANDLERS, {"pause": lambda _args: {"message": "ok"}}):
+                self.assertEqual(run("pause", "-d", DEVICE)[0], 0)
+            self.assertEqual(latency_stats.load(cache).summary()["cli.command"]["count"], 1)
+
+            with mock.patch.object(cc.paths, "cache_dir", return_value=cache), \
+                    mock.patch.dict(cc.HANDLERS, {"pause": fail}):
+                self.assertEqual(run("pause", "-d", DEVICE)[0], cc.EXIT_FAILED)
+            self.assertEqual(latency_stats.load(cache).summary()["cli.command"]["count"], 2)
+
+
 class RoutingAndIsolationTests(unittest.TestCase):
     def test_subcommands_are_routed_from_the_installed_entry_point(self):
         for command in cc.COMMANDS:

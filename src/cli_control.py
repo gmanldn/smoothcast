@@ -28,12 +28,14 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 
 import castctl
 import diagnose_bundle
 import paths
 import playback_state
 import command_trace
+import latency_stats
 import state_labels
 import streamer
 
@@ -305,8 +307,20 @@ def _human(command: str, result: dict) -> str:
     return f"{command}: {result.get('message') or 'ok'}"
 
 
+def _record_command_latency(started: float) -> None:
+    """Keep a bounded local histogram; telemetry failures never change CLI behavior."""
+    try:
+        directory = paths.ensure_private(paths.cache_dir())
+        stats = latency_stats.load(directory)
+        stats.record("cli.command", (time.perf_counter() - started) * 1000.0)
+        latency_stats.save(stats, directory)
+    except OSError:
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
+    started = time.perf_counter()
     try:
         with command_trace.scope("cli", args.command):
             result = HANDLERS[args.command](args)
@@ -317,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:
                    "error": _ERROR_NAMES.get(exc.code, "failed"), "message": exc.message}
         if exc.catalogue_code:
             payload["code"] = exc.catalogue_code
+    finally:
+        _record_command_latency(started)
     if args.json:
         print(json.dumps(payload))
     elif code == EXIT_OK:
