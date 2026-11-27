@@ -14,5 +14,13 @@
   {
     "key": "src/streamer.py|Session._caster_output|Exception|if (self.caster is not None and self.caster.stdout is not None",
     "reason": "Best-effort capture of failed cast diagnostics must preserve fallback error; investigate error breadcrumbs."
+  },
+  {
+    "key": "src/castctl.py|_StatusMirror.info|Exception|media.update_status()",
+    "reason": "Best-effort media-session refresh after rejoining an app; a busy receiver must not fail the status read, and the bounded 1.5 s wait still runs (Refs #686)."
+  },
+  {
+    "key": "src/castctl.py|_StatusMirror._drop|Exception|cast(Any, chromecast).disconnect(timeout=1)",
+    "reason": "Closing a kept read-only connection is cleanup that must not mask the caller's original failure; the socket is dropped from the cache regardless (Refs #686)."
   }
 ]

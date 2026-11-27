@@ -241,12 +241,9 @@ def log_backend_failure(message: str, *, exc_info: bool = False) -> None:
 
 def _record_code(code: str, context: object) -> None:
     """Tag catt failures with the same catalogue codes as the PyChromecast backend (#207)."""
-    try:
-        import errors
+    import errors
 
-        errors.record(code, context)
-    except Exception:
-        pass
+    errors.record(code, context)
 
 
 def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
