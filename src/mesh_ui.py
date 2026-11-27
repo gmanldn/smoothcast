@@ -292,7 +292,8 @@ def refresh(window: object) -> None:
         warm = service.warm_start()
         cached = [(p.node_id, p.name, max(0, int(GLib.get_real_time() / 1_000_000) - p.last_seen))
                   for p in (warm.peers if warm else ())]
-        popover.show_profiles(node_profile.profile(r, local_id=view.local_id, primary_id=service.roles.primary)
+        popover.show_profiles(node_profile.profile(r, local_id=view.local_id, primary_id=service.roles.primary,
+                                             now=GLib.get_real_time() / 1_000_000)
                               for r in view.nodes)
         popover.show(vm.build_model(view, primary_id=service.roles.primary, cached_peers=cached,
                                     multicast_hint=diag.get("multicast_hint", "")))

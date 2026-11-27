@@ -39,6 +39,7 @@ class NodeProfile:
     sources: tuple[str, ...]
     links: tuple[Link, ...]
     headline: str
+    uptime: str = ""          # "3 h 12 min"; empty when the node's start time or the clock is unknown
 
 
 def _plural(n: int, word: str) -> str:
@@ -54,7 +55,22 @@ def _link(edge) -> Link:
     return Link(edge.peer, edge.peer_kind, True, rtt)
 
 
-def profile(record, *, local_id: str | None = None, primary_id: str | None = None) -> NodeProfile:
+def uptime_text(boot_epoch: int, now: float | None) -> str:
+    """Plain-words age of a node's current run; empty rather than wrong when either input is unusable."""
+    if now is None or not isinstance(boot_epoch, int) or boot_epoch <= 0 or now < boot_epoch:
+        return ""
+    minutes = int(now - boot_epoch) // 60
+    days, rest = divmod(minutes, 1440)
+    hours, mins = divmod(rest, 60)
+    if days:
+        return f"{days} d {hours} h"
+    if hours:
+        return f"{hours} h {mins} min"
+    return f"{mins} min" if mins else "under a minute"
+
+
+def profile(record, *, local_id: str | None = None, primary_id: str | None = None,
+            now: float | None = None) -> NodeProfile:
     if record.status == "draining":
         role = "Leaving"
     elif record.node_id == local_id:
@@ -76,8 +92,11 @@ def profile(record, *, local_id: str | None = None, primary_id: str | None = Non
     links = tuple(_link(e) for e in sorted(record.edges, key=lambda e: (e.peer_kind, e.peer)))
     headline = (f"v{record.version} · {_plural(len(record.targets), 'target')} · "
                 f"{_plural(len(record.clients), 'client')}")
+    uptime = uptime_text(record.boot_epoch, now)
+    if uptime:
+        headline += f" · up {uptime}"
     return NodeProfile(record.node_id, record.name, role, record.version, caps,
-                       tuple(record.addresses), ports, targets, clients, sources, links, headline)
+                       tuple(record.addresses), ports, targets, clients, sources, links, headline, uptime)
 
 
 def redact(record):

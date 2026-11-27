@@ -137,3 +137,20 @@ def test_gtk_profiles_render_only_visible_changed_snapshots():
     visibility["mapped"] = True
     owner._render_profiles()
     assert calls == [("latest",), ("new",)]
+
+
+def test_uptime_text_is_plain_and_never_wrong():
+    t = node_profile.uptime_text
+    assert t(1000, 1000 + 30) == "under a minute"
+    assert t(1000, 1000 + 5 * 60) == "5 min"
+    assert t(1000, 1000 + 3 * 3600 + 12 * 60) == "3 h 12 min"
+    assert t(1000, 1000 + 2 * 86400 + 5 * 3600) == "2 d 5 h"
+    assert t(0, 5000) == "" and t(1000, None) == "" and t(1000, 500) == "" and t("x", 5000) == ""
+
+
+def test_profile_shows_uptime_only_when_the_clock_is_given():
+    r = rec(boot_epoch=10_000)
+    assert node_profile.profile(r).uptime == "" and "up " not in node_profile.profile(r).headline
+    p = node_profile.profile(r, now=10_000 + 7200)
+    assert p.uptime == "2 h 0 min" and p.headline.endswith("up 2 h 0 min")
+    assert node_profile.as_dict(p)["uptime"] == "2 h 0 min"
