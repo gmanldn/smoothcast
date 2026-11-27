@@ -250,6 +250,7 @@ py-modules = [
     "peer_discovery_ui",
     "peer_protocol",
     "person_resume",
+    "photo_slideshow",
     "picture_adjustments",
     "picture_check",
     "pip_support",
