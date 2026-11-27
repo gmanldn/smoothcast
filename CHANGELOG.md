@@ -8,13 +8,25 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c79c05e84030e1914a424de62bb4ab560cae5d0b -->
+<!-- sc-changelog-through: 85476a7bc5b192e83fc7bb344987a287d4557b62 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **06:46:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:49:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:49:49 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`85476a7bc5b1`](https://github.com/gmanldn/smoothcast/commit/85476a7bc5b192e83fc7bb344987a287d4557b62)
+
+- 🟩 **06:49:49 · Feature** — feat(doctor): network route and discovery-multicast checks (Refs #211) · [`4b3b55095952`](https://github.com/gmanldn/smoothcast/commit/4b3b5509595286b3f0323d7fb898a16650d969f7)
+
+- 🟩 **06:49:35 · Feature** — feat(web): pure PWA manifest, allow-list service worker and install-offer policy (Refs #341) · [`e5b25eade99f`](https://github.com/gmanldn/smoothcast/commit/e5b25eade99f702e5e948bf94e20a53f34bd1425)
+
+- 🟩 **06:48:14 · Feature** — feat(library): pure shared music catalogue with opaque ids, share/revoke and capped search (Refs #349) · [`3a5dc66a8b59`](https://github.com/gmanldn/smoothcast/commit/3a5dc66a8b5977c1cc6ad63de94f4934d0825a3e)
+
+- 🟩 **06:46:44 · Feature** — feat(audio): pure crossfade transition planner with equal-power gains and fallback reasons (Refs #348) · [`c874d55869ba`](https://github.com/gmanldn/smoothcast/commit/c874d55869ba065c0a10552390b41a11d383693c)
 
 - ⬜ **06:46:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c79c05e84030`](https://github.com/gmanldn/smoothcast/commit/c79c05e84030e1914a424de62bb4ab560cae5d0b)
+
+- ⬜ **06:46:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`78d061b1d6a3`](https://github.com/gmanldn/smoothcast/commit/78d061b1d6a33b767ff984ae0715485433058991)
 
 - 🟩 **06:46:05 · Feature** — feat(doctor): smoothcast doctor \[--json\] \[--receiver HOST\] CLI over the check engine (Refs #211) · [`cd17d48e48f0`](https://github.com/gmanldn/smoothcast/commit/cd17d48e48f0fe8bada98d297d2fc22a8716224a)
 
