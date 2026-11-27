@@ -181,6 +181,17 @@ ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
     ("/api/search/magnets", "post"): "link:search",
 }
 
+
+def required_capability(path: str, method: str) -> str | None:
+    """The capability a caller must hold to invoke ``method`` on ``path``.
+
+    ``None`` means the route is open to anyone who reaches the LAN listener
+    (no session, no capability). State-changing routes additionally require the
+    session cookie and CSRF token already declared in ``PATHS``.
+    """
+    return ROUTE_CAPABILITIES.get((path, method))
+
+
 SCHEMAS = {
     "Error": {"type": "object", "properties": {"ok": {"const": False}, "error": {"type": "string"}}},
     "Login": {"type": "object", "properties": {

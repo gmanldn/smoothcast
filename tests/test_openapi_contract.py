@@ -74,6 +74,45 @@ def test_no_capability_for_an_undocumented_route():
     )
 
 
+def test_required_capability_lookups():
+    assert api_spec.required_capability("/", "get") is None
+    assert api_spec.required_capability("/api/login", "post") is None
+    assert api_spec.required_capability("/api/status", "get") == "room:read"
+    assert api_spec.required_capability("/api/action", "post") == "room:write"
+    assert api_spec.required_capability("/api/uploads", "post") == "uploads:create"
+    assert api_spec.required_capability("/api/mesh", "get") == "mesh:read"
+    assert api_spec.required_capability("/api/media/{id}", "get") == "media:read"
+    assert api_spec.required_capability("/api/missing", "get") is None
+
+
+def test_public_routes_are_exactly_the_capability_none_routes():
+    """Every route that needs no session declares no capability, and vice versa."""
+    public = set()
+    authed = set()
+    for path, methods in api_spec.PATHS.items():
+        for method, op in methods.items():
+            is_public = op["security"] == [{}]
+            (public if is_public else authed).add(path)
+    capability_none = {
+        path for (path, _method), cap in api_spec.ROUTE_CAPABILITIES.items() if cap is None
+    }
+    capability_required = {
+        path
+        for (path, _method), cap in api_spec.ROUTE_CAPABILITIES.items()
+        if cap is not None
+    }
+    assert public == capability_none, (
+        f"public routes differ from capability-None routes: "
+        f"public-only={sorted(public - capability_none)}, "
+        f"capability-only={sorted(capability_none - public)}"
+    )
+    assert authed == capability_required, (
+        f"authenticated routes differ from capability-required routes: "
+        f"authed-only={sorted(authed - capability_required)}, "
+        f"capability-only={sorted(capability_required - authed)}"
+    )
+
+
 def test_spec_is_well_formed():
     spec = api_spec.spec()
     assert spec["openapi"].startswith("3.1") and spec["info"]["version"] == api_spec.API_VERSION
