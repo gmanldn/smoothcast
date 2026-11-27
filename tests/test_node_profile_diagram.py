@@ -148,6 +148,14 @@ def test_uptime_text_is_plain_and_never_wrong():
     assert t(0, 5000) == "" and t(1000, None) == "" and t(1000, 500) == "" and t("x", 5000) == ""
 
 
+def test_profile_omits_uptime_for_a_nonfinite_clock():
+    record = rec(boot_epoch=10_000)
+    for now in (float("nan"), float("inf"), float("-inf")):
+        profile = node_profile.profile(record, now=now)
+        assert not profile.uptime
+        assert " · up " not in profile.headline
+
+
 def test_profile_shows_uptime_only_when_the_clock_is_given():
     r = rec(boot_epoch=10_000)
     assert node_profile.profile(r).uptime == "" and "up " not in node_profile.profile(r).headline

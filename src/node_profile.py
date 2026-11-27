@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+import math
 
 CAPABILITY_TEXT = {
     "relay": "Relays media for other nodes", "transcode": "Transcodes video",
@@ -57,7 +58,8 @@ def _link(edge) -> Link:
 
 def uptime_text(boot_epoch: int, now: float | None) -> str:
     """Plain-words age of a node's current run; empty rather than wrong when either input is unusable."""
-    if now is None or not isinstance(boot_epoch, int) or boot_epoch <= 0 or now < boot_epoch:
+    if (now is None or not math.isfinite(now) or type(boot_epoch) is not int
+            or boot_epoch <= 0 or now < boot_epoch):
         return ""
     minutes = int(now - boot_epoch) // 60
     days, rest = divmod(minutes, 1440)
