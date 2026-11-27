@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b11c02fdd4a906d67710cb172cbfe74ba2f83574 -->
+<!-- sc-changelog-through: 08fbeb200f0f18190bbf73381823923e81ffdb55 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:35:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:36:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:36:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08fbeb200f0f`](https://github.com/gmanldn/smoothcast/commit/08fbeb200f0f18190bbf73381823923e81ffdb55)
+
+- 🟩 **19:36:06 · Feature** — feat: clarify web room home and settings (Refs #709) · [`554bf68dfc57`](https://github.com/gmanldn/smoothcast/commit/554bf68dfc57d48457e0de55f1bdb1f5c3409ba7)
 
 - ⬜ **19:35:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b11c02fdd4a9`](https://github.com/gmanldn/smoothcast/commit/b11c02fdd4a906d67710cb172cbfe74ba2f83574)
+
+- ⬜ **19:35:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5c81d07319a0`](https://github.com/gmanldn/smoothcast/commit/5c81d07319a0671eedb7e302cda03d55b07d106b)
 
 - 🟥 **19:35:03 · Fix** — fix(update): defer bounce when a saved playback session exists (Refs #626) · [`e3c710b938d1`](https://github.com/gmanldn/smoothcast/commit/e3c710b938d1079dfded5421e52895250d643005)
 
