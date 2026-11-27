@@ -369,6 +369,10 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
 markers = [
+    "unit: pure and fast, no sockets/subprocess (auto-tagged by tests/conftest.py; the ship gate, #699)",
+    "contract: ports exercised against fakes (#699)",
+    "integration: loopback HTTP, subprocesses or real ffmpeg on tiny fixtures (#699)",
+    "e2e: isolated Xvfb or hardware, opt-in (#699)",
     "multicast: requires loopback mDNS multicast support and skips cleanly when unavailable",
     "perf: performance gates (opt-in with SMOOTHCAST_PERF=1; CI runs them in the search-performance job)",
 ]

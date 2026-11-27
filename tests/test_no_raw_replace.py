@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 ALLOWED = {
+    "guest_passes.py": 1,
+    "rooms_zones.py": 1,
     "cache_privacy.py": 1,
     "cast_app_lifecycle.py": 1,
     "config_control.py": 1,

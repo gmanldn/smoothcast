@@ -93,6 +93,7 @@ def _stub_ffmpeg_version_probe(request):
 def pytest_collection_modifyitems(config, items):
     """Skip documented per-platform gaps (tests/platform_gaps.py), by exact id."""
     _apply_quarantine(items)
+    _apply_tiers(items)
     import sys
 
     import pytest
@@ -124,3 +125,53 @@ def _apply_quarantine(items):
             item.add_marker(pytest.mark.xfail(
                 reason=f"quarantined: #{entry.get('ticket')} owner {entry.get('owner')} until {entry['expires']}",
                 strict=False))
+
+
+_TIER_CACHE: dict = {}
+_INTEGRATION_HINTS = ("import socket", "http.server", "subprocess", "ThreadingHTTPServer",
+                      "urlopen", "http.client", "socketserver", "Popen(")
+
+
+def _apply_tiers(items):
+    """Tag every unmarked test: integration when its file touches sockets/subprocesses, else unit (#699).
+
+    Explicit unit/contract/integration/e2e markers always win. ``pytest -m unit`` is the fast gate.
+    """
+    import pytest
+    explicit = {"unit", "contract", "integration", "e2e"}
+    for item in items:
+        if explicit & {m.name for m in item.iter_markers()}:
+            continue
+        path = str(item.fspath)
+        tier = _TIER_CACHE.get(path)
+        if tier is None:
+            try:
+                text = open(path, encoding="utf-8").read()
+            except OSError:
+                text = ""
+            tier = "integration" if any(h in text for h in _INTEGRATION_HINTS) else "unit"
+            _TIER_CACHE[path] = tier
+        item.add_marker(getattr(pytest.mark, tier))
+
+
+@pytest.fixture(autouse=True)
+def _no_public_tcp(monkeypatch):
+    """Hermetic guard: a test may not open a TCP connection to a public address (#699)."""
+    import ipaddress
+    import socket
+    real = socket.socket.connect
+
+    def guarded(self, address):
+        host = address[0] if isinstance(address, tuple) and address else None
+        if (isinstance(host, str) and self.type & socket.SOCK_STREAM
+                and self.family in (socket.AF_INET, socket.AF_INET6)):
+            try:
+                ip = ipaddress.ip_address(host)
+            except ValueError:
+                ip = None
+            if ip is not None and not (ip.is_loopback or ip.is_private or ip.is_unspecified
+                                       or ip.is_link_local or ip.is_multicast):
+                raise OSError(f"hermetic test guard: refused TCP connect to public address {host}")
+        return real(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)
