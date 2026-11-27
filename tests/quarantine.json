@@ -1,0 +1,7 @@
+{
+  "_doc": "Known-red tests (ARCH-12, #700). Entries only shrink; expired entries stop being excused. Fields: owner, ticket, expires (YYYY-MM-DD).",
+  "entries": {
+    "tests/test_complexity_budget.py::test_repository_stays_within_the_committed_baseline": {"owner": "unassigned", "ticket": 700, "expires": "2026-12-15"},
+    "tests/test_design_tokens.py::test_served_page_follows_light_dark_and_contrast_preferences": {"owner": "unassigned", "ticket": 700, "expires": "2026-12-15"}
+  }
+}
