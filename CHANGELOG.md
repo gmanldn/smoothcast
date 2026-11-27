@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ba193b66647225bcec66e231dd97d42e54aa2df3 -->
+<!-- sc-changelog-through: 6221a584f7b6bf26745ccd1e319e8599b1968eda -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:21:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:23:57 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:23:57 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6221a584f7b6`](https://github.com/gmanldn/smoothcast/commit/6221a584f7b6bf26745ccd1e319e8599b1968eda)
+
+- 🟩 **16:23:57 · Feature** — feat(room): receiver ownership and playback as replayable commands/events (Refs #695) · [`8da3eaa4a927`](https://github.com/gmanldn/smoothcast/commit/8da3eaa4a927aaea323ae1a393fe755c8d908dce)
+
+- 🟩 **16:23:22 · Feature** — feat(observability): bounded local latency histograms and correlation ids, pure and unwired (Refs #698) · [`43380ccd2ec2`](https://github.com/gmanldn/smoothcast/commit/43380ccd2ec2b42c6a788a52bcfeb5d83b613ad1)
+
+- ⬜ **16:21:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`95cf434105bf`](https://github.com/gmanldn/smoothcast/commit/95cf434105bfdaa92c559fde66b59e87e879d1d6)
 
 - ⬜ **16:21:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ba193b666472`](https://github.com/gmanldn/smoothcast/commit/ba193b66647225bcec66e231dd97d42e54aa2df3)
 
