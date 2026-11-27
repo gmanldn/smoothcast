@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 23164a23cdbc71e5f984f4eb212c7259b31d37cb -->
+<!-- sc-changelog-through: 17679752624cfd36d8cbce07f08630afee5dd70e -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **18:56:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:59:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:59:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`17679752624c`](https://github.com/gmanldn/smoothcast/commit/17679752624cfd36d8cbce07f08630afee5dd70e)
+
+- 🟥 **18:58:58 · Fix** — fix: roll back upload offsets after checkpoint failure (Refs #568) · [`dd08800bb76a`](https://github.com/gmanldn/smoothcast/commit/dd08800bb76ade8fb9264d7f3004291b8617438e)
 
 - ⬜ **18:56:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`23164a23cdbc`](https://github.com/gmanldn/smoothcast/commit/23164a23cdbc71e5f984f4eb212c7259b31d37cb)
 
 - 🟥 **18:56:41 · Fix** — fix: defer bootstrap interrupts until rollback-safe points (Refs #580) · [`3ed049c33e0b`](https://github.com/gmanldn/smoothcast/commit/3ed049c33e0b8eb118f19ec7fd82d9d6ecef94f3)
+
+- ⬜ **18:56:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`009ae0a95ddb`](https://github.com/gmanldn/smoothcast/commit/009ae0a95ddb07bf05c0bec542cb01b324d70920)
 
 - ⬜ **18:53:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2e1080c9e393`](https://github.com/gmanldn/smoothcast/commit/2e1080c9e393daaf8faa3effc4c11f98f3cc4d65)
 
