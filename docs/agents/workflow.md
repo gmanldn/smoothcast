@@ -34,7 +34,7 @@ to `main`. The owner manually decides when (and whether) to merge it.
    real work with `agent.py heartbeat N` and release via `release N`. Split large
    issues into file-level scopes for concurrency.
 3. Work in one independent detached worktree per task (never the user's
-   checkout), stage **named files only**, and make small cohesive commits with
+   checkout — leaving edits there blocks the owner's launches, #688), stage **named files only**, and make small cohesive commits with
    `Refs #N`. No feature branches or agent PRs.
 4. Push each finished coherent slice **directly to `origin/develop`**.
    Preferred command in a private worktree: `python3 scripts/agent.py ship

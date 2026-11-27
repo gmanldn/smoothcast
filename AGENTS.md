@@ -18,11 +18,11 @@ as UNVERIFIED. Native Git stays preferred where access works.
 
 **Only develop receives agent code. Main is manually promoted by the owner.**
 Never push/merge/promote/tag main. Never reset another agent's work or force-push.
-Use a private detached worktree; one ticket per worktree.
+Edit only in a private detached worktree, never the owner checkout.
 
 ```sh
 python3 scripts/agent.py start              # choose the next available ticket
-# cd into the printed worktree; read its private task brief
+# cd into the printed worktree; read its task brief
 python3 scripts/agent.py ship --message "fix: concrete result"
 python3 scripts/agent.py finish --done "landed implementation" --next "remaining tests" --verification "not run (unverified)"
 ```
