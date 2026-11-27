@@ -55,6 +55,9 @@ def test_panel_references_diagram_routes():
     import portal_mesh_panel
     html = portal_mesh_panel.panel_html()
     assert "/api/mesh/diagram.svg" in html and "/api/mesh/profiles" in html
+    assert 'n.platform?"Platform: "+n.platform' in html
+    assert 'sources.length?"Shares: "+sources.join(", ")' in html
+    assert 'String(link.text||"status unavailable")' in html
 
 
 def test_gtk_popover_describes_every_node_fact():

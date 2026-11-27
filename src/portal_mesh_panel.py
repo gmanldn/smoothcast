@@ -440,10 +440,19 @@ _PANEL = r"""
         keep.add(n.node_id);
         let li=list.querySelector('[data-node="'+n.node_id+'"]');
         if(!li){li=document.createElement("li");li.dataset.node=n.node_id;list.append(li)}
-        const rows=[n.role+" · "+n.headline,n.ports?"Ports: "+n.ports:"",
-          n.capabilities.length?"Can: "+n.capabilities.join(", "):"",
-          n.targets.length?"Receivers: "+n.targets.join(", "):"No receivers seen",
-          n.clients.length?"Clients: "+n.clients.length:"No clients"].filter(Boolean);
+        const capabilities=Array.isArray(n.capabilities)?n.capabilities:[];
+        const targets=Array.isArray(n.targets)?n.targets:[];
+        const clients=Array.isArray(n.clients)?n.clients:[];
+        const sources=Array.isArray(n.sources)?n.sources:[];
+        const links=Array.isArray(n.links)?n.links:[];
+        const rows=[n.role+" · "+n.headline,n.platform?"Platform: "+n.platform:"",
+          n.ports?"Ports: "+n.ports:"",
+          capabilities.length?"Can: "+capabilities.join(", "):"",
+          targets.length?"Receivers: "+targets.join(", "):"No receivers seen",
+          clients.length?"Clients: "+clients.join(", "):"No clients",
+          sources.length?"Shares: "+sources.join(", "):"",
+          ...links.map(link=>(link.peer_kind==="node"?"Node ":"Receiver ")+
+            String(link.peer||"").slice(0,8)+": "+String(link.text||"status unavailable"))].filter(Boolean);
         const text=n.name+"\n"+rows.join("\n");
         if(li.dataset.sig!==text){li.dataset.sig=text;li.replaceChildren();
           const t=document.createElement("strong");t.textContent=n.name;li.append(t);
