@@ -299,6 +299,7 @@ py-modules = [
     "thumb_strip",
     "ui_theme",
     "update_action",
+    "update_button",
     "update_control",
     "update_facts",
     "update_managed",

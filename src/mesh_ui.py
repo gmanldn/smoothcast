@@ -11,6 +11,7 @@ from __future__ import annotations
 from gi.repository import GLib, Gtk, Pango
 
 import mesh_diagram
+import update_button
 import node_profile
 
 import mesh_view_model as vm
@@ -245,11 +246,19 @@ def build_button(window: object) -> Gtk.MenuButton:
     """Create the Network button once; refreshed by :func:`refresh`."""
     popover = NetworkPopover(window)
     window._mesh_ui = popover                       # type: ignore[attr-defined]
-    return popover.button
+    updater = update_button.UpdateButton(window)
+    window._update_button = updater                 # type: ignore[attr-defined]
+    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    box.append(updater.button)
+    box.append(popover.button)
+    return box
 
 
 def refresh(window: object) -> None:
     """Rebuild the model from the running mesh (called ~1 Hz on the GTK thread)."""
+    updater = getattr(window, "_update_button", None)
+    if updater is not None:
+        updater.refresh()
     popover = getattr(window, "_mesh_ui", None)
     if popover is None:
         return
