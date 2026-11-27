@@ -124,21 +124,21 @@ def published_assignment(root: Path, remote_sha: str, issue: int) -> str | None:
     return None
 
 
-def assign_private_patch(root: Path, remote_sha: str, issue: int) -> str | None:
+def assign_private_patch(root: Path, remote_sha: str, issue: int | None = None) -> str | None:
     """Append exactly one version-only commit to this pending shipment.
 
     Caller fetched remote and rebased all pending code before invoking. If a
     developer already made a valid SemVer bump, do not mint a second number.
     The final non-force push is the atomic CAS/fencing operation on develop.
     """
-    if type(issue) is not int or issue < 1:
+    if issue is not None and (type(issue) is not int or issue < 1):
         raise PatchAllocationError("positive GitHub issue number required")
     if run(root, "status", "--porcelain"):
         raise PatchAllocationError("dirty worktree; cannot safely allocate a patch")
     remote = parsed(run(root, "show", remote_sha + ":" + VERSION_PATH))
     local_source = (root / VERSION_PATH).read_text(encoding="utf-8")
     local = parsed(local_source)
-    existing = published_assignment(root, remote_sha, issue)
+    existing = published_assignment(root, remote_sha, issue) if issue is not None else None
     if existing:
         if local != remote:
             raise PatchAllocationError(
@@ -156,7 +156,9 @@ def assign_private_patch(root: Path, remote_sha: str, issue: int) -> str | None:
     (root / VERSION_PATH).write_text(patch_source(local_source), encoding="utf-8")
     try:
         run(root, "add", "--", VERSION_PATH)
-        run(root, "commit", "-m", f"chore(version): PATCH for issue #{issue} {MARKER}")
+        subject = (f"chore(version): PATCH for issue #{issue}" if issue is not None
+                   else "chore(version): advance shipment PATCH")
+        run(root, "commit", "-m", f"{subject} {MARKER}")
     except BaseException:
         # Leave all code commits intact and restore only our generated file.
         run(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", VERSION_PATH)

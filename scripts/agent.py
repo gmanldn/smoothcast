@@ -1113,8 +1113,6 @@ def primary_checkout_refusal() -> str:
 
 
 def cmd_ship(a: argparse.Namespace) -> int:
-    if a.assign_patch:
-        print("--assign-patch is deprecated and ignored; development uses Git SHA identity")
     if refusal := primary_checkout_refusal():
         print(refusal)
         return 2
@@ -1183,6 +1181,13 @@ def cmd_ship(a: argparse.Namespace) -> int:
             return 0
         if task is not None and not ensure_task_scope(task, changed):
             return 3
+        if task is not None:
+            try:
+                if ship_patch.assign_private_patch(ROOT, remote_before):
+                    changed = sorted(set(changed) | {ship_patch.VERSION_PATH})
+            except ship_patch.PatchAllocationError as exc:
+                print(f"PATCH ALLOCATION REFUSED: {exc}")
+                return 6
         rebased = git("rev-parse", "HEAD").strip() != before
         # Mandatory even with --skip-checks: a concurrent agent must never
         # regress, skip or silently overwrite a canonical version increment.
@@ -1584,7 +1589,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
     s.add_argument("--next", default="", help="durable next-action handover after a successful push")
     s.add_argument("--assign-patch", action="store_true",
-                   help="deprecated compatibility flag; ignored (make new versions in develop)")
+                   help="compatibility flag; PATCH is allocated automatically on shipment")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)
