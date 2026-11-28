@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+import dataclasses
 
 import mesh_clients
 
@@ -37,6 +38,8 @@ def route(handler, method: str, path: str) -> bool:
         view = feed._publisher.view
         found = [node_profile.profile(node_profile.redact(r), local_id=view.local_id,
                                       primary_id=feed._primary(), now=time.time()) for r in view.nodes]
+        found = _with_room_participants(
+            found, getattr(handler.server, "room", None), view.local_id)
         if path == "/api/mesh/profiles":
             handler._send(200, {"ok": True, "nodes": [node_profile.as_dict(p) for p in found]})
         else:
@@ -60,6 +63,39 @@ def route(handler, method: str, path: str) -> bool:
         return True
     _serve(handler, stream)
     return True
+
+
+def _with_room_participants(profiles, room, local_id: str):
+    """Put this authenticated room's online people on its local diagram node.
+
+    Other mesh nodes' client names remain redacted. The room roster is already
+    available to every paired room member, so the local diagram can label those
+    clients without widening the mesh profile API's disclosure.
+    """
+    if room is None:
+        return profiles
+    try:
+        people = room.snapshot().get("participants", [])
+    except (AttributeError, OSError, RuntimeError):
+        return profiles
+    labels = sorted({
+        str(person.get("name", "Guest")).strip()[:48] or "Guest"
+        for person in people
+        if isinstance(person, dict) and person.get("online") is True
+    }, key=str.casefold)[:32]
+    if not labels:
+        return profiles
+    result = list(profiles)
+    for index, profile in enumerate(result):
+        if profile.node_id != local_id:
+            continue
+        # The redacted controller summaries are represented by the named room
+        # members; keep browser screens and other client kinds intact.
+        clients = tuple(c for c in profile.clients if not c.endswith(" (controller)"))
+        clients += tuple(f"{name} (room participant)" for name in labels)
+        result[index] = dataclasses.replace(profile, clients=clients)
+        break
+    return result
 
 
 def _heartbeat(server) -> dict | None:

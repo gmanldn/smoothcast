@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 import mesh_diagram
 import mesh_model as mm
 import node_profile
+import portal_mesh_http
 
 
 def rec(node_id="a" * 32, name="Lounge PC", **kw):
@@ -58,6 +59,7 @@ def test_panel_references_diagram_routes():
     assert 'n.platform?"Platform: "+n.platform' in html
     assert 'sources.length?"Shares: "+sources.join(", ")' in html
     assert 'String(link.text||"status unavailable")' in html
+    assert "Room participants appear under this host" in html
 
 
 def test_gtk_popover_describes_every_node_fact():
@@ -98,6 +100,29 @@ def test_diagram_has_explicit_light_canvas_for_dark_text():
         canvas = root.find("{*}rect")
         assert canvas is not None and canvas.get("fill") == mesh_diagram.BACKGROUND
         assert canvas.get("width") == str(mesh_diagram.W)
+
+
+def test_authenticated_room_people_attach_to_local_diagram_only():
+    local_id, remote_id = "a" * 32, "b" * 32
+    local = rec(local_id, clients=(mm.ClientSummary("opaque-p", "controller"),
+                                   mm.ClientSummary("opaque-s", "screen", name="")))
+    remote = rec(remote_id, clients=(mm.ClientSummary("opaque-r", "controller"),))
+
+    class Room:
+        def snapshot(self):
+            return {"participants": [
+                {"name": "Sam & Jo", "online": True},
+                {"name": "Away", "online": False},
+            ]}
+
+    profiles = [node_profile.profile(node_profile.redact(record), local_id=local_id)
+                for record in (local, remote)]
+    enriched = portal_mesh_http._with_room_participants(profiles, Room(), local_id)
+    assert enriched[0].clients == ("screen (screen)", "Sam & Jo (room participant)")
+    assert enriched[1].clients == ("controller (controller)",)
+    assert "Sam & Jo (room participant)" in node_profile.as_dict(enriched[0])["clients"]
+    svg = mesh_diagram.render(enriched)
+    assert "Sam &amp; Jo" in svg and "Away" not in svg
 
 
 def test_gtk_profiles_render_only_visible_changed_snapshots():
