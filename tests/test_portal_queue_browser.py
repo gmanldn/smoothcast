@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import pytest
@@ -85,7 +86,9 @@ class _RealQueueRig(PortalRig):
             self.calls.append((action, payload))
             if action == "status":
                 rows = host._portal_queue_status()
-                return {"title": "", "state": "STOPPED", "queue": rows,
+                playing = bool(host.now_playing)
+                return {"title": "Current film" if playing else "",
+                        "state": "PLAYING" if playing else "STOPPED", "queue": rows,
                         "queue_total": len(host.queue), "queue_revision": host._portal_queue_revision}
             return host._portal_queue_action(action, payload)
 
@@ -141,6 +144,71 @@ def test_two_browsers_see_each_others_moves_and_stale_move_recovers():
             assert after_ben != before and after_ben == titles(ann), (before, after_ben, titles(ann))
             assert not errors, errors
         finally:
+            browser.close()
+
+
+@pytest.mark.skipif(not OPT_IN, reason="explicit opt-in: installed Playwright Chromium")
+def test_three_browsers_announce_and_converge_on_move_while_playing():
+    from playwright.sync_api import sync_playwright
+
+    rig = _RealQueueRig([f"/private/song{i}.mp3" for i in range(5)])
+    rig.host_obj.now_playing = "/private/current-film.mkv"
+    entered, release = threading.Event(), threading.Event()
+    original_action = rig.host_obj._portal_queue_action
+
+    def delayed_move(action, payload):
+        if action == "queue_move":
+            entered.set()
+            if not release.wait(3):
+                raise RuntimeError("test did not release the queue move")
+        return original_action(action, payload)
+
+    rig.host_obj._portal_queue_action = delayed_move
+    origin = f"http://{rig.host}"
+
+    def titles(page):
+        return page.evaluate("[...document.querySelectorAll('#queue .queue-item')].map(e=>e.querySelector('.queue-title,strong,span').textContent.trim())")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--disable-background-networking"])
+        pages = []
+        try:
+            for name in ("Ann", "Ben", "Cal"):
+                page = browser.new_page(viewport={"width": 390, "height": 800}, service_workers="block")
+                page.goto(origin + "/", wait_until="domcontentloaded")
+                page.locator("#name").fill(name)
+                page.locator("#loginForm button").click()
+                page.locator("#queue .queue-item").nth(4).wait_for()
+                pages.append(page)
+            ann, ben, cal = pages
+            previous = titles(ben)
+            moved_title = ann.locator("#queue .queue-item").nth(1).locator("strong").inner_text()
+            started = time.monotonic()
+            ann.locator("#queue .queue-item").nth(1).get_by_role(
+                "button", name="later in Up Next").first.click()
+            assert entered.wait(2), "the move request did not reach the room handler"
+            feedback = ann.locator("#queueFeedback")
+            assert feedback.get_attribute("role") == "status"
+            assert feedback.get_attribute("aria-live") == "polite"
+            assert f"Moving {moved_title} from position 2 of 5 to position 3" in feedback.text_content()
+            assert "Waiting for the room to accept the move" in feedback.text_content()
+            release.set()
+            feedback.filter(
+                has_text=f"{moved_title} moved to position 3 of 5").wait_for(timeout=5000)
+            for page in (ben, cal):
+                page.wait_for_function(
+                    "(before) => JSON.stringify([...document.querySelectorAll('#queue .queue-item')].map(e=>e.querySelector('.queue-title,strong,span').textContent.trim())) !== JSON.stringify(before)",
+                    arg=previous, timeout=5000,
+                )
+            assert time.monotonic() - started < 1.0
+            assert titles(ann) == titles(ben) == titles(cal)
+            assert rig.host_obj.now_playing == "/private/current-film.mkv"
+            assert all(page.locator("#queueFeedback").get_attribute("role") == "status"
+                       and page.locator("#queueFeedback").get_attribute("aria-live") == "polite"
+                       for page in pages)
+            assert "Position 3 of 5" in ann.locator("#queue .queue-item").nth(2).inner_text()
+        finally:
+            release.set()
             browser.close()
 
 

@@ -2586,7 +2586,17 @@ function schedulePlayhead(){
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
 function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;if(dur>0||playhead.s.state!=="PLAYING")$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[],queueLimit=100;
+let pendingQueueAnnouncement=null;
 const queueElement=$("queue");
+function announceQueueMove(){
+  const pending=pendingQueueAnnouncement;
+  if(!pending||!pending.accepted||!pending.updated)return;
+  const position=queueState.findIndex(item=>String(item.id)===pending.id);
+  if(position<0)return;
+  $("queueFeedback").textContent=pending.title+" moved to position "+(position+1)+
+    " of "+queueState.length+" in Up Next.";
+  pendingQueueAnnouncement=null;
+}
 function queueAction(button){
   const row=button.closest("[data-queue-id]");
   if(!row)return;
@@ -2596,7 +2606,15 @@ function queueAction(button){
   const item=queueState[index];
   const verb={vote:"Vote",play:"Requesting playback", "move-earlier":"Move earlier", "move-later":"Move later",next:"Move to play next",remove:"Remove"}[button.dataset.queueAction];
   const feedback=$("queueFeedback");
-  if(feedback&&verb)feedback.textContent=verb+" · "+(item.title||"selected item")+" · sending request…";
+  const moving=["move-earlier","move-later","next"].includes(button.dataset.queueAction);
+  if(moving){
+    const position=button.dataset.queueAction==="next"?0:
+      Math.max(0,Math.min(queueState.length-1,index+(button.dataset.queueAction==="move-earlier"?-1:1)));
+    pendingQueueAnnouncement={id,title:item.title||"Selected item",revision:queueRevision,
+      accepted:false,updated:false};
+    if(feedback)feedback.textContent="Moving "+pendingQueueAnnouncement.title+" from position "+
+      (index+1)+" of "+queueState.length+" to position "+(position+1)+". Waiting for the room to accept the move.";
+  }else if(feedback&&verb)feedback.textContent=verb+" · "+(item.title||"selected item")+" · sending request…";
   switch(button.dataset.queueAction){
     case "vote":return act("queue_vote",!item.voted,{id});
     case "play":return act("queue_play",undefined,{id});
@@ -2629,10 +2647,12 @@ function renderQueue(items,revision=queueRevision){
   if(queuePressed){deferredQueue={rows,revision};return}
   queueRevision=revision;
   queueState=rows;
+  if(pendingQueueAnnouncement&&revision>pendingQueueAnnouncement.revision)
+    pendingQueueAnnouncement.updated=true;
   const key=queueLimit+JSON.stringify(rows.map(item=>[
     item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,item.media_kind,
   ]));
-  if(key===queueRenderKey)return;
+  if(key===queueRenderKey){announceQueueMove();return}
   const focused=document.activeElement;
   const focusedRow=focused?.closest?.("[data-queue-id]");
   const focusTarget=focusedRow&&focused.dataset?.queueAction
@@ -2721,6 +2741,7 @@ function renderQueue(items,revision=queueRevision){
       .find(item=>item.dataset.queueAction===focusTarget.action);
     (target||queue).focus({preventScroll:true});
   }
+  announceQueueMove();
 }
 let statusRequest=null,statusTimer=null,statusFailures=0;
 function scheduleRefresh(){
@@ -3424,7 +3445,19 @@ async function act(action,value,extra={}){
     const result=await post("/api/action",body);
     showError("errorDash",result.message||"Command accepted");
     if(action.startsWith("queue_"))$("queueFeedback").textContent=result.message||"Queue change accepted; updating the list…";
-  }catch(err){showError("errorDash",err.message);if(action.startsWith("queue_"))$("queueFeedback").textContent="Queue action was not applied: "+err.message;}
+    if(["queue_move","queue_next"].includes(action)&&pendingQueueAnnouncement&&
+       pendingQueueAnnouncement.id===String(extra.id||"")){
+      pendingQueueAnnouncement.accepted=true;
+      announceQueueMove();
+      if(pendingQueueAnnouncement)
+        $("queueFeedback").textContent="Move accepted; waiting for the updated Up Next order.";
+    }
+  }catch(err){
+    showError("errorDash",err.message);
+    if(action.startsWith("queue_"))$("queueFeedback").textContent="Queue action was not applied: "+err.message;
+    if(["queue_move","queue_next"].includes(action)&&pendingQueueAnnouncement&&
+       pendingQueueAnnouncement.id===String(extra.id||""))pendingQueueAnnouncement=null;
+  }
   finally{
     busy=false;
     if(pendingControls.size&&csrf&&!stalePage){
