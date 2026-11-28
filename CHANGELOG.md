@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3a745b0c7fff60649972388b0993951ed289269c -->
+<!-- sc-changelog-through: d2edfdfdffa12254b614bc32afa29d483310aa44 -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **07:23:41 · Fix** — fix(mesh): discard obsolete endpoint probe results (Refs #742) <!-- sc-changelog-pending -->
+- ⬜ **07:25:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:25:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d2edfdfdffa1`](https://github.com/gmanldn/smoothcast/commit/d2edfdfdffa12254b614bc32afa29d483310aa44)
+
+- 🟦 **07:25:10 · Refactor** — refactor(queue): portal move uses QueueComponent (Refs #691) · [`4431a425486b`](https://github.com/gmanldn/smoothcast/commit/4431a425486b28cd384fa80d9af5f696a69e1dd1)
+
+- 🟥 **07:23:50 · Fix** — fix(mesh): discard obsolete endpoint probe results (Refs #742) · [`427940cb617c`](https://github.com/gmanldn/smoothcast/commit/427940cb617c221e44f63665f05788cd3328f91d)
 
 - 🟥 **07:20:43 · Fix** — fix(screens): report terminal conversion stalls once and respect pause (Refs #754) · [`3a745b0c7fff`](https://github.com/gmanldn/smoothcast/commit/3a745b0c7fff60649972388b0993951ed289269c)
 
