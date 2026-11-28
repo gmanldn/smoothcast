@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cfc0327f100845bb0f4ee4fc920c6e522f909f43 -->
+<!-- sc-changelog-through: 1a5478d3c31d833e060e62b2cadc829e490eb0dc -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **06:52:39 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:58:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:58:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1a5478d3c31d`](https://github.com/gmanldn/smoothcast/commit/1a5478d3c31d833e060e62b2cadc829e490eb0dc)
+
+- 🟥 **06:56:38 · Fix** — fix(fence): serialize claim/accept/release/revoke/owners with a lock for atomic node claims (Refs #739) · [`9964cf43cbe1`](https://github.com/gmanldn/smoothcast/commit/9964cf43cbe194205cf44f1eb3b84b75517bf441)
 
 - ⬜ **06:52:39 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cfc0327f1008`](https://github.com/gmanldn/smoothcast/commit/cfc0327f100845bb0f4ee4fc920c6e522f909f43)
+
+- ⬜ **06:52:39 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f57b6c154ea6`](https://github.com/gmanldn/smoothcast/commit/f57b6c154ea625ce705483eee2b6ec18d1fa5090)
 
 - 🟥 **06:52:35 · Fix** — fix(discovery): publish completed scan result before queued refresh (Refs #720) · [`c2f0c8f3da9b`](https://github.com/gmanldn/smoothcast/commit/c2f0c8f3da9bdbd3f79f874a59d729199c46eef6)
 
