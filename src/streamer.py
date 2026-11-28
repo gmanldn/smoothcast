@@ -12,6 +12,7 @@ import platform
 import re
 import secrets
 import socket
+import stat
 import subprocess
 import threading
 import time
@@ -2260,41 +2261,38 @@ class Session:
             pass
         return (output or fallback).strip()[-300:]
 
-    def _listed_segment_ok(self, name: str, text: str) -> bool:
-        """True when playlist entry *name* is a complete segment the server may expose.
-
-        Only files the HLS HTTP server is permitted to expose can establish
-        playability. Do not follow playlist traversal, absolute paths or
-        unrelated temporary files; an fMP4 generation also needs its declared,
-        non-empty init segment.
-        """
-        playlist_name = getattr(self, "_playlist_name", HLS_NAME)
-        if playlist_name == HLS_NAME:
-            valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
-        else:
-            match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
-            if match and match.group(2):
-                init = f"init-{match.group(1)}.mp4"
-                if f'#EXT-X-MAP:URI="{init}"' not in text:
-                    return False
-                try:
-                    init_path = ROOT / init
-                    if not init_path.is_file() or init_path.stat().st_size == 0:
-                        return False
-                except OSError:
-                    return False
-                valid = re.fullmatch(rf"segment-{match.group(1)}-[0-9]+\.m4s", name) is not None
-            else:
-                valid = bool(match and re.fullmatch(
-                    rf"segment-{match.group(1)}-[0-9]+\.ts", name,
-                ))
-        if not valid:
-            return False
+    @staticmethod
+    def _nonempty_hls_file(name: str) -> bool:
         try:
-            segment = ROOT / name
-            return segment.is_file() and segment.stat().st_size > 0
+            info = (ROOT / name).stat()
         except OSError:
             return False
+        return stat.S_ISREG(info.st_mode) and info.st_size > 0
+
+    def _listed_segments_ok(self, names: list[str], text: str) -> bool:
+        """Validate the generation and init once, then every advertised segment."""
+        if not names:
+            return False
+        playlist_name = getattr(self, "_playlist_name", HLS_NAME)
+        if playlist_name == HLS_NAME:
+            pattern = re.compile(r"segment-[0-9]+\.ts")
+        else:
+            match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
+            if match is None:
+                return False
+            generation, fmp4 = match.groups()
+            extension = "m4s" if fmp4 else "ts"
+            if fmp4:
+                init = f"init-{generation}.mp4"
+                expected = f'#EXT-X-MAP:URI="{init}"'
+                maps = [line.strip() for line in text.splitlines()
+                        if line.lstrip().startswith("#EXT-X-MAP:")]
+                if (not maps or any(line != expected and not line.startswith(expected + ",")
+                                    for line in maps)
+                        or not self._nonempty_hls_file(init)):
+                    return False
+            pattern = re.compile(rf"segment-{generation}-[0-9]+\.{extension}")
+        return all(pattern.fullmatch(name) and self._nonempty_hls_file(name) for name in names)
 
     def _playlist_is_complete(self, playlist: pathlib.Path) -> bool:
         """True when a finalised playlist references only complete segments."""
@@ -2306,7 +2304,7 @@ class Session:
             return False
         names = [line.strip() for line in text.splitlines()
                  if line.strip() and not line.startswith("#")]
-        return bool(names) and all(self._listed_segment_ok(name, text) for name in names)
+        return self._listed_segments_ok(names, text)
 
     def _first_segments_ready(self, playlist: pathlib.Path, count: int = 2) -> bool:
         """True once the playlist's first *count* entries are complete, servable segments.
@@ -2326,7 +2324,7 @@ class Session:
                 names.append(line)
                 if len(names) == count:
                     break
-        return len(names) == count and all(self._listed_segment_ok(n, text) for n in names)
+        return len(names) == count and self._listed_segments_ok(names, text)
 
     def start_direct(
         self,

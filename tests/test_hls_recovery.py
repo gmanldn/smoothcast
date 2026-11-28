@@ -127,6 +127,55 @@ class HlsRecoveryTests(unittest.TestCase):
             self.playlist(segment_name=outside)
             self.assertFalse(session.recoverable_hls())
 
+    def fmp4_playlist(self, count):
+        generation = "a" * 32
+        playlist = self.root / f"movie-{generation}-fmp4.m3u8"
+        init = self.root / f"init-{generation}.mp4"
+        init.write_bytes(b"init")
+        names = [f"segment-{generation}-{index:05d}.m4s" for index in range(count)]
+        for name in names:
+            (self.root / name).write_bytes(b"segment")
+        entries = ["#EXTM3U", f'#EXT-X-MAP:URI="{init.name}"']
+        for name in names:
+            entries.extend(("#EXTINF:2.0,", name))
+        playlist.write_text("\n".join([*entries, "#EXT-X-ENDLIST", ""]), encoding="utf-8")
+        session = self.saved()
+        session.state.stream_url = f"http://192.168.1.10:8767/{playlist.name}"
+        return session, playlist, init, self.root / names[-1]
+
+    def test_completed_fmp4_checks_init_once_even_for_a_long_film(self):
+        real_stat = Path.stat
+        counts = []
+        for length in (2, 2000):
+            session, _, init, _ = self.fmp4_playlist(length)
+            reads = []
+
+            def inspect(path, *args, **kwargs):
+                if path == init:
+                    reads.append(path)
+                return real_stat(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(Path, "stat", autospec=True, side_effect=inspect),
+                mock.patch.object(streamer, "_server_healthy", return_value=True),
+            ):
+                self.assertTrue(session.recoverable_hls())
+            counts.append(len(reads))
+        self.assertEqual(counts, [1, 1])
+
+    def test_completed_fmp4_still_requires_the_right_init_and_last_segment(self):
+        session, playlist, init, last = self.fmp4_playlist(3)
+        source = playlist.read_text(encoding="utf-8")
+        with mock.patch.object(streamer, "_server_healthy", return_value=True):
+            last.unlink()
+            self.assertFalse(session.recoverable_hls())
+            last.write_bytes(b"segment")
+            playlist.write_text(source.replace(init.name, "wrong.mp4"), encoding="utf-8")
+            self.assertFalse(session.recoverable_hls())
+            playlist.write_text(source, encoding="utf-8")
+            init.write_bytes(b"")
+            self.assertFalse(session.recoverable_hls())
+
     def test_live_encoder_still_uses_normal_active_path(self):
         session = self.saved()
         proc = mock.Mock()

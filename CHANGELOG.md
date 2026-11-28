@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0f2e05a9fc9200b4c95a527be2153c2d6b90864f -->
+<!-- sc-changelog-through: 2187dff5aa2f27b2be3b2e99009329ed032eb983 -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **07:39:13 · Performance** — perf(dlna): start renderer descriptions while SSDP replies arrive (Refs #724) <!-- sc-changelog-pending -->
+- 🟦 **07:40:47 · Performance** — perf(hls): validate fMP4 init once per playlist check (Refs #731) <!-- sc-changelog-pending -->
+
+- 🟦 **07:39:21 · Performance** — perf(dlna): start renderer descriptions while SSDP replies arrive (Refs #724) · [`2187dff5aa2f`](https://github.com/gmanldn/smoothcast/commit/2187dff5aa2f27b2be3b2e99009329ed032eb983)
 
 - 🟪 **07:38:19 · Tests** — test(msi): verify user settings survive lifecycle (Refs #532) · [`0f2e05a9fc92`](https://github.com/gmanldn/smoothcast/commit/0f2e05a9fc9200b4c95a527be2153c2d6b90864f)
 
