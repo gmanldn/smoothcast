@@ -150,3 +150,48 @@ def test_sleep_timer_leaves_a_replacement_playing():
         stop.assert_not_called()
         done(False)
     assert w._url_cast_url is None
+
+def _handoff(command_result, info=None):
+    """Run _cast_remote_url over an owned local session; return (window, previous, stop_spy)."""
+    w, jobs = window("_cast_remote_url")
+    previous = mock.Mock()
+    w.session = previous
+    with mock.patch.object(castctl, "command", return_value=command_result), \
+         mock.patch.object(castctl, "info", return_value=info), \
+         mock.patch.object(castctl, "stop") as remote_stop:
+        w._cast_remote_url(URL)
+        assert w.session is previous  # still owned while the handoff is pending
+        work, done, _ = jobs.pop()
+        done(work())
+    remote_stop.assert_not_called()  # never a speculative remote Stop
+    return w, previous
+
+
+def test_rejected_handoff_keeps_the_existing_stream_alive():
+    w, previous = _handoff((False, "load rejected"))
+    assert w.session is previous
+    previous.stop.assert_not_called()
+    w._cast_failed.assert_called_once()
+    assert w._url_cast_url is None
+
+
+def test_confirmed_handoff_releases_the_old_session_once_without_remote_stop():
+    w, previous = _handoff((True, "ok"))
+    previous.stop.assert_called_once_with("TV", send_stop=False)
+    assert w.session is None
+    assert w._url_cast_url == URL
+
+
+def test_ambiguous_timeout_with_our_url_playing_counts_as_confirmed():
+    w, previous = _handoff((False, castctl.COMMAND_TIMEOUT_MESSAGE),
+                           info={"player_state": "PLAYING", "content_id": URL})
+    previous.stop.assert_called_once_with("TV", send_stop=False)
+    assert w._url_cast_url == URL
+
+
+def test_ambiguous_timeout_with_foreign_or_no_content_keeps_the_old_session():
+    for info in ({"player_state": "PLAYING", "content_id": OTHER}, None):
+        w, previous = _handoff((False, castctl.COMMAND_TIMEOUT_MESSAGE), info=info)
+        previous.stop.assert_not_called()
+        assert w.session is previous
+        assert w._url_cast_url is None
