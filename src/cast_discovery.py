@@ -7,6 +7,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import GLib, Gtk
 import time
+from concurrent.futures import ThreadPoolExecutor
 import castctl
 import state_labels
 import dlna
@@ -29,16 +30,22 @@ class DeviceDiscoveryMixin:
 
         def work():
             errors = []
-            try:
-                cast_devices = castctl.scan()
-            except Exception as exc:
-                cast_devices = None
-                errors.append(f"Cast discovery: {exc}")
-            try:
-                dlna_devices = dlna.discover()
-            except Exception as exc:
-                dlna_devices = None
-                errors.append(f"DLNA discovery: {exc}")
+            # These are independent network protocols. Start both while this
+            # bounded discovery worker is active, then merge only their
+            # results here; GTK state remains owned by the completion callback.
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="receiver-discovery") as pool:
+                cast_future = pool.submit(castctl.scan)
+                dlna_future = pool.submit(dlna.discover)
+                try:
+                    cast_devices = cast_future.result()
+                except Exception as exc:
+                    cast_devices = None
+                    errors.append(f"Cast discovery: {exc}")
+                try:
+                    dlna_devices = dlna_future.result()
+                except Exception as exc:
+                    dlna_devices = None
+                    errors.append(f"DLNA discovery: {exc}")
             if cast_devices is None and dlna_devices is None:
                 raise RuntimeError("; ".join(errors))
             return cast_devices, dlna_devices

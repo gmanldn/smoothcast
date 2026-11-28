@@ -7,15 +7,18 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from threading import Event
 import textwrap
 from types import SimpleNamespace
 from unittest import mock
+from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from gui_source import main_window_methods
 import castctl
 import cast_targets
+import dlna
 
 
 def device(name, uuid, host="192.168.1.40"):
@@ -64,9 +67,14 @@ class Entry:
 
 def window(name="Old TV", uuid="uuid-a"):
     methods = main_window_methods()
+    queued = {}
+
+    def capture_work(work, **kwargs):
+        queued.update(work=work, **kwargs)
+
     source = "class Discovery:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(methods[method]), "    ")
-        for method in ("_scan_done", "_scan_failed", "_on_device_selected",
+        for method in ("scan_devices", "_scan_done", "_scan_failed", "_on_device_selected",
                        "_add_cast_target", "_device_host")
     )
     saved = []
@@ -78,6 +86,9 @@ def window(name="Old TV", uuid="uuid-a"):
         "GLib": SimpleNamespace(source_remove=lambda _: None),
         "castctl": castctl,
         "cast_targets": cast_targets,
+        "dlna": dlna,
+        "Async": SimpleNamespace(run=capture_work),
+        "ThreadPoolExecutor": ThreadPoolExecutor,
         "save_config": lambda cfg: saved.append(dict(cfg)),
     }
     exec(compile(source, "<discovery>", "exec"), namespace)
@@ -103,6 +114,10 @@ def window(name="Old TV", uuid="uuid-a"):
             self.toasts = []
             self.polls = 0
             self.badges = []
+            self.scan_busy = False
+            self._scan_again = False
+            self._closing = False
+            self.queued_work = queued
 
         def toast(self, message, *, error=False):
             self.toasts.append(message)
@@ -120,6 +135,46 @@ def window(name="Old TV", uuid="uuid-a"):
             self.badges.append(name)
 
     return FakeWindow(), saved
+
+
+def test_discovery_starts_both_protocols_before_waiting_and_keeps_partial_success():
+    w, _ = window()
+    old_cast = device("Old TV", "uuid-a")
+    old_dlna = SimpleNamespace(key="DLNA · Old Renderer", model="Old", host="192.168.1.10")
+    new_dlna = SimpleNamespace(key="DLNA · New Renderer", model="New", host="192.168.1.11")
+    w.devices = [old_cast]
+    w.dlna_devices = [old_dlna]
+    both_entered = Event()
+    release = Event()
+    entered = set()
+
+    def scanner(name, result=None, failure=None):
+        def run():
+            entered.add(name)
+            if len(entered) == 2:
+                both_entered.set()
+            assert release.wait(2), "discovery scanners were not released"
+            if failure is not None:
+                raise failure
+            return result
+        return run
+
+    with mock.patch.object(castctl, "scan", side_effect=scanner(
+            "cast", failure=RuntimeError("Cast unavailable"))), \
+            mock.patch.object(dlna, "discover", side_effect=scanner("dlna", [new_dlna])):
+        w.scan_devices()
+        assert w.scan_busy
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            result_future = worker.submit(w.queued_work["work"])
+            assert both_entered.wait(1), "the second protocol did not start before the first completed"
+            release.set()
+            cast_result, dlna_result = result_future.result(timeout=2)
+
+    assert cast_result is None
+    assert dlna_result == [new_dlna]
+    w._scan_done((cast_result, dlna_result))
+    assert w.devices == [old_cast]
+    assert w.dlna_devices == [new_dlna]
 
 
 def test_unique_uuid_resolves_only_one_physical_receiver():
