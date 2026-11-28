@@ -41,7 +41,8 @@ def _scale_probe(app, prefix: str, gtk) -> None:
         return
     from gi.repository import Gdk
     provider = gtk.CssProvider()
-    provider.load_from_string("* { font-size: %d%%; }" % int(scale * 100))
+    # root only: "*" compounds per nesting level (1.25**depth) and inflated the window to 18546px
+    provider.load_from_string("window { font-size: %d%%; }" % int(scale * 100))
     gtk.StyleContext.add_provider_for_display(
         Gdk.Display.get_default(), provider, gtk.STYLE_PROVIDER_PRIORITY_USER)
     window = app.get_active_window() or (app.get_windows() or [None])[0]
