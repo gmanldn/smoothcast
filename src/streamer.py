@@ -2012,7 +2012,7 @@ class Session:
             process_priority.lower(self.ffmpeg, low_priority)
         try:
             self._start_server(local_ip, device_ip, token=generation)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - record the attempt outcome, then re-raise
             self._end_attempt("failed", f"stream server did not start: {exc}")
             _terminate(self.ffmpeg)
             self.ffmpeg = None
@@ -2075,7 +2075,7 @@ class Session:
                 device,
                 lambda info: playback_state.hls_session_matches(info, url, title),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - record the attempt outcome, then re-raise
             self._end_attempt("failed", f"receiver did not accept the stream: {exc}")
             raise
         self.state = SessionState(
