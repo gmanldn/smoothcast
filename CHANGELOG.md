@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e76ee56be22ae10f0b3dfa3f8705d37144ea9de0 -->
+<!-- sc-changelog-through: 77cc50058fb2822a7fba65699c6392db85b4f392 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **08:41:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **08:43:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **08:43:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`77cc50058fb2`](https://github.com/gmanldn/smoothcast/commit/77cc50058fb2822a7fba65699c6392db85b4f392)
+
+- 🟪 **08:43:07 · Tests** — test(a11y): clipped\_labels positive/negative control with GTK-free fakes (Refs #449) · [`aa3ae5712d5d`](https://github.com/gmanldn/smoothcast/commit/aa3ae5712d5d5f9a86f5d734b60bc59029ec4340)
 
 - ⬜ **08:41:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e76ee56be22a`](https://github.com/gmanldn/smoothcast/commit/e76ee56be22ae10f0b3dfa3f8705d37144ea9de0)
+
+- ⬜ **08:41:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`87a9775a1369`](https://github.com/gmanldn/smoothcast/commit/87a9775a1369ea46010e040481091a4cc02e3064)
 
 - 🟥 **08:41:06 · Fix** — fix(a11y): apply 200% scale via CSS font-size (xft-dpi did not take); scale override knob (Refs #449) · [`8e34f61a4732`](https://github.com/gmanldn/smoothcast/commit/8e34f61a47323518272296184015af8471c488be)
 
