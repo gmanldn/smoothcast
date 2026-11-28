@@ -65,8 +65,68 @@ class DlnaCapabilityTests(unittest.TestCase):
                              {"video/mp4", "video/webm"})
         soap.assert_called_once_with(renderer, "GetProtocolInfo", {}, connection=True)
 
+        unavailable = replace(renderer, connection_url="http://192.168.12.25:1400/missing")
         with mock.patch.object(dlna, "_soap", side_effect=dlna.DlnaError("timeout")):
-            self.assertEqual(dlna.advertised_http_formats(renderer), set())
+            self.assertEqual(dlna.advertised_http_formats(unavailable), set())
+
+    def test_protocol_negotiation_reuses_a_success_until_expiry_or_endpoint_change(self):
+        from dataclasses import replace
+        from xml.etree import ElementTree
+
+        renderer = replace(dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25"),
+                           connection_url="http://192.168.12.25:1400/cacheable")
+        alternate = replace(renderer, connection_url="http://192.168.12.25:1400/updated")
+        invalid = replace(renderer, connection_url="http://192.168.12.99:1400/cacheable")
+        response = ElementTree.fromstring("<root><Sink>http-get:*:video/mpeg:*</Sink></root>")
+        now = [100.0]
+        with (
+            mock.patch.object(dlna.time, "monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(dlna, "_soap", return_value=response) as soap,
+        ):
+            self.assertEqual(dlna.negotiate_media_type(renderer), "video/mpeg")
+            self.assertEqual(dlna.negotiate_media_type(renderer), "video/mpeg")
+            self.assertEqual(soap.call_count, 1)
+            self.assertEqual(dlna.negotiate_media_type(alternate), "video/mpeg")
+            self.assertEqual(soap.call_count, 2)
+            self.assertEqual(dlna.advertised_http_formats(invalid), frozenset())
+            self.assertEqual(soap.call_count, 2)
+            now[0] += 31.0
+            self.assertEqual(dlna.negotiate_media_type(renderer), "video/mpeg")
+            self.assertEqual(soap.call_count, 3)
+
+    def test_protocol_negotiation_retries_a_failed_probe(self):
+        from dataclasses import replace
+        from xml.etree import ElementTree
+
+        renderer = replace(dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25"),
+                           connection_url="http://192.168.12.25:1400/retry-protocol")
+        response = ElementTree.fromstring("<root><Sink>http-get:*:video/mpeg:*</Sink></root>")
+        with mock.patch.object(dlna, "_soap", side_effect=[dlna.DlnaError("timeout"), response, response]) as soap:
+            self.assertEqual(dlna.negotiate_media_type(renderer), "video/mp4")
+            self.assertEqual(dlna.negotiate_media_type(renderer), "video/mpeg")
+            self.assertEqual(dlna.negotiate_media_type(renderer), "video/mpeg")
+            self.assertEqual(soap.call_count, 2)
+
+    def test_protocol_cache_evicts_the_least_recently_used_endpoint(self):
+        from collections import OrderedDict
+        from dataclasses import replace
+        from xml.etree import ElementTree
+
+        renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
+        first, second, third = [
+            replace(renderer, connection_url=f"http://192.168.12.25:1400/{name}")
+            for name in ("first", "second", "third")
+        ]
+        response = ElementTree.fromstring("<root><Sink>http-get:*:video/mp4:*</Sink></root>")
+        with (
+            mock.patch.object(dlna, "_protocol_cache", OrderedDict()),
+            mock.patch.object(dlna, "MAX_PROTOCOL_CACHE_ENTRIES", 2),
+            mock.patch.object(dlna, "_soap", return_value=response) as soap,
+        ):
+            for receiver in (first, second, first, third, first, second):
+                self.assertEqual(dlna.negotiate_media_type(receiver), "video/mp4")
+            self.assertEqual([call.args[0] for call in soap.call_args_list],
+                             [first, second, third, second])
 
     def test_sink_negotiation_prefers_mp4_then_supported_mpeg_ts(self):
         renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")

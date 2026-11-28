@@ -8,15 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 51ffa1cb65e2f6c3358173672115cdece59d2713 -->
+<!-- sc-changelog-through: 3faf610ff1dc95c9d61afd60fcf5812005e5b0fe -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:43:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟦 **07:43:32 · Performance** — perf(dlna): reuse recent successful receiver format negotiation (Refs #725) <!-- sc-changelog-pending -->
 
 - ⬜ **07:43:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`51ffa1cb65e2`](https://github.com/gmanldn/smoothcast/commit/51ffa1cb65e2f6c3358173672115cdece59d2713)
 
 - 🟥 **07:43:18 · Fix** — fix(types): narrow duration in screen play so mypy passes (Refs #588) · [`5529b1581bf5`](https://github.com/gmanldn/smoothcast/commit/5529b1581bf5247a70b3761c933338f8418dcab6)
+
+- ⬜ **07:43:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`3faf610ff1dc`](https://github.com/gmanldn/smoothcast/commit/3faf610ff1dc95c9d61afd60fcf5812005e5b0fe)
 
 - ⬜ **07:41:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`87475d771c67`](https://github.com/gmanldn/smoothcast/commit/87475d771c677ec9fb1fed9a9eca65cfa5a65452)
 

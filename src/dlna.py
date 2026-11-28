@@ -8,6 +8,7 @@ explicit local file is served per session, under an unguessable URL.
 from __future__ import annotations
 
 import atexit
+from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
@@ -48,6 +49,8 @@ MAX_DESCRIPTION = 512 * 1024
 MAX_SOAP_RESPONSE = 128 * 1024
 MAX_RENDERERS = 64
 MAX_DISCOVERY_WORKERS = 8
+PROTOCOL_CACHE_SECONDS = 30.0
+MAX_PROTOCOL_CACHE_ENTRIES = MAX_RENDERERS
 CHUNK = 128 * 1024
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)\Z")
 MEDIA_TYPE = "video/mp4"
@@ -56,6 +59,8 @@ MPEG_TS_TYPES = {MPEG_TS_MEDIA_TYPE, "video/mp2t", "video/vnd.dlna.mpeg-tts"}
 
 _live_encoders: set[subprocess.Popen] = set()
 _encoder_lock = threading.Lock()
+_protocol_cache: OrderedDict[tuple, tuple[float, frozenset[str]]] = OrderedDict()
+_protocol_cache_lock = threading.Lock()
 
 
 def _stop_encoders_on_exit() -> None:
@@ -395,22 +400,42 @@ def _value(root: ET.Element, key: str) -> str:
 
 
 def advertised_http_formats(renderer: Renderer) -> frozenset[str]:
-    """Return advertised HTTP MIME types, or an empty set when unknown."""
-    if not renderer.connection_url:
+    """Return recent advertised HTTP MIME types, or an empty set when unknown."""
+    if not renderer.connection_url or not renderer.host:
         return frozenset()
+    try:
+        endpoint = _url(renderer.connection_url, expected_host=renderer.host)
+    except DlnaError:
+        return frozenset()
+    key = (renderer.key, renderer.transport_url, endpoint, renderer.connection_service)
+    with _protocol_cache_lock:
+        cached = _protocol_cache.get(key)
+        if cached is not None:
+            expires, formats = cached
+            if time.monotonic() < expires:
+                _protocol_cache.move_to_end(key)
+                return formats
+            _protocol_cache.pop(key)
     try:
         response = _soap(renderer, "GetProtocolInfo", {}, connection=True)
     except DlnaError:
         return frozenset()
 
-    formats = set()
+    supported = set()
     for entry in _value(response, "Sink").split(","):
         fields = entry.strip().split(":", 3)
         if len(fields) == 4 and fields[0].lower() in {"http-get", "*"}:
             mime = fields[2].strip().lower()
             if mime == "*" or "/" in mime:
-                formats.add(mime)
-    return frozenset(formats)
+                supported.add(mime)
+    formats = frozenset(supported)
+    if formats:
+        with _protocol_cache_lock:
+            _protocol_cache[key] = (time.monotonic() + PROTOCOL_CACHE_SECONDS, formats)
+            _protocol_cache.move_to_end(key)
+            while len(_protocol_cache) > MAX_PROTOCOL_CACHE_ENTRIES:
+                _protocol_cache.popitem(last=False)
+    return formats
 
 
 def negotiate_media_type(renderer: Renderer) -> str:
