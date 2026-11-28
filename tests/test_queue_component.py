@@ -33,3 +33,20 @@ def test_move_keeps_selection_on_same_path():
     sel = QueueComponent(q).move(0, 2, 0)
     assert q == ["b", "c", "a"] and sel == 2
     assert QueueComponent(q).move(1, 0, None) is None and q == ["c", "b", "a"]
+
+
+def test_headless_scenario_and_no_gtk_import():
+    import pathlib
+    import queue_component
+
+    src = pathlib.Path(queue_component.__file__).read_text(encoding="utf-8")
+    assert "gi" not in [ln.split()[1] for ln in src.splitlines() if ln.startswith(("import ", "from "))]
+    q: list[str] = []
+    c = QueueComponent(q)
+    assert c.add(["a", "b", "b", "c"]) == ["a", "b", "c"]
+    sel = c.move(2, 0, 1)  # c to front; selected "b" follows
+    assert q == ["c", "a", "b"] and sel == 2
+    removed, sel = c.remove(0, sel)
+    assert removed == "c" and q == ["a", "b"] and sel == 1
+    c.clear()
+    assert q == [] and c.reselect(sel) is None
