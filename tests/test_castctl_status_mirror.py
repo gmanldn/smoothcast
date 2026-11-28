@@ -5,6 +5,7 @@ return an empty ``UNKNOWN`` status forever, so a cast failed with "Receiver
 responded but did not report playback state" (Living Room TV).
 """
 import sys
+import threading
 import time
 from types import SimpleNamespace
 
@@ -129,6 +130,52 @@ def test_first_connection_with_no_media_session_reports_honestly(monkeypatch):
 
     assert status is not None and status["player_state"] == "UNKNOWN"
     assert created == [fresh] and not fresh.disconnected
+
+
+def test_forget_waits_for_receiver_socket_startup_before_disconnect(monkeypatch):
+    starting, allow_start = threading.Event(), threading.Event()
+    disconnected = threading.Event()
+    fresh = FakeChromecast()
+
+    def wait(timeout=None):
+        del timeout
+        starting.set()
+        assert allow_start.wait(2)
+        return True
+
+    def disconnect(timeout=None):
+        del timeout
+        disconnected.set()
+        fresh.disconnected = True
+
+    fresh.wait = wait
+    fresh.disconnect = disconnect
+    mirror, created = _mirror_with(monkeypatch, fresh)
+    statuses = []
+    reader = threading.Thread(
+        target=lambda: statuses.append(REAL_INFO(mirror, "10.0.0.6", 3.0)))
+    reader.start()
+    assert starting.wait(1)
+
+    drop_attempted = threading.Event()
+
+    def forget():
+        drop_attempted.set()
+        mirror.forget("10.0.0.6")
+
+    cleanup = threading.Thread(target=forget)
+    cleanup.start()
+    try:
+        assert drop_attempted.wait(1)
+        assert not disconnected.wait(0.05), "disconnect raced the SocketClient startup"
+    finally:
+        allow_start.set()
+    reader.join(2)
+    cleanup.join(2)
+
+    assert not reader.is_alive() and not cleanup.is_alive()
+    assert len(statuses) == 1 and statuses[0]["player_state"] == "PLAYING"
+    assert created == [fresh] and disconnected.is_set()
 
 
 def test_unreachable_receiver_reports_no_status(monkeypatch):
