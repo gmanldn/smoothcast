@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0cb5753522f037679b3212c6f52b07281db90512 -->
+<!-- sc-changelog-through: bd3f39958f54aca9fa415634f4d50a33bfd5b9f1 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:03:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:07:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:07:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd3f39958f54`](https://github.com/gmanldn/smoothcast/commit/bd3f39958f54aca9fa415634f4d50a33bfd5b9f1)
+
+- 🟥 **03:06:27 · Fix** — fix: tag the two attempt-recording re-raise handlers in streamer; lower broad-except baseline 6-&gt;5 (comment-only, no behaviour change) (Refs #706, #694) · [`0777c854b602`](https://github.com/gmanldn/smoothcast/commit/0777c854b6028a38ceb1ec2e81aecd104ff1381c)
 
 - ⬜ **03:03:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0cb5753522f0`](https://github.com/gmanldn/smoothcast/commit/0cb5753522f037679b3212c6f52b07281db90512)
 
 - 🟪 **03:03:58 · Tests** — test: protect active playback during queue contributions (Refs #325) · [`59e528e1891d`](https://github.com/gmanldn/smoothcast/commit/59e528e1891dc39b1237159923d592c1d7cabc29)
+
+- ⬜ **03:03:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f591bf7c4bcc`](https://github.com/gmanldn/smoothcast/commit/f591bf7c4bccb0794bbc4735da07f356a94cb57d)
 
 - ⬜ **03:00:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d829cd4044a1`](https://github.com/gmanldn/smoothcast/commit/d829cd4044a1f4e85304db1ed3aa523982eb802f)
 
