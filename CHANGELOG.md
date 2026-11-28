@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bd3f39958f54aca9fa415634f4d50a33bfd5b9f1 -->
+<!-- sc-changelog-through: 2ee595562ae64ef5c003ae8a1491831c3b1b0a3b -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:07:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:11:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:11:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2ee595562ae6`](https://github.com/gmanldn/smoothcast/commit/2ee595562ae64ef5c003ae8a1491831c3b1b0a3b)
+
+- 🟥 **03:11:36 · Fix** — fix: announce confirmed queue move position (Refs #324) · [`f5133d631c12`](https://github.com/gmanldn/smoothcast/commit/f5133d631c125629403b4d33485840a019cf32d2)
 
 - ⬜ **03:07:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd3f39958f54`](https://github.com/gmanldn/smoothcast/commit/bd3f39958f54aca9fa415634f4d50a33bfd5b9f1)
+
+- ⬜ **03:07:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c9ce3458304a`](https://github.com/gmanldn/smoothcast/commit/c9ce3458304ae6a4c4602f9dadc69a81f79cd29f)
 
 - 🟥 **03:06:27 · Fix** — fix: tag the two attempt-recording re-raise handlers in streamer; lower broad-except baseline 6-&gt;5 (comment-only, no behaviour change) (Refs #706, #694) · [`0777c854b602`](https://github.com/gmanldn/smoothcast/commit/0777c854b6028a38ceb1ec2e81aecd104ff1381c)
 
