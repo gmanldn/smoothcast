@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e48b256db0218e2102079fb395b58d8913ba32f0 -->
+<!-- sc-changelog-through: 2183c0d0b10dc1e277c28c7414324513804a8e7c -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **05:39:40 · Performance** — perf: preserve receiver dropdown model across unchanged scans (Refs #721) <!-- sc-changelog-pending -->
+- ⬜ **05:58:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:58:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2183c0d0b10d`](https://github.com/gmanldn/smoothcast/commit/2183c0d0b10dc1e277c28c7414324513804a8e7c)
+
+- ⬜ **05:58:03 · Maintenance** — chore(complexity): budget the #708 glance layout and #338 playback validation growth · [`6aa0b0c11347`](https://github.com/gmanldn/smoothcast/commit/6aa0b0c11347fe485d9f858a6ee44cdc062908d4)
+
+- 🟦 **05:39:44 · Performance** — perf: preserve receiver dropdown model across unchanged scans (Refs #721) · [`f210459598da`](https://github.com/gmanldn/smoothcast/commit/f210459598dada2db31714d28f52d1008bc16a5a)
 
 - ⬜ **05:38:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e48b256db021`](https://github.com/gmanldn/smoothcast/commit/e48b256db0218e2102079fb395b58d8913ba32f0)
 
