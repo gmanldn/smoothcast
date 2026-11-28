@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f363d78f10306f334e151b5d244c6178334358a2 -->
+<!-- sc-changelog-through: 84c2bdced15a0c33e54871920fc3be799530197d -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **02:52:00 · Fix** — fix(mesh): reject malformed or stale playback eligibility observations (Refs #740) <!-- sc-changelog-pending -->
+- ⬜ **02:54:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:54:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`84c2bdced15a`](https://github.com/gmanldn/smoothcast/commit/84c2bdced15a0c33e54871920fc3be799530197d)
+
+- 🟩 **02:54:31 · Feature** — feat: recover durable queue upload checkpoints (Refs #568) · [`585993241694`](https://github.com/gmanldn/smoothcast/commit/5859932416947872a5951f8bb0f91afb8a3ae5fa)
+
+- 🟥 **02:51:36 · Fix** — fix(mesh): reject malformed or stale playback eligibility observations (Refs #740) · [`3997fdbd55bc`](https://github.com/gmanldn/smoothcast/commit/3997fdbd55bc09bdf4f46aac5cb0c88cb9d2ef6a)
 
 - ⬜ **02:50:50 · Maintenance** — Merge branch 'main' into develop · [`f363d78f1030`](https://github.com/gmanldn/smoothcast/commit/f363d78f10306f334e151b5d244c6178334358a2)
 
