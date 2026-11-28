@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 5f1fb60d2448d43705d5d51a99cf2a3690cc0a27 -->
+<!-- sc-changelog-through: 03ac84dd9f435a308edc4514588e5bdf6e1d1a9c -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **05:27:30 · Performance** — perf: reduce idle DLNA HTTP shutdown latency (Refs #727) <!-- sc-changelog-pending -->
+- ⬜ **05:36:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:36:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`03ac84dd9f43`](https://github.com/gmanldn/smoothcast/commit/03ac84dd9f435a308edc4514588e5bdf6e1d1a9c)
+
+- 🟥 **05:36:38 · Fix** — fix(status): validate room playback measurements and codes (Refs #338) · [`e4e3693344a0`](https://github.com/gmanldn/smoothcast/commit/e4e3693344a00d2c078eb0b27abad90f9f22637e)
+
+- 🟦 **05:28:03 · Performance** — perf: reduce idle DLNA HTTP shutdown latency (Refs #727) · [`a8c35fec036e`](https://github.com/gmanldn/smoothcast/commit/a8c35fec036e14ce411db30b1fba9a4ef9f23619)
 
 - ⬜ **05:25:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`013b37ab6591`](https://github.com/gmanldn/smoothcast/commit/013b37ab6591acc044f9dc9d2697cf63ff3c388c)
 
