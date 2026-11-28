@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f0a7fbd357af7a8b164b3f957cc224b25a2d5163 -->
+<!-- sc-changelog-through: 85b08e0c4b3c9a9656f93e97d078107fd85d001e -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:20:57 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:28:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:28:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`85b08e0c4b3c`](https://github.com/gmanldn/smoothcast/commit/85b08e0c4b3c9a9656f93e97d078107fd85d001e)
+
+- 🟥 **03:28:49 · Fix** — fix: keep endpoint coalescing within module budget (Refs #723) · [`19015e13e9e7`](https://github.com/gmanldn/smoothcast/commit/19015e13e9e78480a7c1d363d5dfdb7328eb37c4)
+
+- 🟥 **03:25:57 · Fix** — fix: coalesce manual Cast connections by endpoint (Refs #723) · [`816f33dc549a`](https://github.com/gmanldn/smoothcast/commit/816f33dc549a4fc6bc68481e6772cca48e211629)
 
 - ⬜ **03:20:57 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0a7fbd357af`](https://github.com/gmanldn/smoothcast/commit/f0a7fbd357af7a8b164b3f957cc224b25a2d5163)
 
 - 🟦 **03:20:57 · Performance** — perf: return warm Cast scan snapshot immediately (Refs #719) · [`5aba068b655e`](https://github.com/gmanldn/smoothcast/commit/5aba068b655e63c081f981f7f2efb836a6907d9e)
+
+- ⬜ **03:20:57 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f3b2b35af162`](https://github.com/gmanldn/smoothcast/commit/f3b2b35af16248d751284e562b783c17260705b9)
 
 - ⬜ **03:19:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`724b0a1e039a`](https://github.com/gmanldn/smoothcast/commit/724b0a1e039a3a007b6cffdf823b6d4df149c00e)
 
