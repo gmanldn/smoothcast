@@ -14,6 +14,8 @@ import dlna
 import playback_state
 import cast_targets
 import reliability_metrics
+import errors
+from async_jobs import UserFacingError
 from cast_widgets import save_config, fmt_time, Async
 
 
@@ -29,7 +31,7 @@ class DeviceDiscoveryMixin:
         self.device_detail.set_text("Scanning Cast and DLNA receivers…")
 
         def work():
-            errors = []
+            failures = []
             # These are independent network protocols. Start both while this
             # bounded discovery worker is active, then merge only their
             # results here; GTK state remains owned by the completion callback.
@@ -40,14 +42,19 @@ class DeviceDiscoveryMixin:
                     cast_devices = cast_future.result()
                 except Exception as exc:
                     cast_devices = None
-                    errors.append(f"Cast discovery: {exc}")
+                    failures.append(f"Cast discovery: {exc}")
+                    errors.record("discovery.failed", {"protocol": "cast"})
                 try:
                     dlna_devices = dlna_future.result()
                 except Exception as exc:
                     dlna_devices = None
-                    errors.append(f"DLNA discovery: {exc}")
+                    failures.append(f"DLNA discovery: {exc}")
+                    errors.record("discovery.failed", {"protocol": "dlna"})
             if cast_devices is None and dlna_devices is None:
-                raise RuntimeError("; ".join(errors))
+                spec = errors.CATALOGUE["discovery.failed"]
+                raise UserFacingError(
+                    spec.message, detail="; ".join(failures), code=spec.code,
+                )
             return cast_devices, dlna_devices
 
         def completed(devices):

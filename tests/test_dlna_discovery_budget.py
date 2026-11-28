@@ -10,11 +10,14 @@ import textwrap
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import dlna
+import errors
+from async_jobs import UserFacingError
 from gui_source import main_window_methods
 
 
@@ -100,15 +103,18 @@ class DeadlineTests(unittest.TestCase):
 
 
 class RescanOwnershipTests(unittest.TestCase):
-    def make_window(self):
+    def make_window(self, *, cast_scan=None, dlna_discover=None):
         code = main_window_methods()["scan_devices"]
         callbacks = []
         class Async:
             @staticmethod
             def run(work, done=None, failed=None, **_kwargs):
                 callbacks.append((work, done, failed))
-        namespace = {"Async": Async, "castctl": SimpleNamespace(scan=lambda: []),
-                     "dlna": SimpleNamespace(discover=lambda: [])}
+        namespace = {"Async": Async,
+                     "castctl": SimpleNamespace(scan=cast_scan or (lambda: [])),
+                     "dlna": SimpleNamespace(discover=dlna_discover or (lambda: [])),
+                     "ThreadPoolExecutor": ThreadPoolExecutor,
+                     "errors": errors, "UserFacingError": UserFacingError}
         exec(compile("class Window:\n" + textwrap.indent(code, "    "), "<scanning-test>", "exec"), namespace)
         window = namespace["Window"]()
         window._closing = False
@@ -149,6 +155,29 @@ class RescanOwnershipTests(unittest.TestCase):
         self.assertEqual(len(callbacks), 2)
         callbacks[1][1]((["new"], []))
         self.assertEqual(published, [(["new"], [])])
+
+    def test_total_discovery_failure_uses_catalogue_copy_and_code(self):
+        def fail(message):
+            raise OSError(message)
+        window, callbacks, _published = self.make_window(
+            cast_scan=lambda: fail("private Cast detail"),
+            dlna_discover=lambda: fail("private DLNA detail"),
+        )
+        window.scan_devices()
+        errors.reset_recent()
+        with self.assertRaises(UserFacingError) as raised:
+            callbacks[0][0]()
+        self.assertEqual(raised.exception.code, "discovery.failed")
+        self.assertEqual(raised.exception.user_message,
+                         errors.CATALOGUE["discovery.failed"].message)
+        self.assertNotIn("private Cast detail", raised.exception.user_message)
+        self.assertIn("private Cast detail", str(raised.exception))
+        recorded = errors.recent()
+        self.assertEqual([entry["code"] for entry in recorded],
+                         ["discovery.failed", "discovery.failed"])
+        self.assertEqual({entry["context"]["protocol"] for entry in recorded},
+                         {"cast", "dlna"})
+        errors.reset_recent()
 
 
 if __name__ == "__main__":
