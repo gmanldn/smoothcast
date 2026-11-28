@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b99ab4b3ff352c456b7c598ceb115705f1919e03 -->
+<!-- sc-changelog-through: 2694c98e9162af2db2a949d99457ed5b1cc35046 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:04:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:06:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:06:54 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2694c98e9162`](https://github.com/gmanldn/smoothcast/commit/2694c98e9162af2db2a949d99457ed5b1cc35046)
+
+- 🟪 **04:06:51 · Tests** — test: cover Cast status connection startup cleanup race (Refs #202) · [`cd024fd77456`](https://github.com/gmanldn/smoothcast/commit/cd024fd7745659162476bef1d319d5c8a1e3a6fb)
 
 - ⬜ **04:04:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b99ab4b3ff35`](https://github.com/gmanldn/smoothcast/commit/b99ab4b3ff352c456b7c598ceb115705f1919e03)
 
 - 🟥 **04:04:09 · Fix** — fix(update): fail closed on unknown remote comparison (Refs #711) · [`e99f9cc616d9`](https://github.com/gmanldn/smoothcast/commit/e99f9cc616d9efcee72955544f3c276fdff1b296)
+
+- ⬜ **04:04:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`470c7d19f681`](https://github.com/gmanldn/smoothcast/commit/470c7d19f681df665c94a7728b5dac0d27416512)
 
 - ⬜ **03:59:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d130bc2292f8`](https://github.com/gmanldn/smoothcast/commit/d130bc2292f8067b8d2904a99f024a5eaf7fbcf7)
 
