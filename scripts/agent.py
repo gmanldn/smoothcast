@@ -970,10 +970,19 @@ def unquarantined(ids: list[str]) -> list[str]:
     import datetime
     try:
         entries = json.loads((ROOT / "tests" / "quarantine.json").read_text())["entries"]
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
         entries = {}
+    if not isinstance(entries, dict):
+        entries = {}  # a corrupt file must excuse nothing, never crash the gate
     today = datetime.date.today().isoformat()
-    return [i for i in ids if str(entries.get(i, {}).get("expires", "")) < today]
+
+    def live(entry) -> bool:
+        # A quarantine line excuses red only while it names an owner, a ticket
+        # and an unexpired date; anything less is red nobody answers for.
+        return (isinstance(entry, dict) and bool(str(entry.get("owner", "")).strip())
+                and bool(entry.get("ticket")) and str(entry.get("expires", "")) >= today)
+
+    return [i for i in ids if not live(entries.get(i))]
 
 
 def failing_on_develop(ids: list[str]) -> set[str]:
@@ -1321,12 +1330,17 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         print((res.stdout + res.stderr)[-1800:])
                         print(f"  YOUR failures: {', '.join(sorted(mine))[:400]}")
                         return 1
-                    print(f"  NOT yours: {len(ids)} test(s) already fail on "
-                          f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
                     orphan = unquarantined(ids)
                     if orphan:
-                        print("  WARNING: red with no owner/expiry; add to tests/quarantine.json "
-                              f"or fix (#700): {', '.join(orphan)[:300]}")
+                        # Known-red nobody owns trains agents to ignore red (#700): stop here.
+                        print(f"  NOT yours, but UNOWNED: {len(orphan)} test(s) already fail on "
+                              f"origin/develop with no live entry in tests/quarantine.json: "
+                              f"{', '.join(orphan)[:300]}")
+                        print("  Fix them, or add an entry (owner, ticket, expires) so the red has "
+                              "an answerable owner, then rerun ship; your commit is preserved.")
+                        return 1
+                    print(f"  NOT yours: {len(ids)} quarantined test(s) fail on "
+                          f"origin/develop; pushing: {', '.join(ids)[:300]}")
                 else:
                     checks_run.append(label)
             checked_base = git("rev-parse", "origin/develop").strip()
