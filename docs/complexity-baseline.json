@@ -54,7 +54,7 @@
   "cast_ui.py": 1553,
   "cast_ui_timers.py": 268,
   "cast_widgets.py": 890,
-  "castctl.py": 860,
+  "castctl.py": 862,
   "cec_control.py": 77,
   "chapters.py": 94,
   "chrome_ingress_session.py": 121,
@@ -69,8 +69,9 @@
   "control_api.py": 373,
   "control_lease.py": 49,
   "crossfade_plan.py": 67,
+  "demo_cast_helper.py": 37,
   "demo_launch.py": 91,
-  "demo_mode.py": 159,
+  "demo_mode.py": 178,
   "demo_runtime.py": 86,
   "demo_session.py": 83,
   "density.py": 72,
@@ -368,6 +369,6 @@
   "watch_history.py": 208,
   "zoom_pan.py": 78
  },
- "src_lines": 67784,
- "src_modules": 365
+ "src_lines": 67842,
+ "src_modules": 366
 }
