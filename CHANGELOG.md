@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 90885b759278cdfaa226fe55a5a988488ca49a52 -->
+<!-- sc-changelog-through: 23db532153e3cb70f3216c583619876127940ffa -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **07:54:55 · Performance** — perf(upload): resume progressive MP4 index scans (Refs #735) (Refs #735) <!-- sc-changelog-pending -->
+- 🟪 **07:56:03 · Tests** — test(cast): measure intent, LOAD and playback confirmation separately (Refs #737) <!-- sc-changelog-pending -->
+
+- 🟦 **07:55:06 · Performance** — perf(upload): resume progressive MP4 index scans (Refs #735) (Refs #735) · [`23db532153e3`](https://github.com/gmanldn/smoothcast/commit/23db532153e3cb70f3216c583619876127940ffa)
 
 - 🟥 **07:53:41 · Fix** — fix(screens): serialize and coalesce browser playback reports (Refs #755) · [`90885b759278`](https://github.com/gmanldn/smoothcast/commit/90885b759278cdfaa226fe55a5a988488ca49a52)
 
