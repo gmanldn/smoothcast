@@ -363,7 +363,8 @@ class PyChromecastBackend:
                 elif state == "PAUSED":
                     _media_call(media.play, timeout=timeout)
                 else:
-                    return _fail("cast.command_failed")
+                    # Never guess a toggle direction from an unknown state.
+                    return _fail("cast.status_unavailable")
             elif action == "stop":
                 _media_call(media.stop, timeout=timeout)
             elif action == "seek" and len(args) > 1:

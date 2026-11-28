@@ -777,7 +777,12 @@ def test_toggle_requires_known_receiver_playback_state(state, expected):
         cast.media_controller.calls.clear()
         success, message = backend.command("Living Room", "play_toggle")
         if expected is None:
-            assert not success and message
+            import errors
+            assert not success
+            if state is None:   # connection lost: the receiver is simply not connected
+                assert message == "Receiver is not connected. Scan the network and choose it again."
+            else:               # connected but no usable state: specific, actionable copy
+                assert message == errors.CATALOGUE["cast.status_unavailable"].message
             assert cast.media_controller.calls == []
         else:
             assert success
