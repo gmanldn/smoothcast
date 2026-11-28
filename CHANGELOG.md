@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 23db532153e3cb70f3216c583619876127940ffa -->
+<!-- sc-changelog-through: dabf921f04236624e4ee11d715b93dcfcdaa858f -->
 
 ## 2026-11-28 · UTC
 
-- 🟪 **07:56:03 · Tests** — test(cast): measure intent, LOAD and playback confirmation separately (Refs #737) <!-- sc-changelog-pending -->
+- ⬜ **07:58:22 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:58:22 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dabf921f0423`](https://github.com/gmanldn/smoothcast/commit/dabf921f04236624e4ee11d715b93dcfcdaa858f)
+
+- 🟥 **07:58:22 · Fix** — fix(lint): ffprobe size stat uses explicit suppress; restores silent-swallow ratchet (Refs #207) · [`3dd2974130c2`](https://github.com/gmanldn/smoothcast/commit/3dd2974130c2d8e0c30d74483bb0035d4854943d)
+
+- 🟪 **07:56:10 · Tests** — test(cast): measure intent, LOAD and playback confirmation separately (Refs #737) · [`d233f5bc6340`](https://github.com/gmanldn/smoothcast/commit/d233f5bc6340e23124b13d5b438447fef236493d)
 
 - 🟦 **07:55:06 · Performance** — perf(upload): resume progressive MP4 index scans (Refs #735) (Refs #735) · [`23db532153e3`](https://github.com/gmanldn/smoothcast/commit/23db532153e3cb70f3216c583619876127940ffa)
 
