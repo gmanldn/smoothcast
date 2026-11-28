@@ -30,6 +30,7 @@ import responsive_layout
 import gui_test_safety
 from cast_portal import PortalMixin
 from network_activity_ui import NetworkActivityController
+from portal_upload_recovery import PortalUploadRecoveryController
 from cast_portal_queue import PortalQueueMixin
 from join_slate_ui import JoinSlateController
 import version
@@ -63,6 +64,9 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiT
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._upload_recovery = PortalUploadRecoveryController(self)
+        self._reconcile_portal_casts = self._upload_recovery.reconcile  # #691
+        self._retry_portal_cast = self._upload_recovery.retry
         self._network_activity = NetworkActivityController(self)
         self._build_network_activity_card = self._network_activity._build_network_activity_card  # #691
         self._refresh_network_activity = self._network_activity._refresh_network_activity

@@ -1068,7 +1068,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "peer_discovery_ui.refresh_peer_links" in methods["_refresh_portal_activity"]
     peer_ui = Path(__file__).resolve().parents[1] / "src" / "peer_discovery_ui.py"
     assert "peer['id'][:6]" in peer_ui.read_text(encoding="utf-8")
-    assert "mark_early_cast" in methods["_reconcile_portal_casts"]
+    assert "mark_early_cast" in (Path(__file__).resolve().parents[1] / "src" / "portal_upload_recovery.py").read_text(encoding="utf-8")
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",
                       "queue_clear", "next", "previous"):

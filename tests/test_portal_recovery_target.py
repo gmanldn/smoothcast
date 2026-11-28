@@ -2,7 +2,6 @@
 from pathlib import Path
 import ast
 import threading
-import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -23,10 +22,15 @@ class PortalRequestError(Exception):
 
 
 recovery_target = method("portal_uploads.py", "recovery_target", {})
-retry = method("portal_upload_recovery.py", "_retry_portal_cast", {
-    "portal": SimpleNamespace(PortalRequestError=PortalRequestError),
-    "pathlib": SimpleNamespace(Path=Path), "time": time,
-})
+
+def retry(window, upload_id, path):
+    import portal_upload_recovery
+    original = portal_upload_recovery.portal.PortalRequestError
+    portal_upload_recovery.portal.PortalRequestError = PortalRequestError
+    try:
+        return portal_upload_recovery.PortalUploadRecoveryController(window).retry(upload_id, path)
+    finally:
+        portal_upload_recovery.portal.PortalRequestError = original
 
 
 @pytest.mark.parametrize("change", [

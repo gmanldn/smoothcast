@@ -68,8 +68,7 @@ def _build_window(tmp_path, *, idle_add=None):
         "_portal_upload_path", "_portal_queue_action", "_portal_handle",
         "_portal_note_display_name",
         "_portal_dispatch", "_publish_portal_status",
-        "_portal_apply_music_autogain", "_reconcile_portal_casts",
-        "_retry_portal_cast"))
+        "_portal_apply_music_autogain"))
     idle: list = []
     namespace = {
         "portal": SimpleNamespace(PortalRequestError=_PortalRequestError),
@@ -86,6 +85,10 @@ def _build_window(tmp_path, *, idle_add=None):
     }
     exec(compile("class Window:\n" + code, "<portal-handle-test>", "exec"), namespace)
     window = namespace["Window"]()
+    import portal_upload_recovery
+    recovery = portal_upload_recovery.PortalUploadRecoveryController(window, glib=namespace["GLib"])
+    window._reconcile_portal_casts = recovery.reconcile
+    window._retry_portal_cast = recovery.retry
     saved = []
     window.busy = False
     window.now_playing = None
