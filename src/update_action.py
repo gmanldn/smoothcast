@@ -86,7 +86,10 @@ class UpdateRunner:
             self._set("failed", "Could not reach the update server. Check your network.")
             return self.snapshot()
         count = self._git(self.repo, ["rev-list", "--count", f"HEAD..origin/{self.channel}"])
-        behind = int(count) if count and count.isdigit() else 0
+        if count is None or not count.isdigit():
+            self._set("failed", "Could not confirm which build is latest. Check again before updating.")
+            return self.snapshot()
+        behind = int(count)
         if behind:
             self._set("available", f"{behind} newer change{'' if behind == 1 else 's'} ready to install.", behind)
         else:

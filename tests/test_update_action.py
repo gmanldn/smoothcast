@@ -1,3 +1,5 @@
+import pytest
+
 import update_action as ua
 
 
@@ -41,6 +43,16 @@ def test_up_to_date_and_dirty_checkout_never_offer_update(tmp_path):
     snap = r.check()
     assert not snap["can_update"] and "local changes" in snap["message"]
     assert "not on the develop" in ua.UpdateRunner(tmp_path, git=git_table(branch="topic")).check()["message"]
+
+
+@pytest.mark.parametrize("behind", [None, "", "unknown", "-1"])
+def test_unreadable_remote_comparison_is_a_failure_not_up_to_date(tmp_path, behind):
+    r = ua.UpdateRunner(tmp_path, git=git_table(behind=behind))
+    snapshot = r.check()
+    assert snapshot["state"] == "failed"
+    assert not snapshot["can_update"]
+    assert "Could not confirm which build is latest" in snapshot["message"]
+    assert not r.apply()["ok"]
 
 
 def test_playing_requires_confirmation(tmp_path):
