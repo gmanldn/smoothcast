@@ -58,7 +58,8 @@ def test_missing_fields_never_raise():
 def test_find_window_is_wired_into_actions_menu_and_main_window():
     control = (ROOT / "src/cast_control.py").read_text(encoding="utf-8")
     assert 'simple("find-house", lambda *a: self._window().action_find_house())' in control
-    assert "FindMixin" in control.split("class MainWindow(")[1].split(")")[0]
+    assert "FindMixin" not in control.split("class MainWindow(")[1].split(")")[0]
+    assert "FindController(self)" in control
     assert '"Find in the house…", "app.find-house"' in (ROOT / "src/cast_ui.py").read_text(encoding="utf-8")
     ui = (ROOT / "src/find_ui.py").read_text(encoding="utf-8")
     assert "markup_escape_text(item.title)" in ui and "markup_escape_text(item.subtitle)" in ui

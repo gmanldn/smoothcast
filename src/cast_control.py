@@ -52,16 +52,19 @@ from cast_av import AvMixin
 from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_ui_timers import UiTimerMixin
-from find_ui import FindMixin
+from find_ui import FindController
 from cast_subtitles import SubtitleController
 from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._find = FindController(self)
+        self.action_find_house = self._find.action_find_house  # #691
+        self._house_search = self._find.house_search
         self._room_checkpoint_ui = RoomCheckpointController(self)
         self._offer_room_recovery = self._room_checkpoint_ui.offer_recovery  # #691
         self._recover_room_checkpoint = self._room_checkpoint_ui.recover

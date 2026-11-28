@@ -97,20 +97,24 @@ class FindWindow(Adw.Window):
         button.set_label("Added")
 
 
-class FindMixin:
-    """MainWindow entry points for the Find window."""
+class FindController:
+    """Composition replacement for FindMixin (#691): MainWindow entry points for the Find window."""
+
+    def __init__(self, window) -> None:
+        self.w = window
+        self._window = None
 
     def action_find_house(self) -> None:
-        window = getattr(self, "_find_window", None)
+        window = self._window
         if window is None or not window.get_visible():
-            window = FindWindow(self)
-            self._find_window = window
+            window = FindWindow(self.w)
+            self._window = window
         window.present()
 
-    def _house_search(self, text: str) -> dict:
+    def house_search(self, text: str) -> dict:
         """Federated search when the mesh library is running, else this computer only."""
-        mesh = getattr(self, "_mesh_library", None)
+        mesh = getattr(self.w, "_mesh_library", None)
         if mesh is not None:
             return mesh.search_service.search(text, 50)
-        indexer = getattr(self, "_library_indexer", None)
+        indexer = getattr(self.w, "_library_indexer", None)
         return indexer.search(text, 50) if indexer is not None else {"groups": []}
