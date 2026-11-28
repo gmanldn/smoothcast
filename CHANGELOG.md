@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 354118750bb537a60b7bdc19f5e28ac20abe5017 -->
+<!-- sc-changelog-through: 2aede22e5032fe8635978fe46c77937411614e40 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **11:13:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **11:18:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **11:18:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2aede22e5032`](https://github.com/gmanldn/smoothcast/commit/2aede22e5032fe8635978fe46c77937411614e40)
+
+- 🟪 **11:18:29 · Tests** — test(a11y): scale probe waits for relayout and fails when the window outgrows the screen (Refs #449) · [`68384f404a5d`](https://github.com/gmanldn/smoothcast/commit/68384f404a5d755836bb72e4a33e895282c51afc)
 
 - ⬜ **11:13:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`354118750bb5`](https://github.com/gmanldn/smoothcast/commit/354118750bb537a60b7bdc19f5e28ac20abe5017)
+
+- ⬜ **11:13:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f8740dda1ac6`](https://github.com/gmanldn/smoothcast/commit/f8740dda1ac66d4eccd7b0e807a59684a2270829)
 
 - 🟨 **11:13:37 · Documentation** — docs(platform): hardware encoder port evidence table, native results UNVERIFIED (Refs #703) · [`4e19b7e3f01c`](https://github.com/gmanldn/smoothcast/commit/4e19b7e3f01c90e2d0a990bcdf7894053af239ba)
 
