@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 92253d8e0e8d356d042b83696abe237dcfc730a4 -->
+<!-- sc-changelog-through: 658f87a73d7db8164c4f97775e82c30448f77f12 -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **04:38:00 · Fix** — fix: pin cast recovery actions to the original receiver identity (Refs #745) <!-- sc-changelog-pending -->
+- ⬜ **04:42:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:42:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`658f87a73d7d`](https://github.com/gmanldn/smoothcast/commit/658f87a73d7db8164c4f97775e82c30448f77f12)
+
+- 🟩 **04:42:14 · Feature** — feat(room): show Up Next in the Home glance (Refs #709) · [`dd0ad47a5194`](https://github.com/gmanldn/smoothcast/commit/dd0ad47a5194ebf4315cd3aa450dd43bb911b55d)
+
+- 🟥 **04:38:28 · Fix** — fix: pin cast recovery actions to the original receiver identity (Refs #745) · [`9c3d20953f0b`](https://github.com/gmanldn/smoothcast/commit/9c3d20953f0b595aab53d0e16a091eb43826c8c9)
 
 - ⬜ **04:37:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`92253d8e0e8d`](https://github.com/gmanldn/smoothcast/commit/92253d8e0e8d356d042b83696abe237dcfc730a4)
 
