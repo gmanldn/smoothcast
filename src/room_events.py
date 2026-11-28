@@ -73,6 +73,16 @@ class QueueStore:
         self._snapshot: tuple[str, ...] = ()
         self.sync(self.state.items)  # adopting a non-empty list starts the log with its contents
 
+    @classmethod
+    def restore(cls, events) -> "QueueStore":
+        """Rejoin: rebuild a store from a replayed log and keep appending to it."""
+        store = cls()
+        for event in events:
+            apply(store.state, event)
+            store.log.append(event)
+        store._snapshot = tuple(store.state.items)
+        return store
+
     def sync(self, live: list[str]) -> None:
         """Record edits made outside the store (or a replaced list) as one ``replaced`` event."""
         if live is self.state.items and tuple(live) == self._snapshot:

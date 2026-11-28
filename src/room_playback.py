@@ -68,6 +68,15 @@ class PlaybackStore:
         self.log: list[PlaybackEvent] = []
         self._seen: dict[str, tuple[PlaybackEvent, ...]] = {}
 
+    @classmethod
+    def restore(cls, events) -> "PlaybackStore":
+        """Rejoin: rebuild a store from a replayed log and keep appending to it."""
+        store = cls()
+        for event in events:
+            apply(store.state, event)
+            store.log.append(event)
+        return store
+
     def submit(self, command_id: str, kind: str, actor: str, *args,
                expected_revision: int | None = None) -> tuple[PlaybackEvent, ...]:
         """Run a command for ``actor``; rejected or no-op commands return ``()``."""
