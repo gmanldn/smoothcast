@@ -50,3 +50,31 @@ def test_acceptance_distinct_from_playback_confirmation():
     assert P.status(True, "idle") == "Accepted — waiting for the screen to start"
     assert P.status(True, None).startswith("Accepted")
     assert P.status(True, "playing") == "Playing" and P.status(False, "playing") == "Choose where to play"
+
+
+def test_conflicting_ready_and_foreign_busy_is_unavailable_both_orders():
+    fresh_ready = Seen("n1", "ready", 0)
+    fresh_busy = Seen("n2", "busy", 0)
+    for seen_by in ((fresh_ready, fresh_busy), (fresh_busy, fresh_ready)):
+        e = TargetEntry(id="t", name="Den", kinds=("chromecast",), models=(), formats=(),
+                        seen_by=seen_by, state="ready", owner_hint="bob")
+        row = P.rows([e], "me")[0]
+        assert row["ready"] is False
+        assert row["state"] == "busy"
+        assert row["reason"] == P.REASONS["foreign"]
+        assert row["via"] is None
+    rows = P.rows([TargetEntry(id="t", name="Den", kinds=("chromecast",), models=(), formats=(),
+                               seen_by=(fresh_ready, fresh_busy), state="ready", owner_hint="bob")], "me")
+    assert P.validate("t", rows)[0] != 200
+
+
+def test_expired_busy_then_fresh_ready_recovers():
+    stale_busy = Seen("n2", "busy", 99999)
+    fresh_ready = Seen("n1", "ready", 0)
+    e = TargetEntry(id="t", name="Den", kinds=("chromecast",), models=(), formats=(),
+                    seen_by=(stale_busy, fresh_ready), state="ready", owner_hint="bob")
+    row = P.rows([e], "me")[0]
+    assert row["ready"] is True
+    assert row["state"] == "ready"
+    assert row["reason"] == ""
+    assert row["via"] == "n1"
