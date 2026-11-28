@@ -711,7 +711,7 @@ def require_compatible_ffmpeg() -> tuple[int, int]:
     try:
         return ffmpeg_compat.require_supported_ffmpeg()
     except ffmpeg_compat.FFmpegVersionError as exc:
-        raise StreamError(str(exc)) from exc
+        raise errors.coded(StreamError(str(exc)), exc.code) from exc
 
 
 def host_ip(device_host: str | None = None) -> str:

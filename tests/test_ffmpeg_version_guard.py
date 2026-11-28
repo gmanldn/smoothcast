@@ -12,6 +12,7 @@ from unittest import mock
 import pytest
 
 import ffmpeg_compat
+import failure_boundary
 import streamer
 
 
@@ -88,10 +89,12 @@ def test_failed_binary_and_unknown_banner_are_rejected():
 def test_streamer_wraps_version_error_as_user_visible_stream_error():
     with mock.patch.object(
         streamer.ffmpeg_compat, "require_supported_ffmpeg",
-        side_effect=ffmpeg_compat.FFmpegVersionError("Install FFmpeg 5.0 or newer")
+        side_effect=ffmpeg_compat.FFmpegVersionError(
+            "Install FFmpeg 5.0 or newer", code="ffmpeg.missing")
     ):
-        with pytest.raises(streamer.StreamError, match="Install FFmpeg 5.0"):
+        with pytest.raises(streamer.StreamError, match="Install FFmpeg 5.0") as caught:
             streamer.require_compatible_ffmpeg()
+    assert failure_boundary.describe(caught.value).code == "ffmpeg.missing"
 
 
 def test_incompatible_encoder_aborts_before_route_cache_or_process():
