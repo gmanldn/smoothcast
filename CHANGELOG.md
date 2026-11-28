@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 013b37ab6591acc044f9dc9d2697cf63ff3c388c -->
+<!-- sc-changelog-through: 5f1fb60d2448d43705d5d51a99cf2a3690cc0a27 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:25:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟦 **05:27:30 · Performance** — perf: reduce idle DLNA HTTP shutdown latency (Refs #727) <!-- sc-changelog-pending -->
 
 - ⬜ **05:25:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`013b37ab6591`](https://github.com/gmanldn/smoothcast/commit/013b37ab6591acc044f9dc9d2697cf63ff3c388c)
+
+- ⬜ **05:25:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5f1fb60d2448`](https://github.com/gmanldn/smoothcast/commit/5f1fb60d2448d43705d5d51a99cf2a3690cc0a27)
 
 - 🟥 **05:25:43 · Fix** — fix: code unavailable streaming interface failures (Refs #207) · [`7d22f3632f59`](https://github.com/gmanldn/smoothcast/commit/7d22f3632f5957d9eee947ee8dd71dd3eb061335)
 

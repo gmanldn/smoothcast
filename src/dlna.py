@@ -674,7 +674,9 @@ class ProgressiveFileServer:
         self.httpd.daemon_threads = True
         self.httpd.media_type = self.media_type
         self.port = self.httpd.server_address[1]
+        # Bound the idle shutdown wait when switching receivers or films.
         self.thread = threading.Thread(target=self.httpd.serve_forever,
+                                       kwargs={"poll_interval": 0.05},
                                        name="smoothcast-dlna-http", daemon=True)
         self.thread.start()
 

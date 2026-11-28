@@ -12,7 +12,10 @@ from pathlib import Path
 import socket
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -151,6 +154,25 @@ class ProgressiveHttpTests(unittest.TestCase):
         self.server.close()
         with self.assertRaises(OSError):
             self.request("GET")
+
+    def test_idle_shutdown_releases_socket_and_thread_promptly(self):
+        samples = []
+        for _ in range(10):
+            ready = threading.Event()
+            with mock.patch.object(dlna._DLNAMediaHTTPServer, "service_actions",
+                                   lambda _server: ready.set()):
+                server = dlna.ProgressiveFileServer(self.path, receiver_ip="192.168.12.25")
+                try:
+                    self.assertTrue(ready.wait(2), "server never entered the accept loop")
+                finally:
+                    started = time.monotonic()
+                    server.close()
+                    samples.append(time.monotonic() - started)
+            self.assertFalse(server.thread.is_alive())
+            with socket.socket() as probe:
+                probe.settimeout(0.2)
+                self.assertNotEqual(probe.connect_ex(("127.0.0.1", server.port)), 0)
+        self.assertLess(max(samples), 0.15, f"idle shutdown samples (seconds): {samples}")
 
     def test_a_dropped_client_does_not_kill_the_server(self):
         raw = socket.create_connection(("127.0.0.1", self.server.port), timeout=3)
