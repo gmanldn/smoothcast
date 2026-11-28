@@ -84,6 +84,26 @@ def test_spawn_relaunch_needs_launcher(tmp_path):
     assert ua.spawn_relaunch(tmp_path) is False
 
 
+def test_spawn_relaunch_detaches_through_canonical_launcher(tmp_path, monkeypatch):
+    from pathlib import Path
+    import sys
+
+    launcher = tmp_path / "sc.py"
+    launcher.write_text("# test launcher\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(ua.subprocess, "Popen", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    assert ua.spawn_relaunch(tmp_path, delay=0.25)
+    assert len(calls) == 1
+    args, options = calls[0]
+    assert args[0] == ["sh", "-c", 'sleep 0.25; exec "$0" "$1"', sys.executable, str(launcher)]
+    assert options["cwd"] == Path(tmp_path)
+    assert options["start_new_session"] is True
+    assert options["stdin"] is ua.subprocess.DEVNULL
+    assert options["stdout"] is ua.subprocess.DEVNULL
+    assert options["stderr"] is ua.subprocess.DEVNULL
+
+
 def test_portal_page_has_update_button_and_routes():
     import portal
     import portal_update_http
