@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d829cd4044a1f4e85304db1ed3aa523982eb802f -->
+<!-- sc-changelog-through: 0cb5753522f037679b3212c6f52b07281db90512 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:00:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:03:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:03:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0cb5753522f0`](https://github.com/gmanldn/smoothcast/commit/0cb5753522f037679b3212c6f52b07281db90512)
+
+- 🟪 **03:03:58 · Tests** — test: protect active playback during queue contributions (Refs #325) · [`59e528e1891d`](https://github.com/gmanldn/smoothcast/commit/59e528e1891dc39b1237159923d592c1d7cabc29)
 
 - ⬜ **03:00:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d829cd4044a1`](https://github.com/gmanldn/smoothcast/commit/d829cd4044a1f4e85304db1ed3aa523982eb802f)
 
 - 🟥 **03:00:07 · Fix** — fix(screen): retain the active transcode route for seek and recovery (Refs #753) · [`c29c05b56909`](https://github.com/gmanldn/smoothcast/commit/c29c05b569098a36b5eebfe2c33d3b69cd3485ac)
+
+- ⬜ **03:00:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c6f3d93ed432`](https://github.com/gmanldn/smoothcast/commit/c6f3d93ed432444e682b7159e1a590a1923ed69d)
 
 - ⬜ **02:56:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`145e7daf1492`](https://github.com/gmanldn/smoothcast/commit/145e7daf14929a219da703231d3c064bd9e83985)
 
