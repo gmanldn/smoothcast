@@ -151,7 +151,7 @@ class AudioTrackTests(unittest.TestCase):
     def test_ui_carries_selection_through_cast_restart_and_previews(self):
         source = combined_source()
         self.assertIn('"audio_track_by_file": {}', source)
-        self.assertIn('self.audio_track_dropdown = dropdown_row(', source)
+        self.assertIn('w.audio_track_dropdown = dropdown_row(', source)
         self.assertIn('self._update_audio_choices(media)', source)
         self.assertIn('audio_track_index=audio_track', source)
         self.assertIn('audio_track_override=choice', source)

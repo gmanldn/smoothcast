@@ -44,7 +44,7 @@ import demo_mode
 import startup_cleanup
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
-from cast_settings import SettingsCardMixin
+from cast_settings import SettingsCardController
 from cast_queue import QueueMixin
 from cast_retry_ui import RetryController
 from cast_session import SessionMixin
@@ -58,10 +58,13 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._settings_card = SettingsCardController(self)
+        self._build_settings_card = self._settings_card._build_settings_card  # #691
+        self._sleep_fade_tick = self._settings_card._sleep_fade_tick
         self._subtitle_files = SubtitleFileController(self)
         self._subs_file_chosen = self._subtitle_files.subs_file_chosen  # #691
         self._drop_subtitle = self._subtitle_files.drop_subtitle

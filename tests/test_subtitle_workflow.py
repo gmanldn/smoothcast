@@ -65,7 +65,7 @@ class SubtitleWorkflowTests(unittest.TestCase):
     def test_mkv_text_track_selector_and_auto_fallback(self):
         build = METHODS["_build_settings_card"]
         self.assertIn('"Embedded (MKV track)"', build)
-        self.assertIn("self.embedded_dropdown", build)
+        self.assertIn("w.embedded_dropdown", build)
         tracks = METHODS["_update_embedded_choices"]
         self.assertIn("track.is_supported", tracks)
         self.assertIn("track.label", tracks)
