@@ -691,3 +691,57 @@ def test_busy_receiver_at_completion_shows_guidance_without_false_success(guest_
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+@pytest.mark.parametrize("width", [768, 1440])
+def test_throttled_upload_progress_cadence_is_steady_and_coalesced(guest_room, monkeypatch, tmp_path, width):
+    """#570: on a slow link progress updates keep a bounded gap (p95) and are not per-chunk spam."""
+    import time
+    from playwright.sync_api import expect, sync_playwright
+
+    rig, uploads, deliveries = guest_room
+    data = _audio_bytes() + b"\x00" * (200 * 1024)  # ~50 chunks at 4 KiB
+    audio = tmp_path / "cadence.wav"
+    audio.write_bytes(data)
+    original_append = uploads.append
+
+    def throttled(*args, **kwargs):
+        time.sleep(0.03)
+        return original_append(*args, **kwargs)
+
+    monkeypatch.setattr(uploads, "append", throttled)
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": width, "height": 900},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(20000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Cadence guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.evaluate("""() => {
+                window.__ticks = [];
+                new MutationObserver(() => window.__ticks.push(performance.now()))
+                    .observe(document.getElementById('transferPercent'),
+                             {childList: true, characterData: true, subtree: true});
+            }""")
+            page.locator("#videoFile").set_input_files(str(audio))
+            page.locator("#uploadButton").click()
+            expect(page.locator("#transferDelivery")).to_have_text("Added to Up Next", timeout=30000)
+            ticks = page.evaluate("window.__ticks")
+        finally:
+            context.close()
+            browser.close()
+    assert deliveries and len(ticks) >= 3
+    chunks = len(data) // 4096 + 1
+    assert len(ticks) <= chunks + 5, "progress must not exceed one repaint per chunk"
+    gaps = sorted(b - a for a, b in zip(ticks, ticks[1:]))
+    p95 = gaps[int(0.95 * (len(gaps) - 1))]
+    assert p95 < 1000, f"p95 progress gap {p95:.0f} ms at {width}px"
