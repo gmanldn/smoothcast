@@ -39,7 +39,11 @@ def _scale_probe(app, prefix: str, gtk) -> None:
     scale = float(os.environ.get("SMOOTHCAST_A11Y_SCALE", "0") or 0)
     if scale <= 1:
         return
-    gtk.Settings.get_default().props.gtk_xft_dpi = int(96 * scale * 1024)
+    from gi.repository import Gdk
+    provider = gtk.CssProvider()
+    provider.load_from_string("* { font-size: %d%%; }" % int(scale * 100))
+    gtk.StyleContext.add_provider_for_display(
+        Gdk.Display.get_default(), provider, gtk.STYLE_PROVIDER_PRIORITY_USER)
     window = app.get_active_window() or (app.get_windows() or [None])[0]
     if window is None:
         Path(prefix + ".scale").write_text(json.dumps({"error": "no window"}), encoding="ascii")
@@ -51,7 +55,8 @@ def _scale_probe(app, prefix: str, gtk) -> None:
     checked: list = []
     clipped = clipped_labels(window, gtk, checked)
     Path(prefix + ".scale").write_text(
-        json.dumps({"scale": scale, "clipped": clipped, "checked": len(checked)}), encoding="utf-8")
+        json.dumps({"scale": scale, "clipped": clipped, "checked": len(checked),
+                    "window_width": window.get_width()}), encoding="utf-8")
 
 
 def GLib_ctx():

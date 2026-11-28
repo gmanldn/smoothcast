@@ -196,7 +196,9 @@ def main() -> int:
     os.environ["DBUS_SESSION_BUS_ADDRESS"] = address  # for this process's Atspi client
     env = dict(os.environ, SMOOTHCAST_A11Y_HOLD=prefix, GTK_A11Y="atspi")
     if os.environ.get("SMOOTHCAST_A11Y_SCALE_CHECK"):
-        env["SMOOTHCAST_A11Y_SCALE"] = "2"  # 200% text; clipped labels fail the walk
+        # 200% text by default; a number (e.g. 12) is a negative control that must clip.
+        factor = os.environ["SMOOTHCAST_A11Y_SCALE_CHECK"]
+        env["SMOOTHCAST_A11Y_SCALE"] = factor if factor.replace(".", "", 1).isdigit() and float(factor) > 1 else "2"
     env.pop("NO_AT_BRIDGE", None)
     child = subprocess.Popen([sys.executable, str(ROOT / "src" / "cast_control.py"), "--self-test"],
                              cwd=ROOT, env=env)
@@ -237,12 +239,13 @@ def main() -> int:
     scale_file = Path(prefix + ".scale")
     if scale_file.is_file():
         result = json.loads(scale_file.read_text(encoding="utf-8"))
-        scale_bad = [f"clipped at 200%: {t!r}" for t in result.get("clipped", [])]
+        scale_bad = [f"clipped at scale: {t!r}" for t in result.get("clipped", [])]
         if result.get("error"):
             scale_bad.append(f"scale probe failed: {result['error']}")
         if not result.get("error") and not result.get("checked"):
             scale_bad.append("scale probe inspected no labels (vacuous)")
-        print(f"SCALE 200%: {len(result.get('clipped', []))} clipped of {result.get('checked', 0)} labels")
+        print("SCALE detail:", {k: result.get(k) for k in ("scale", "window_width")})
+        print(f"SCALE: {len(result.get('clipped', []))} clipped of {result.get('checked', 0)} labels")
         for problem in scale_bad:
             print("SCALE PROBLEM:", problem)
     if os.environ.get("SMOOTHCAST_A11Y_DUMP"):
