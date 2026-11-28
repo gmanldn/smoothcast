@@ -50,3 +50,11 @@ def test_headless_scenario_and_no_gtk_import():
     assert removed == "c" and q == ["a", "b"] and sel == 1
     c.clear()
     assert q == [] and c.reselect(sel) is None
+
+
+def test_total_duration_sums_known_and_flags_unknown():
+    from queue_component import QueueComponent
+    durations = {"a": 60.0, "b": 0.0, "c": 30.0}
+    assert QueueComponent.total_duration(durations, ["a", "c"]) == (90.0, True)
+    assert QueueComponent.total_duration(durations, ["a", "b", "z"]) == (60.0, False)
+    assert QueueComponent.total_duration({}, []) == (0, True)

@@ -44,3 +44,9 @@ class QueueComponent:
         selected_path = self.paths[selected] if selected is not None and 0 <= selected < len(self.paths) else None
         self.paths.insert(position, self.paths.pop(index))
         return self.paths.index(selected_path) if selected_path in self.paths else None
+
+    @staticmethod
+    def total_duration(durations: dict[str, float], visible: list[str]) -> tuple[float, bool]:
+        """Summed known duration of ``visible`` and whether every item's duration is known."""
+        total = sum(durations.get(p, 0.0) or 0.0 for p in visible)
+        return total, all(durations.get(p) for p in visible)

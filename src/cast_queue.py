@@ -352,8 +352,7 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         self.queue_scroller.set_visible(bool(visible))
         self.queue_summary.set_visible(has_queue)
         if has_queue:
-            total = sum(self.queue_durations.get(p, 0.0) or 0.0 for p in visible)
-            known = all(self.queue_durations.get(p) for p in visible)
+            total, known = QueueComponent.total_duration(self.queue_durations, visible)
             count = len(visible)
             label = f"{count} item{'s' if count != 1 else ''}"
             if query.strip():
