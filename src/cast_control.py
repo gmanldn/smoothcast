@@ -57,7 +57,7 @@ from queue_prewarm_ui import QueuePrewarmController
 from queue_row_ui import QueueRowController
 from cast_retry_ui import RetryController
 from cast_session import SessionMixin
-from cast_av import AvMixin
+from cast_av import AvController
 from cast_subtitle_files import SubtitleFileController
 from cast_lifecycle import LifecycleController
 from cast_ui_timers import UiTimerController
@@ -67,13 +67,14 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, SessionMixin, AvMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SessionMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
         self._portal_queue = PortalQueueController.install(self)
         self._lifecycle = LifecycleController.install(self)
         self._queue_ctl = QueueController.install(self)
+        self._av = AvController.install(self)
         self._playlist_ctl = PlaylistController.install(self)
         self._queue_rows = QueueRowController.install(self)
         self._queue_prewarm = QueuePrewarmController.install(self)

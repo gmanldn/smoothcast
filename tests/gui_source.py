@@ -64,7 +64,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "SettingsCardController", "PortalHostController", "PortalController", "UiTimerController", "PortalQueueController", "LifecycleController", "QueueController", "PlaylistController", "QueueRowController", "QueuePrewarmController", "MusicImportController", "DeviceDiscoveryController", "LifecycleActionsController", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "SettingsCardController", "PortalHostController", "PortalController", "UiTimerController", "PortalQueueController", "LifecycleController", "AvController", "QueueController", "PlaylistController", "QueueRowController", "QueuePrewarmController", "MusicImportController", "DeviceDiscoveryController", "LifecycleActionsController", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
