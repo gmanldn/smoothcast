@@ -29,6 +29,7 @@ import playback_state
 import progress_model
 
 import ui_theme
+import ui_tokens
 
 import version
 
@@ -225,7 +226,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         card.add_css_class("card")
         card.add_css_class("hero-card")
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        eyebrow = Gtk.Label(label="NOW PLAYING", xalign=0.0, hexpand=True)
+        eyebrow = Gtk.Label(label=ui_tokens.ROOM_GLANCE_LABELS["now_playing"].upper(),
+                            xalign=0.0, hexpand=True)
         eyebrow.add_css_class("eyebrow")
         self.state_chip = Gtk.Label(label="Ready")
         self.state_chip.add_css_class("chip")
@@ -243,7 +245,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self.np_meta.add_css_class("hero-subtitle")
         body.append(self.np_meta)
         self.room_glance_label = Gtk.Label(
-            label="Selected: No screen selected · Up next: Nothing waiting · Here: Just you",
+            label=(f"{ui_tokens.ROOM_GLANCE_LABELS['target']}: No screen selected · "
+                   f"{ui_tokens.ROOM_GLANCE_LABELS['next']}: Nothing waiting · "
+                   f"{ui_tokens.ROOM_GLANCE_LABELS['people']}: Just you"),
             xalign=0.0, wrap=True,
         )
         self.room_glance_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
@@ -1366,7 +1370,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         people = "Just you" if not guests else "You, " + ", ".join(guests[:2])
         if len(guests) > 2:
             people += f" +{len(guests) - 2} more"
-        summary = f"Selected: {target} · Up next: {next_title} · Here: {people}"
+        labels = ui_tokens.ROOM_GLANCE_LABELS
+        summary = (f"{labels['target']}: {target} · {labels['next']}: {next_title} · "
+                   f"{labels['people']}: {people}")
         if label.get_text() != summary:
             label.set_text(summary)
 

@@ -12,6 +12,12 @@ RADIUS = {"sm": 10, "md": 14, "lg": 22, "pill": 999}
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 22}
 TYPE = {"body": "16px", "caption": ".9em", "eyebrow": ".8em", "hero": "1.65rem"}
 FONT_FAMILY = 'ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif'
+ROOM_GLANCE_LABELS = {
+    "now_playing": "Now playing",
+    "target": "Selected target",
+    "next": "Up next",
+    "people": "People here",
+}
 _STEPS = sorted(v for k, v in RADIUS.items() if k != "pill")
 
 

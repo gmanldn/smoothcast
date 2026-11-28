@@ -2,6 +2,7 @@
 import portal
 import settings_catalog
 import ui_theme
+import ui_tokens
 
 
 def test_web_now_playing_matches_gtk_hero_card():
@@ -17,6 +18,16 @@ def test_front_page_has_at_a_glance_tiles_fed_by_room_state():
     html = portal._HTML
     for needle in ('id="glance"', 'id="glanceTitle"', 'id="glanceWhere"', 'id="glanceWho"', "renderGlance(room)"):
         assert needle in html
+
+
+def test_room_glance_labels_are_shared_by_gtk_and_web():
+    from pathlib import Path
+
+    gtk = (Path(__file__).resolve().parents[1] / "src" / "cast_ui.py").read_text(encoding="utf-8")
+    for key, label in ui_tokens.ROOM_GLANCE_LABELS.items():
+        assert f'ROOM_GLANCE_LABELS["{key}"]' in gtk or f"ROOM_GLANCE_LABELS['{key}']" in gtk
+        assert f'<span class="glance-label">{label}</span>' in portal._HTML
+    assert "__SC_GLANCE_" not in portal._HTML
 
 
 def test_web_settings_map_tracks_desktop_preferences_pages_and_groups():

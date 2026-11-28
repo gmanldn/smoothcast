@@ -2,6 +2,7 @@
 from types import SimpleNamespace
 
 import cast_ui
+import ui_tokens
 
 
 class Label:
@@ -35,7 +36,9 @@ def test_room_glance_shows_next_item_without_the_current_queue_entry():
     cast_ui.UiMixin._sync_room_glance(owner)
 
     assert owner.room_glance_label.text == (
-        "Selected: Living Room TV · Up next: next episode 02 · +1 more · Here: You, Sam, Jo"
+        f"{ui_tokens.ROOM_GLANCE_LABELS['target']}: Living Room TV · "
+        f"{ui_tokens.ROOM_GLANCE_LABELS['next']}: next episode 02 · +1 more · "
+        f"{ui_tokens.ROOM_GLANCE_LABELS['people']}: You, Sam, Jo"
     )
 
 
@@ -46,7 +49,9 @@ def test_room_glance_handles_empty_target_queue_and_guests_and_skips_redundant_r
     cast_ui.UiMixin._sync_room_glance(owner)
 
     assert owner.room_glance_label.text == (
-        "Selected: No screen selected · Up next: Nothing waiting · Here: Just you"
+        f"{ui_tokens.ROOM_GLANCE_LABELS['target']}: No screen selected · "
+        f"{ui_tokens.ROOM_GLANCE_LABELS['next']}: Nothing waiting · "
+        f"{ui_tokens.ROOM_GLANCE_LABELS['people']}: Just you"
     )
     assert owner.room_glance_label.updates == 1
 
