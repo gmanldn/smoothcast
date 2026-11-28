@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 84c2bdced15a0c33e54871920fc3be799530197d -->
+<!-- sc-changelog-through: 89ae42174b18a6982b91cf02f953a24583cf4867 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:54:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:56:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:56:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`89ae42174b18`](https://github.com/gmanldn/smoothcast/commit/89ae42174b18a6982b91cf02f953a24583cf4867)
+
+- 🟥 **02:56:36 · Fix** — fix: reject Windows reparse points when staging sources (Refs #580) · [`a7d7095a8943`](https://github.com/gmanldn/smoothcast/commit/a7d7095a8943c74493245f18ef9a991d59c32576)
 
 - ⬜ **02:54:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`84c2bdced15a`](https://github.com/gmanldn/smoothcast/commit/84c2bdced15a0c33e54871920fc3be799530197d)
 
 - 🟩 **02:54:31 · Feature** — feat: recover durable queue upload checkpoints (Refs #568) · [`585993241694`](https://github.com/gmanldn/smoothcast/commit/5859932416947872a5951f8bb0f91afb8a3ae5fa)
+
+- ⬜ **02:54:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`13123e587401`](https://github.com/gmanldn/smoothcast/commit/13123e5874012557ebefa4d27fdc7361ef4554a7)
 
 - 🟥 **02:51:36 · Fix** — fix(mesh): reject malformed or stale playback eligibility observations (Refs #740) · [`3997fdbd55bc`](https://github.com/gmanldn/smoothcast/commit/3997fdbd55bc09bdf4f46aac5cb0c88cb9d2ef6a)
 
