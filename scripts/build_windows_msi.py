@@ -19,6 +19,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -182,6 +183,20 @@ def stage_media(media_dir: Path | None) -> list[str]:
     return [f"ffmpeg/{name}" for name in MEDIA_TOOLS]
 
 
+def check_frozen_version() -> None:
+    """Require the actual console executable to report the canonical source version."""
+    cli = PAYLOAD / windows_payload.CLI_EXE
+    expected = f"SmoothCast v{release_version()}"
+    try:
+        result = subprocess.run([str(cli), "--version"], cwd=cli.parent,
+                                stdin=subprocess.DEVNULL, capture_output=True,
+                                text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise BuildError("frozen CLI version probe could not complete; rebuild the payload") from exc
+    if result.returncode or result.stdout.strip() != expected:
+        raise BuildError(f"frozen CLI version does not match {expected}; rebuild the payload")
+
+
 def freeze_payload(*, skip_pyinstaller: bool, media_dir: Path | None) -> tuple[Path, int]:
     if not skip_pyinstaller:
         _run([sys.executable, str(BUILD_RELEASE)])
@@ -193,6 +208,7 @@ def freeze_payload(*, skip_pyinstaller: bool, media_dir: Path | None) -> tuple[P
     if problems:
         shown = "\n".join(f"- {problem}" for problem in problems[:20])
         raise BuildError(f"payload is not MSI-ready:\n{shown}")
+    check_frozen_version()
     try:
         count = len(json.loads(manifest.read_text(encoding="utf-8"))["files"])
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -305,15 +321,13 @@ def build(options: argparse.Namespace) -> dict[str, object]:
     generate_fragment(manifest)
     output_dir.mkdir(parents=True, exist_ok=True)
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
-    temporary = BUILD_DIR / final.name
-    temporary.unlink(missing_ok=True)
-    try:
+    # Atomic replacement requires the staged file to be on the output volume.
+    # A unique sibling staging directory also prevents stale build collisions.
+    with tempfile.TemporaryDirectory(prefix=".smoothcast-msi-", dir=output_dir) as staging:
+        temporary = Path(staging) / final.name
         wix_build(temporary, manufacturer=options.manufacturer, version=version, commit=commit)
         verify_msi(temporary, version=version, commit=commit, expected_files=expected_files)
         os.replace(temporary, final)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
     digest, checksum = write_sha256(final)
     return {"status": "ok", "signed": False, "version": version, "commit": commit,
             "msi": str(final), "sha256": digest, "checksum": str(checksum),

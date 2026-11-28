@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 9af8dc0de376ba3305bc053570915975b5c647ba -->
+<!-- sc-changelog-through: e31759fe05d73e42a0c194d65a98acbdbf383a50 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:35:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **04:36:00 · Fix** — fix: verify frozen MSI version and publish atomically across volumes (Refs #535) <!-- sc-changelog-pending -->
 
 - ⬜ **04:35:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9af8dc0de376`](https://github.com/gmanldn/smoothcast/commit/9af8dc0de376ba3305bc053570915975b5c647ba)
+
+- ⬜ **04:35:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e31759fe05d7`](https://github.com/gmanldn/smoothcast/commit/e31759fe05d73e42a0c194d65a98acbdbf383a50)
 
 - 🟥 **04:35:25 · Fix** — fix: start installed smoothcast on latest develop build (Refs #579) · [`3f3a0de461aa`](https://github.com/gmanldn/smoothcast/commit/3f3a0de461aa5360a0bca775b44f932bb2d7cd81)
 

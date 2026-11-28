@@ -100,9 +100,25 @@ class PayloadTests(unittest.TestCase):
             with mock.patch.object(msi, "PAYLOAD", payload), \
                     mock.patch.object(msi.windows_payload, "write_manifest",
                                       return_value=manifest), \
-                    mock.patch.object(msi.windows_payload, "verify", return_value=[]):
+                    mock.patch.object(msi.windows_payload, "verify", return_value=[]), \
+                    mock.patch.object(msi, "check_frozen_version"):
                 path, count = msi.freeze_payload(skip_pyinstaller=True, media_dir=None)
             self.assertEqual((path, count), (manifest, 2))
+
+    def test_frozen_cli_version_probe_requires_exact_canonical_version(self):
+        for code, stdout in ((0, "SmoothCast v2.0.38"), (0, "SmoothCast v2.0.380"),
+                             (1, "SmoothCast v2.0.38"), (0, "SmoothCast v2.0.37")):
+            with self.subTest(code=code, stdout=stdout), \
+                    mock.patch.object(msi, "release_version", return_value="2.0.38"), \
+                    mock.patch.object(msi.subprocess, "run", return_value=SimpleNamespace(
+                        returncode=code, stdout=stdout)) as run:
+                if code == 0 and stdout == "SmoothCast v2.0.38":
+                    msi.check_frozen_version()
+                    self.assertEqual(run.call_args.args[0][-1], "--version")
+                    self.assertEqual(run.call_args.kwargs["timeout"], 30)
+                else:
+                    with self.assertRaisesRegex(msi.BuildError, "rebuild the payload"):
+                        msi.check_frozen_version()
 
     def test_media_staging_requires_three_x64_tools(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -327,6 +343,7 @@ class BuildTests(unittest.TestCase):
             build_dir = Path(folder) / "build"
 
             def succeed(msi_path, **_kwargs):
+                self.assertEqual(msi_path.parent.parent, output.resolve())
                 msi_path.parent.mkdir(parents=True, exist_ok=True)
                 msi_path.write_bytes(b"not a real msi")
 
