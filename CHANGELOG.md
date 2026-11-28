@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1481395504bf59f5f59967dbae2bfc98b2c85323 -->
+<!-- sc-changelog-through: 9432b3db35e2a489a211a8f451cf42b5738f2ef4 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:32:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:41:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:41:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9432b3db35e2`](https://github.com/gmanldn/smoothcast/commit/9432b3db35e2a489a211a8f451cf42b5738f2ef4)
+
+- 🟦 **03:39:08 · Performance** — perf: parallelize independent cast preflight checks (Refs #207) · [`1dea034efe5a`](https://github.com/gmanldn/smoothcast/commit/1dea034efe5aab2124e879d50788461ca0626e4a)
 
 - ⬜ **03:32:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1481395504bf`](https://github.com/gmanldn/smoothcast/commit/1481395504bf59f5f59967dbae2bfc98b2c85323)
 
 - 🟩 **03:32:04 · Feature** — feat: add host-only appearance settings to web remote (Refs #708) · [`93b9953d5b15`](https://github.com/gmanldn/smoothcast/commit/93b9953d5b15aea97c402783101203d4e32a225c)
+
+- ⬜ **03:32:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5e86a42c19e8`](https://github.com/gmanldn/smoothcast/commit/5e86a42c19e8676d1afebc459becc3cb41fd0313)
 
 - ⬜ **03:31:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3063866a099d`](https://github.com/gmanldn/smoothcast/commit/3063866a099d413a7048f1f32a175c7f360601fd)
 
