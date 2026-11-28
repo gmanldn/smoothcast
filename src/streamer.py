@@ -88,6 +88,7 @@ if HLS_SEGMENT_TYPE not in {"mpegts", "fmp4"}:
 # A half-window margin avoids resuming into deleted live HLS segments.
 HLS_PAUSE_RESTART_AFTER = HLS_SEGMENT_SECONDS * HLS_PLAYLIST_SEGMENTS / 2
 _GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})(-fmp4)?\.m3u8\Z")
+_PLAYLIST_PREFIX_BYTES = 64 * 1024  # enough for the header and the first entries
 
 
 def _hls_names_from_url(url: str) -> tuple[str, str]:
@@ -2129,8 +2130,7 @@ class Session:
                     deadline = max(deadline, min(hard_cap, time.monotonic() + 10.0))
                 last_progress = marker
             playlist = ROOT / getattr(self, "_playlist_name", HLS_NAME)
-            pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
-            if playlist.exists() and len(list(ROOT.glob(pattern))) >= 2:
+            if self._first_segments_ready(playlist):
                 return True
             if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
                 # A two-second clip, or a seek into a film's final seconds, can
@@ -2223,6 +2223,42 @@ class Session:
             pass
         return (output or fallback).strip()[-300:]
 
+    def _listed_segment_ok(self, name: str, text: str) -> bool:
+        """True when playlist entry *name* is a complete segment the server may expose.
+
+        Only files the HLS HTTP server is permitted to expose can establish
+        playability. Do not follow playlist traversal, absolute paths or
+        unrelated temporary files; an fMP4 generation also needs its declared,
+        non-empty init segment.
+        """
+        playlist_name = getattr(self, "_playlist_name", HLS_NAME)
+        if playlist_name == HLS_NAME:
+            valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
+        else:
+            match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
+            if match and match.group(2):
+                init = f"init-{match.group(1)}.mp4"
+                if f'#EXT-X-MAP:URI="{init}"' not in text:
+                    return False
+                try:
+                    init_path = ROOT / init
+                    if not init_path.is_file() or init_path.stat().st_size == 0:
+                        return False
+                except OSError:
+                    return False
+                valid = re.fullmatch(rf"segment-{match.group(1)}-[0-9]+\.m4s", name) is not None
+            else:
+                valid = bool(match and re.fullmatch(
+                    rf"segment-{match.group(1)}-[0-9]+\.ts", name,
+                ))
+        if not valid:
+            return False
+        try:
+            segment = ROOT / name
+            return segment.is_file() and segment.stat().st_size > 0
+        except OSError:
+            return False
+
     def _playlist_is_complete(self, playlist: pathlib.Path) -> bool:
         """True when a finalised playlist references only complete segments."""
         try:
@@ -2233,41 +2269,27 @@ class Session:
             return False
         names = [line.strip() for line in text.splitlines()
                  if line.strip() and not line.startswith("#")]
-        if not names:
+        return bool(names) and all(self._listed_segment_ok(name, text) for name in names)
+
+    def _first_segments_ready(self, playlist: pathlib.Path, count: int = 2) -> bool:
+        """True once the playlist's first *count* entries are complete, servable segments.
+
+        Reads a bounded prefix and stats only those entries, so the cost does not
+        grow with the number of files in the cache directory.
+        """
+        try:
+            with playlist.open("rb") as handle:
+                text = handle.read(_PLAYLIST_PREFIX_BYTES).decode("utf-8", errors="replace")
+        except OSError:
             return False
-        for name in names:
-            # Only files the HLS HTTP server is permitted to expose can
-            # establish recoverability. Do not follow playlist traversal,
-            # absolute paths or unrelated temporary files.
-            playlist_name = getattr(self, "_playlist_name", HLS_NAME)
-            if playlist_name == HLS_NAME:
-                valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
-            else:
-                match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
-                if match and match.group(2):
-                    init = f"init-{match.group(1)}.mp4"
-                    if f'#EXT-X-MAP:URI="{init}"' not in text:
-                        return False
-                    try:
-                        init_path = ROOT / init
-                        if not init_path.is_file() or init_path.stat().st_size == 0:
-                            return False
-                    except OSError:
-                        return False
-                    valid = re.fullmatch(rf"segment-{match.group(1)}-[0-9]+\.m4s", name) is not None
-                else:
-                    valid = bool(match and re.fullmatch(
-                        rf"segment-{match.group(1)}-[0-9]+\.ts", name,
-                    ))
-            if not valid:
-                return False
-            try:
-                segment = ROOT / name
-                if not segment.is_file() or segment.stat().st_size == 0:
-                    return False
-            except OSError:
-                return False
-        return True
+        names = []
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                names.append(line)
+                if len(names) == count:
+                    break
+        return len(names) == count and all(self._listed_segment_ok(n, text) for n in names)
 
     def start_direct(
         self,
