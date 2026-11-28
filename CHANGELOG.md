@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a262964fd9d32932d09b8168d1326e4618b3e170 -->
+<!-- sc-changelog-through: 33af8c980f0485e715e06a974bcc693fd0abe53c -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:04:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:05:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:05:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`33af8c980f04`](https://github.com/gmanldn/smoothcast/commit/33af8c980f0485e715e06a974bcc693fd0abe53c)
+
+- 🟥 **05:05:09 · Fix** — fix(cast): deduplicate concurrent receiver registration (Refs #202) · [`dbb06e16182e`](https://github.com/gmanldn/smoothcast/commit/dbb06e16182e0a13da50f1125d7ed582aee82ee8)
 
 - ⬜ **05:04:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a262964fd9d3`](https://github.com/gmanldn/smoothcast/commit/a262964fd9d32932d09b8168d1326e4618b3e170)
+
+- ⬜ **05:04:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`732f3d97322c`](https://github.com/gmanldn/smoothcast/commit/732f3d97322cead9c829be5709a47352ecf4e7bc)
 
 - 🟦 **05:04:06 · Refactor** — refactor(ui): share room glance labels across GTK and web (Refs #708) · [`742f801664c4`](https://github.com/gmanldn/smoothcast/commit/742f801664c4da0c066fa80692652ef7a8738415)
 
