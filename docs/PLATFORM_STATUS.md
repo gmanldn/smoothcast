@@ -24,3 +24,21 @@ The matrix above records runner-level evidence only. Add dated rows with the
 OS version, architecture, SmoothCast commit, named receiver and per-scenario
 results after a native qualification run. Keep receiver protocol compatibility
 in [Device compatibility](DEVICE_COMPATIBILITY.md).
+
+## Hardware encoder port evidence (#703)
+
+Backends live in `src/hw_port.py`; `select()` degrades to the next ranked
+backend and records the skip reason. Evidence is unit-level (injected probes,
+`tests/test_hw_port.py`); native-device results are UNVERIFIED until a dated
+row is added.
+
+| Backend | Platforms gated in code | Probe | Unit evidence | Native device |
+|---|---|---|---|---|
+| VAAPI | Linux only | probed `/dev/dri/renderD*` nodes | yes | UNVERIFIED |
+| NVENC | any (ffmpeg must list `h264_nvenc`) | `ffmpeg -encoders` | yes | UNVERIFIED |
+| QSV | not macOS | `ffmpeg -encoders` | yes | UNVERIFIED |
+| VideoToolbox | macOS only | `ffmpeg -encoders` | yes | UNVERIFIED |
+| Software | all | none (final fallback) | yes | n/a |
+
+`src/streamer.py` still uses its fixed VAAPI path; moving it onto `select()`
+is the open slice.
