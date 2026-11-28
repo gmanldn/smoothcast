@@ -7,6 +7,7 @@ from __future__ import annotations
 import socket
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -86,6 +87,41 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual([device.host for device in found], ["192.168.12.13"])
         self.assertIn(b"\r\nHOST:", fake.sent)
         self.assertTrue(all(0 < t <= 0.5 for _, t in invoked))
+
+    def test_description_fetch_starts_before_the_last_ssdp_reply(self):
+        first = reply("192.168.12.10")
+        second = reply("192.168.12.20")
+        off_sender = (reply("192.168.12.30")[0], ("192.168.12.99", 1900))
+        first_get_started = threading.Event()
+        fetches = []
+
+        class GatedSsdp(FakeSsdpSocket):
+            overlapped = False
+
+            def recvfrom(self, limit):
+                if len(self.replies) == 1:
+                    self.overlapped = first_get_started.wait(0.2)
+                return super().recvfrom(limit)
+
+        fake = GatedSsdp([first, first, off_sender, second])
+
+        def fetch(url, *, expected_host, timeout):
+            fetches.append((url, expected_host, timeout))
+            if expected_host == "192.168.12.10":
+                first_get_started.set()
+            return DESCRIPTION
+
+        started = time.monotonic()
+        with (
+            mock.patch.object(dlna.socket, "socket", return_value=fake),
+            mock.patch.object(dlna, "_http_get", side_effect=fetch),
+        ):
+            devices = dlna.discover(timeout=0.8)
+        self.assertTrue(fake.overlapped, "SSDP waited for its full window before starting a GET")
+        self.assertEqual([d.host for d in devices], ["192.168.12.10", "192.168.12.20"])
+        self.assertCountEqual([entry[1] for entry in fetches], ["192.168.12.10", "192.168.12.20"])
+        self.assertTrue(all(0.0 < timeout <= 0.8 for _, _, timeout in fetches))
+        self.assertLess(time.monotonic() - started, 1.0)
 
     def test_invalid_off_lan_descriptions_are_skipped_before_fetch(self):
         fake = FakeSsdpSocket([reply("8.8.8.8"), reply("192.168.12.42")])

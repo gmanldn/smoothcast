@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f3c5de4b99c74375827a71a489735388a69e5b78 -->
+<!-- sc-changelog-through: 0f2e05a9fc9200b4c95a527be2153c2d6b90864f -->
 
 ## 2026-11-28 · UTC
 
-- 🟪 **07:38:06 · Tests** — test(msi): verify user settings survive lifecycle (Refs #532) <!-- sc-changelog-pending -->
+- 🟦 **07:39:13 · Performance** — perf(dlna): start renderer descriptions while SSDP replies arrive (Refs #724) <!-- sc-changelog-pending -->
+
+- 🟪 **07:38:19 · Tests** — test(msi): verify user settings survive lifecycle (Refs #532) · [`0f2e05a9fc92`](https://github.com/gmanldn/smoothcast/commit/0f2e05a9fc9200b4c95a527be2153c2d6b90864f)
 
 - 🟦 **07:37:31 · Performance** — perf(hls): skip HLS sampling when restoring a direct cast (Refs #732) · [`f3c5de4b99c7`](https://github.com/gmanldn/smoothcast/commit/f3c5de4b99c74375827a71a489735388a69e5b78)
 

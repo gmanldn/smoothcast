@@ -218,8 +218,8 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
     """Find LAN MediaRenderers within one end-to-end scan deadline.
 
     SSDP discovery uses at most half the budget (capped at two seconds).
-    Description GETs run concurrently and must finish before the remaining
-    deadline; a slow or malformed receiver cannot delay every other TV.
+    Validated description GETs run while SSDP replies are still arriving.
+    A slow or malformed receiver cannot delay every other TV.
     In-flight GETs have individual socket timeouts and never publish results
     after the scan has returned.
     """
@@ -232,15 +232,29 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
              "MX: 2\r\n"
              f"ST: {DEVICE_TYPE}\r\n\r\n").encode("ascii")
     budget = max(0.2, min(12.0, timeout))
-    deadline = time.monotonic() + budget
-    ssdp_end = time.monotonic() + min(2.0, budget * 0.5)
-    locations: dict[str, str] = {}
+    started = time.monotonic()
+    deadline = started + budget
+    ssdp_end = started + min(2.0, budget * 0.5)
+
+    def inspect(location: str, sender: str) -> Renderer | None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        try:
+            xml = _http_get(location, expected_host=sender, timeout=remaining)
+            renderer = parse_renderer(xml, location, sender)
+        except DlnaError:
+            return None
+        return renderer if time.monotonic() <= deadline else None
+
+    pending: dict[str, Future[Renderer | None]] = {}
+    pool = ThreadPoolExecutor(max_workers=MAX_DISCOVERY_WORKERS)
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
             sock.bind(("0.0.0.0", 0))
             sock.sendto(query, SSDP_ADDRESS)
-            while len(locations) < MAX_RENDERERS:
+            while len(pending) < MAX_RENDERERS:
                 remaining = min(ssdp_end, deadline) - time.monotonic()
                 if remaining <= 0:
                     break
@@ -262,30 +276,13 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
                     _url(location, expected_host=sender)
                 except DlnaError:
                     continue
-                locations.setdefault(location, sender)
+                if location not in pending:
+                    pending[location] = pool.submit(inspect, location, sender)
     except OSError as exc:
         raise errors.coded(DlnaError(f"SSDP multicast discovery failed: {exc}"), "discovery.failed") from exc
 
-    if not locations or time.monotonic() >= deadline:
-        return []
-
-    def inspect(location: str, sender: str) -> Renderer | None:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return None
-        try:
-            xml = _http_get(location, expected_host=sender, timeout=remaining)
-            return parse_renderer(xml, location, sender)
-        except DlnaError:
-            return None
-
-    pool = ThreadPoolExecutor(max_workers=min(MAX_DISCOVERY_WORKERS, len(locations)))
-    try:
-        pending = [pool.submit(inspect, location, sender)
-                   for location, sender in locations.items()]
-        completed, waiting = wait(pending, timeout=max(0.0, deadline - time.monotonic()))
-        for future in waiting:
-            future.cancel()
+    else:
+        completed, _ = wait(pending.values(), timeout=max(0.0, deadline - time.monotonic()))
         return _collect_responsive_renderers(completed)
     finally:
         # Do not wait for unresponsive receivers. Each outstanding GET still
