@@ -126,17 +126,18 @@ class RescanOwnershipTests(unittest.TestCase):
         window._scan_failed = lambda message: published.append(("error", message))
         return window, callbacks, published
 
-    def test_rescan_does_not_publish_superseded_results(self):
+    def test_completed_scan_is_published_before_the_queued_refresh_runs(self):
         window, callbacks, published = self.make_window()
         window.scan_devices()
         self.assertEqual(len(callbacks), 1)
         window.scan_devices()  # same window while first discovery is running
         self.assertEqual(len(callbacks), 1)
         callbacks[0][1]((["stale"], []))
-        self.assertEqual(published, [])
+        # #720: a finished snapshot is never hidden behind the queued refresh.
+        self.assertEqual(published, [(["stale"], [])])
         self.assertEqual(len(callbacks), 2)
         callbacks[1][1]((["current"], []))
-        self.assertEqual(published, [(["current"], [])])
+        self.assertEqual(published, [(["stale"], []), (["current"], [])])
 
     def test_close_drops_scan_callbacks_without_touching_window(self):
         window, callbacks, published = self.make_window()
