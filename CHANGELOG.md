@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b0b031d597bd95355d09ecc30bf9d6535f3f0d04 -->
+<!-- sc-changelog-through: f0718a1aa6ad01e28844d6fb028b5a5c51dbcbe6 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:40:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:41:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:41:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0718a1aa6ad`](https://github.com/gmanldn/smoothcast/commit/f0718a1aa6ad01e28844d6fb028b5a5c51dbcbe6)
+
+- 🟥 **02:41:43 · Fix** — fix(ui,tests): mirror the real card/chip spacing in density; skip GTK tests without PyGObject · [`4889bab99138`](https://github.com/gmanldn/smoothcast/commit/4889bab991384ee97bde373e8be63be1b6efa7ec)
 
 - ⬜ **02:40:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b0b031d597bd`](https://github.com/gmanldn/smoothcast/commit/b0b031d597bd95355d09ecc30bf9d6535f3f0d04)
+
+- ⬜ **02:40:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`72f3ce9eea92`](https://github.com/gmanldn/smoothcast/commit/72f3ce9eea92a5c70d0a5cd65cbee13c5c176acd)
 
 - 🟥 **02:40:43 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`914d57ad7406`](https://github.com/gmanldn/smoothcast/commit/914d57ad740637b0f74062ceea36499b47f99bae)
 
