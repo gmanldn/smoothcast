@@ -134,7 +134,7 @@ const $=id=>document.getElementById(id);
 $("joinAddress").textContent=location.host;
 let csrf="",screenId="",seq=0,playSeq=0,current=null,started=false,polling=false,stopped=false;
 let joining=false,starting=false;
-let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false,recoverAt=0,stallTimer=null;
+let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false;
 const video=$("video");
 const safe=(fn)=>{try{return fn()}catch(_){return undefined}};
 const store={get:k=>safe(()=>localStorage.getItem(k))||"",set:(k,v)=>safe(()=>localStorage.setItem(k,v))};
@@ -213,30 +213,43 @@ async function loop(){
   polling=false}
 function banner(text){const b=$("banner");b.textContent=text;b.hidden=!text}
 function apply(o){
-  if(o.kind==="play"){playSeq=o.seq;current={...o,fell:false};fallbackTried=false;recoverBudget=2;lastPosition=0;load(o.url,o.start||0,o.route&&o.route.mode==="transcode");
+  if(o.kind==="play"){playSeq=o.seq;current={...o,fell:false};fallbackTried=false;resetRecovery();load(o.url,o.start||0,o.route&&o.route.mode==="transcode");
     $("hudTitle").textContent=o.title;$("audioTitle").textContent=o.title;
     const audio=o.route&&o.route.kind==="audio";video.style.visibility=audio?"hidden":"visible";$("audioArt").hidden=!audio;
     show("player");banner("");wake()}
-  else if(o.kind==="pause"){video.pause()}
-  else if(o.kind==="resume"){tryPlay()}
+  else if(o.kind==="pause"){pauseRequested=true;cancelRecovery();video.pause()}
+  else if(o.kind==="resume"){
+    pauseRequested=false;
+    if(transcoded&&video.error?.code===2)recover();else tryPlay();
+  }
   else if(o.kind==="seek"&&current){seekTo(o.value)}
   else if(o.kind==="volume"){video.volume=o.value/100}
   else if(o.kind==="stop"){playSeq=o.seq;stopPlayback()}
   report(true,o.seq)}
-let transcoded=false,baseStart=0,activeUrl=null,recoverBudget=2,lastPosition=0;
+const RECOVERY_ERROR="Playback stalled on this screen. Stop and start again.";
+let transcoded=false,baseStart=0,activeUrl=null,recoverBudget=2,recoveryFailed=false;
+let recoverAt=-Infinity,stallTimer=null,progressMark=0,pauseRequested=false;
+function cancelRecovery(){
+  clearTimeout(stallTimer);stallTimer=null;
+}
+function resetRecovery(){
+  cancelRecovery();recoverBudget=2;recoveryFailed=false;recoverAt=-Infinity;pauseRequested=false;
+}
 function load(url,start,convert){
-  activeUrl=url;transcoded=!!convert;baseStart=start||0;clearTimeout(stallTimer);
+  activeUrl=url;transcoded=!!convert;baseStart=start||0;progressMark=0;cancelRecovery();
   const src=convert?url+(url.includes("?")?"&":"?")+"start="+encodeURIComponent(baseStart):url;
   video.src=src;video.load();
   if(!convert&&baseStart){video.addEventListener("loadedmetadata",()=>{safe(()=>{video.currentTime=baseStart})},{once:true})}
   tryPlay()}
-async function tryPlay(){try{await video.play()}catch(err){if(err&&err.name==="NotAllowedError"){banner("Tap the screen to start playback")}}}
+async function tryPlay(){if(pauseRequested||recoveryFailed)return;try{await video.play()}catch(err){if(err&&err.name==="NotAllowedError"){banner("Tap the screen to start playback")}}}
 function position(){return transcoded?baseStart+(video.currentTime||0):(video.currentTime||0)}
-function seekTo(t){t=Math.max(0,Number(t)||0);if(transcoded){load(activeUrl,t,true)}else{safe(()=>{video.currentTime=t})}}
-function stopPlayback(){current=null;activeUrl=null;transcoded=false;baseStart=0;clearTimeout(stallTimer);recoverBudget=0;video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
+function seekTo(t){if(recoveryFailed)return;t=Math.max(0,Number(t)||0);if(transcoded){load(activeUrl,t,true)}else{safe(()=>{video.currentTime=t})}}
+function stopPlayback(){current=null;activeUrl=null;transcoded=false;baseStart=0;resetRecovery();video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
 document.addEventListener("click",()=>{if(current&&video.paused&&!$("banner").hidden)tryPlay();wake()});
 function state(){
-  if(!current)return"idle";if(video.error)return"error";if(video.ended)return"ended";
+  if(!current)return"idle";if(recoveryFailed)return"error";if(pauseRequested)return"paused";
+  if(video.error)return video.error.code===2&&canRecover()?"buffering":"error";
+  if(video.ended)return"ended";
   if(video.paused)return video.readyState<3&&video.currentTime===0?"loading":"paused";
   return video.readyState<3?"buffering":"playing"}
 async function report(force,ack){
@@ -246,7 +259,7 @@ async function report(force,ack){
   if(ack!==undefined)body.ack=ack;
   if(s==="error")body.error=errorText();
   const session=csrf;try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(csrf===session&&(err.status===401||err.status===403))relogin()}}
-function errorText(){const c=video.error&&video.error.code;return c===3||c===4?"This device cannot decode that file":c===2?"Network problem while loading":"Playback failed"}
+function errorText(){if(recoveryFailed)return RECOVERY_ERROR;const c=video.error&&video.error.code;return c===3||c===4?"This device cannot decode that file":c===2?"Network problem while loading":"Playback failed"}
 let beat=null;function heartbeat(){if(!beat)beat=setInterval(()=>{if(started)report(false);hud()},1000)}
 function hud(){
   if(!current)return;const dur=current.duration||(isFinite(video.duration)&&!transcoded?video.duration:0),pos=position();
@@ -254,19 +267,45 @@ function hud(){
   $("hudTime").textContent=clock(pos)+(dur?" / "+clock(dur):"");
   const s=state();$("hudState").textContent=s==="playing"?"Playing":s==="paused"?"Paused":s==="buffering"||s==="loading"?"Loading…":s==="ended"?"Finished":"";
   $("audioArt").classList.toggle("paused",s!=="playing")}
-video.addEventListener("playing",()=>{banner("");clearTimeout(stallTimer);const pos=position();if(pos>lastPosition){recoverBudget=2;lastPosition=pos}report(true)});
-video.addEventListener("pause",()=>{clearTimeout(stallTimer);report(true)});
-video.addEventListener("ended",()=>{report(true)});
-video.addEventListener("waiting",()=>{report(true);if(transcoded){clearTimeout(stallTimer);stallTimer=setTimeout(recover,15000)}});
-video.addEventListener("stalled",()=>{if(transcoded){clearTimeout(stallTimer);stallTimer=setTimeout(recover,15000)}});
+video.addEventListener("playing",()=>{
+  if(!recoveryFailed&&!pauseRequested){banner("");report(true)}
+});
+video.addEventListener("timeupdate",()=>{
+  if(!canRecover()||video.paused||video.seeking||video.currentTime-progressMark<1)return;
+  // Measure playback within this load. Reload and seek offsets cannot count
+  // as forward playback or replenish the retry budget.
+  progressMark=video.currentTime;recoverBudget=2;cancelRecovery();
+});
+video.addEventListener("pause",()=>{cancelRecovery();if(!recoveryFailed)report(true)});
+video.addEventListener("ended",()=>{cancelRecovery();if(!recoveryFailed)report(true)});
+video.addEventListener("waiting",()=>{if(!recoveryFailed)report(true);scheduleRecovery()});
+video.addEventListener("stalled",()=>scheduleRecovery());
 video.addEventListener("error",()=>{
-  if(!current)return;
+  if(!current||pauseRequested||recoveryFailed)return;
   // Direct play failed on codecs the browser could not decode: let the host convert.
   if(!transcoded&&current.fallback&&!fallbackTried){fallbackTried=true;banner("Converting for this screen…");load(current.fallback,position(),true);return}
-  // A converted stream can drop while paused or buffering: resume where we were.
-  if(transcoded&&Date.now()-recoverAt>4000&&video.error&&video.error.code===2){recover();return}
-  report(true)});
-function recover(){if(!current||!transcoded||!activeUrl)return;if(recoverBudget<=0){banner("Playback stalled on this screen. Stop and start again.");report(true);return}recoverBudget--;recoverAt=Date.now();const at=position();load(activeUrl,at,true)}
+  if(transcoded&&video.error&&video.error.code===2){
+    const delay=4000-(Date.now()-recoverAt);
+    if(delay<=0)recover();else scheduleRecovery(delay);
+    return;
+  }
+  report(true);
+});
+function canRecover(){
+  return current&&transcoded&&activeUrl&&!pauseRequested&&!recoveryFailed&&!video.ended;
+}
+function scheduleRecovery(delay=15000){
+  if(canRecover()&&stallTimer===null)stallTimer=setTimeout(recover,delay);
+}
+function recover(){
+  cancelRecovery();
+  if(!canRecover())return;
+  if(recoverBudget<=0){
+    recoveryFailed=true;video.pause();banner(RECOVERY_ERROR);report(true);
+    return;
+  }
+  recoverBudget--;recoverAt=Date.now();load(activeUrl,position(),true);
+}
 function wake(){const hud=$("hud"),tools=$("tools"),home=$("homeLink"),ver=$("scVersion");hud.classList.remove("hide");tools.classList.remove("hide");home.classList.remove("hide");ver.classList.remove("hide");clearTimeout(hideTimer);
   hideTimer=setTimeout(()=>{if(!video.paused&&!$("player").hidden){hud.classList.add("hide");tools.classList.add("hide");home.classList.add("hide");ver.classList.add("hide")}},3500)}
 document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(!e.repeat&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.target?.isContentEditable&&!["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target?.tagName)&&(!$("slate").hidden||!$("player").hidden)&&(e.key==="f"||e.key==="F")){e.preventDefault();fullscreen()}});

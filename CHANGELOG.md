@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b88bb60958be2533b132fe1dd0319abe13416c8f -->
+<!-- sc-changelog-through: 8674a42fd8a08de93a67942de26c7a4415239b0f -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **07:17:41 · Fix** — fix(mesh): rotate reachability probes across visible receivers (Refs #741) <!-- sc-changelog-pending -->
+- 🟥 **07:20:34 · Fix** — fix(screens): report terminal conversion stalls once and respect pause (Refs #754) <!-- sc-changelog-pending -->
+
+- 🟥 **07:17:50 · Fix** — fix(mesh): rotate reachability probes across visible receivers (Refs #741) · [`8674a42fd8a0`](https://github.com/gmanldn/smoothcast/commit/8674a42fd8a08de93a67942de26c7a4415239b0f)
 
 - ⬜ **07:17:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5ded1212e084`](https://github.com/gmanldn/smoothcast/commit/5ded1212e084d480aa31230f2e4036f77f327f60)
 
