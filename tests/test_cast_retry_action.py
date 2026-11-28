@@ -14,11 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cast_failure_code
 import cast_recovery
+import cast_retry_ui
 import retry_component
 from gui_source import main_window_methods
 
-NAMES = ("_cast_failed", "_retry_action", "_retry_cast", "_select_receiver",
-         "_retry_receiver_identity")
+NAMES = ("_cast_failed", "_retry_action")
 
 
 def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
@@ -35,6 +35,7 @@ def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
 
     class Window(ns["H"]):
         def __init__(self):
+            self._retry = cast_retry_ui.RetryController(self)
             self.session, self.busy, self._closing = session, busy, closing
             self._dlna_cancel = None
             self._finished_handled = False
@@ -230,9 +231,10 @@ def test_cast_path_forces_hls_once_and_resets_history_for_fresh_user_casts():
     assert body.index("self._cast_tried = []") < body.index("self._retry_in_flight = False")
 
 
-def test_retry_mixin_is_registered_in_the_main_window():
+def test_retry_controller_is_composed_not_a_main_window_base():
     control = (Path(__file__).resolve().parents[1] / "src" / "cast_control.py").read_text("utf-8")
-    assert "from cast_retry_ui import RetryMixin" in control and "RetryMixin, Adw.ApplicationWindow" in control
+    assert "from cast_retry_ui import RetryController" in control
+    assert "self._retry = RetryController(self)" in control and "RetryMixin" not in control
 
 
 def test_toast_explains_why_for_convert_and_other_receiver_but_not_plain_retry():
