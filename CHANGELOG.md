@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0e5fa18944fc048ad68ab065d045a13fbfd00df6 -->
+<!-- sc-changelog-through: 9cee670fb2aa1cac6c5207508ec734aa68fac001 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:50:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:55:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:55:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9cee670fb2aa`](https://github.com/gmanldn/smoothcast/commit/9cee670fb2aa1cac6c5207508ec734aa68fac001)
+
+- 🟦 **09:55:32 · Refactor** — refactor(ui): UiTimerMixin -&gt; UiTimerController, MainWindow bases 8-&gt;7 (Refs #691) · [`e5de328bb333`](https://github.com/gmanldn/smoothcast/commit/e5de328bb333dad6d27ffee83dbbf6c6a84fff8c)
+
+- 🟦 **09:53:51 · Refactor** — refactor(ui): UiTimerMixin -&gt; UiTimerController, MainWindow bases 8-&gt;7 (Refs #691) · [`372ae5584aa6`](https://github.com/gmanldn/smoothcast/commit/372ae5584aa6fe54e4fdce9700feab3a1c58a29f)
 
 - ⬜ **09:50:59 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0e5fa18944fc`](https://github.com/gmanldn/smoothcast/commit/0e5fa18944fc048ad68ab065d045a13fbfd00df6)
+
+- ⬜ **09:50:59 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`907413030dff`](https://github.com/gmanldn/smoothcast/commit/907413030dff784ad6c193554fed67e66a128796)
 
 - 🟦 **09:50:46 · Refactor** — refactor(portal): PortalMixin -&gt; PortalController, MainWindow bases 9-&gt;8 (Refs #691) · [`afd34580021f`](https://github.com/gmanldn/smoothcast/commit/afd34580021fe437dfe791e4045903e0d9bc23c6)
 
