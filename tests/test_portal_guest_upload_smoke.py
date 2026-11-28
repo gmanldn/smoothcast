@@ -545,3 +545,57 @@ def test_two_phones_upload_at_once_without_crosstalk(guest_room, tmp_path):
             assert sorted(deliveries) == expected
         finally:
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+def test_cast_confirm_journey_no_target_and_declined(guest_room, tmp_path):
+    """#570: casting with no reachable receiver, or a declined confirm, delivers nothing and guides."""
+    from playwright.sync_api import expect, sync_playwright
+
+    rig, _uploads, deliveries = guest_room
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 2048)
+    state = {"target": {}}
+    inner = rig.server.dispatch
+
+    def dispatch(action, payload):
+        if action == "upload_target":
+            return state["target"]
+        return inner(action, payload)
+
+    rig.server.dispatch = dispatch
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        dialogs = []
+        page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Cast guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.locator("#videoFile").set_input_files(str(video))
+            page.locator("#uploadQueue").uncheck()
+            page.locator("#uploadButton").click()
+            expect(page.locator("#uploadStatus")).to_contain_text(
+                "No reachable casting target. Choose Add to Up Next instead.")
+            assert deliveries == [] and dialogs == []
+            state["target"] = {"receiver": "Test TV", "target_id": "a" * 64, "active": True}
+            page.locator("#videoFile").set_input_files(str(video))
+            page.locator("#uploadQueue").uncheck()
+            page.locator("#uploadButton").click()
+            expect(page.locator("#uploadStatus")).to_contain_text(
+                "Not sent. Choose Upload and add to keep it in Up Next.")
+            assert len(dialogs) == 1 and "Test TV" in dialogs[0] and "replaces current playback" in dialogs[0]
+            assert deliveries == []
+            expect(page.locator("#uploadQueue")).to_be_checked()
+        finally:
+            context.close()
+            browser.close()
