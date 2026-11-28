@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 819e20c2c4e39e21b345ace0eabe345a244c0b6d -->
+<!-- sc-changelog-through: e6ab31c5ee018737d4557b7ce686e0c731dd4cd7 -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **07:34:26 · Fix** — fix(hls): stop retired samplers from publishing into a replacement cast (Refs #734) <!-- sc-changelog-pending -->
+- ⬜ **07:36:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:36:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e6ab31c5ee01`](https://github.com/gmanldn/smoothcast/commit/e6ab31c5ee018737d4557b7ce686e0c731dd4cd7)
+
+- ⬜ **07:35:38 · Maintenance** — chore(baseline): rebaseline queue\_component.py 40-&gt;46 lines for QueueComponent.move (Refs #691) · [`38bcfac55438`](https://github.com/gmanldn/smoothcast/commit/38bcfac554386624be1903617fca275809afb85f)
+
+- 🟥 **07:34:34 · Fix** — fix(hls): stop retired samplers from publishing into a replacement cast (Refs #734) · [`5a0b4a69a072`](https://github.com/gmanldn/smoothcast/commit/5a0b4a69a072f0cb068aad35a99cfc6cdac3ba5a)
 
 - 🟦 **07:33:42 · Performance** — perf(screens): avoid fetching full room status to start playback (Refs #756) · [`819e20c2c4e3`](https://github.com/gmanldn/smoothcast/commit/819e20c2c4e39e21b345ace0eabe345a244c0b6d)
 
