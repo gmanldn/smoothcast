@@ -440,8 +440,8 @@ def test_receiver_confirmation_explains_missing_and_incomplete_status():
 
     for reply, code, message in (
         (None, "cast.receiver_offline", "did not return status"),
-        ({"volume_level": 0.5}, "cast.command_failed", "did not report playback state"),
-        ({"player_state": "IDLE"}, "cast.command_failed", "did not confirm playback"),
+        ({"volume_level": 0.5}, "cast.status_unavailable", "did not report playback state"),
+        ({"player_state": "IDLE"}, "cast.playback_unconfirmed", "did not confirm playback"),
     ):
         session = streamer.Session()
         clock = [0.0]
