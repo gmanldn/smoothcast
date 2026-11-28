@@ -8,17 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: eba94749b9c9fc837acbbec56ce23fed54a8fca4 -->
+<!-- sc-changelog-through: 435853806cd61992276c0ad05aaeabf2c8ccacee -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:15:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:17:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:17:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`435853806cd6`](https://github.com/gmanldn/smoothcast/commit/435853806cd61992276c0ad05aaeabf2c8ccacee)
+
+- 🟥 **03:16:57 · Fix** — fix: share target observation freshness cutoff (Refs #744) · [`25ceb3225693`](https://github.com/gmanldn/smoothcast/commit/25ceb32256937d83ba3a2377c99e9695a8c4863d)
 
 - ⬜ **03:15:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`eba94749b9c9`](https://github.com/gmanldn/smoothcast/commit/eba94749b9c9fc837acbbec56ce23fed54a8fca4)
 
 - ⬜ **03:15:40 · Maintenance** — chore(ci): refresh complexity baseline after shipped #568 and #710 growth (Refs #704) · [`29289debc5c7`](https://github.com/gmanldn/smoothcast/commit/29289debc5c741bc8aceb772567629bef9fbadce)
 
 - 🟥 **03:15:40 · Fix** — fix(cast): show the receiver reported total length (Refs #704) · [`933146abf9bc`](https://github.com/gmanldn/smoothcast/commit/933146abf9bcc7ff9d6dd9b668d6fac43930a1d6)
+
+- ⬜ **03:15:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bea91e3e32db`](https://github.com/gmanldn/smoothcast/commit/bea91e3e32db7a8dcfc90778bb4a5d502d3aca05)
 
 - ⬜ **03:14:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`76cd100ef827`](https://github.com/gmanldn/smoothcast/commit/76cd100ef82714943d65ba72fc4d238b7f49b055)
 
