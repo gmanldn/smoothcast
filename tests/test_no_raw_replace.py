@@ -25,7 +25,10 @@ ALLOWED = {
     "node_trust.py": 1,
     "participant_panel.py": 1,
     "presence.py": 1,  # test_presence pins exact bytes (<120) so Store framing cannot be used
-    "portal_uploads.py": 1,
+    # 1 = the finished-upload rename (a file move, not state). 1 = the queue-upload
+    # checkpoint writer, which needs O_NOFOLLOW, short-write handling, a compact ASCII
+    # record the recovery reader parses and directory-fsync ordering that Store lacks (#568).
+    "portal_uploads.py": 2,
     "receiver_memory.py": 2,
     "reliability_metrics.py": 1,
     "resident_profiles.py": 1,

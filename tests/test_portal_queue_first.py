@@ -40,7 +40,9 @@ def test_queue_is_first_and_links_remain_discoverable():
     assert 'class="settings-scope-list"' in html
     for scope in ("Your profile", "This browser", "Everyone in this room", "Room host only"):
         assert scope in html
-    assert "House PIN, host policies and shared-library folders are managed in desktop Preferences." in html
+    assert "managed on the computer running SmoothCast" in html
+    for host_only in ("House PIN", "Library folders"):
+        assert host_only in html
 
 
 def test_room_heading_and_rename_controls_follow_host_permission():
