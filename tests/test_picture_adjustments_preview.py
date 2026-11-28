@@ -86,6 +86,6 @@ def test_preference_changes_and_reset_both_trigger_new_local_preview():
     assert "self._refresh_picture_preview()" in methods["_reset_picture"]
     # Asynchronous work uses an immutable snapshot; frames cannot blend settings.
     av = (ROOT / "src/cast_av.py").read_text(encoding="utf-8")
-    assert "picture_config = picture_adjustments.for_path(self.cfg, path)" in av
+    assert "picture_config = picture_adjustments.for_path(w.cfg, path)" in av
     assert av.count("picture_config=picture_config, **aspect_options") == 2
     assert "picture_config: dict | None = None" in (ROOT / "src/screenshot.py").read_text()
