@@ -110,3 +110,29 @@ def test_portal_page_has_update_button_and_routes():
     src = open(portal.__file__).read()
     assert 'id="updateBtn"' in src and "portal_update_http.route" in src
     assert portal_update_http.PATHS == {"/api/update"}
+
+
+def test_dirty_or_off_branch_checkout_is_blocked_with_a_reason_not_silently_current(tmp_path):
+    dirty = ua.UpdateRunner(tmp_path, git=git_table(dirty=" M x")).check()
+    assert dirty["state"] == "blocked" and not dirty["can_update"]
+    assert "local changes" in dirty["message"] and "stash" in dirty["message"]
+    off = ua.UpdateRunner(tmp_path, git=git_table(branch="topic")).check()
+    assert off["state"] == "blocked" and "not on the develop branch" in off["message"]
+
+
+def test_installer_managed_copy_stays_quietly_current(tmp_path):
+    def not_a_checkout(repo, args, timeout=30):
+        return None
+    snap = ua.UpdateRunner(tmp_path, git=not_a_checkout).check()
+    assert snap["state"] == "current" and "installer" in snap["message"]
+
+
+def test_blocked_checkout_recovers_when_the_tree_is_clean(tmp_path):
+    state = {"dirty": " M x"}
+
+    def run(repo, args, timeout=30):
+        return git_table(dirty=state["dirty"])(repo, args, timeout)
+    r = ua.UpdateRunner(tmp_path, git=run)
+    assert r.check()["state"] == "blocked"
+    state["dirty"] = ""
+    assert r.check()["state"] == "available"

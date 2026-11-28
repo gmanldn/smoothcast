@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 CHANNELS = ("develop", "main")
-STATES = ("idle", "checking", "current", "available", "updating", "restarting", "failed")
+STATES = ("idle", "checking", "current", "blocked", "available", "updating", "restarting", "failed")
 
 
 def _git(repo: Path, args: list[str], timeout: int = 30) -> str | None:
@@ -60,15 +60,18 @@ class UpdateRunner:
             if behind is not None:
                 self.behind = behind
 
-    def _eligible(self) -> str | None:
-        """None when the checkout may be updated, else a plain-words reason."""
+    def _eligible(self) -> tuple[str, str] | None:
+        """None when the checkout may be updated, else (state, plain-words reason).
+
+        "current" is a benign non-source install; "blocked" is something the owner can fix.
+        """
         g = lambda *a: self._git(self.repo, list(a))  # noqa: E731
         if g("rev-parse", "--is-inside-work-tree") != "true":
-            return "This install is not a source checkout, so it updates through its installer."
+            return "current", "This install is not a source checkout, so it updates through its installer."
         if g("rev-parse", "--abbrev-ref", "HEAD") != self.channel:
-            return f"This checkout is not on the {self.channel} branch."
+            return "blocked", f"This checkout is not on the {self.channel} branch, so it was not updated."
         if g("status", "--porcelain") != "":
-            return "This checkout has local changes, so it was left alone."
+            return "blocked", "This checkout has local changes, so it was left alone. Commit or stash them to update."
         return None
 
     def check(self) -> dict:
@@ -78,9 +81,9 @@ class UpdateRunner:
             if self.state == "checking":
                 return self.snapshot_unlocked()
         self._set("checking", "Checking for updates…")
-        why = self._eligible()
-        if why:
-            self._set("current", why, 0)
+        blocked = self._eligible()
+        if blocked:
+            self._set(blocked[0], blocked[1], 0)
             return self.snapshot()
         if self._git(self.repo, ["fetch", "--quiet", "origin", self.channel], ) is None:
             self._set("failed", "Could not reach the update server. Check your network.")

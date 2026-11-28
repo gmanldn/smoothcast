@@ -16,11 +16,11 @@ CHECK_EVERY_S = 600.0
 
 def should_check(state: str, last_check: float, now: float) -> bool:
     """Only an idle or settled runner is re-checked, and not more often than the interval."""
-    return state in ("idle", "current", "failed", "available") and now - last_check >= CHECK_EVERY_S
+    return state in ("idle", "current", "blocked", "failed", "available") and now - last_check >= CHECK_EVERY_S
 
 
 def label_for(state: str) -> str | None:
-    return {"available": "Update and restart", "updating": "Updating…",
+    return {"available": "Update and restart", "blocked": "Update unavailable", "updating": "Updating…",
             "restarting": "Restarting…"}.get(state)
 
 

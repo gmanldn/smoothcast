@@ -4758,6 +4758,7 @@ function syncMediaSession(s){
     btn.title=d.message||"";
     if(d.state==="available"&&d.can_start){btn.hidden=false;btn.disabled=busy;btn.textContent="Update and restart"}
     else if(d.state==="updating"||d.state==="restarting"){btn.hidden=false;btn.disabled=true;btn.textContent=d.state==="updating"?"Updating…":"Restarting…"}
+    else if(d.state==="blocked"&&d.can_start){btn.hidden=false;btn.disabled=true;btn.textContent="Update unavailable"}
     else btn.hidden=true;
   }
   async function load(){
