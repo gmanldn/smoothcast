@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d09e87e78155e950da8e76612dda1b0a73113d89 -->
+<!-- sc-changelog-through: f7743b1304beedbbc21c4290a3eb5d7a807332bc -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **08:52:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **08:58:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **08:58:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f7743b1304be`](https://github.com/gmanldn/smoothcast/commit/f7743b1304beedbbc21c4290a3eb5d7a807332bc)
+
+- 🟦 **08:58:08 · Refactor** — refactor(retry): RetryMixin becomes composed RetryController; MainWindow bases 17-&gt;16 (Refs #691) · [`15b521cd711f`](https://github.com/gmanldn/smoothcast/commit/15b521cd711ffb6a71a55597ff33b3218c7386e2)
+
+- 🟦 **08:56:01 · Refactor** — refactor(retry): RetryMixin becomes composed RetryController; MainWindow bases 17-&gt;16 (Refs #691) · [`86adb93900ba`](https://github.com/gmanldn/smoothcast/commit/86adb93900ba735dac112334e74d48f4cdfce6c3)
 
 - ⬜ **08:52:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d09e87e78155`](https://github.com/gmanldn/smoothcast/commit/d09e87e78155e950da8e76612dda1b0a73113d89)
+
+- ⬜ **08:52:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c04133be63af`](https://github.com/gmanldn/smoothcast/commit/c04133be63af33d08e0846f1aabc8ce1c40f01f6)
 
 - 🟦 **08:52:17 · Refactor** — refactor(retry): GTK-free retry\_component holds identity/guard/label rules (Refs #691) · [`5dbd65a68408`](https://github.com/gmanldn/smoothcast/commit/5dbd65a68408556153e3e8970874ddd109785aa4)
 
