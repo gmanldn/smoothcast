@@ -65,3 +65,10 @@ def test_random_commands_with_retries_replay_to_same_state_without_duplicates(se
     assert len(set(store.state.items)) == len(store.state.items)
     rebuilt = replay(store.log)
     assert rebuilt.items == store.state.items and rebuilt.revision == store.state.revision
+
+
+def test_store_adopts_a_live_list_in_place():
+    live = ["a", "b", "c"]
+    store = QueueStore(live)
+    store.submit("m", "move", 0, 2)
+    assert live == ["b", "c", "a"] and store.state.items is live

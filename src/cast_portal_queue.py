@@ -18,6 +18,7 @@ import portal
 import portal_uploads
 from queue_component import QueueComponent
 import queue_metadata
+from room_events import QueueStore
 import media_source
 
 
@@ -304,8 +305,13 @@ class PortalQueueController:
                     position = 0
             if type(position) is not int or not 0 <= position < len(w.queue):
                 raise portal.PortalRequestError(400, "Queue position is outside the queue")
-            w.selected_index = QueueComponent(w.queue).move(
-                index, position, getattr(w, "selected_index", None))
+            store = getattr(w, "_queue_store", None)
+            if store is None or store.state.items is not w.queue:
+                store = w._queue_store = QueueStore(w.queue)
+            selected = getattr(w, "selected_index", None)
+            selected_path = w.queue[selected] if selected is not None and 0 <= selected < len(w.queue) else None
+            store.submit(secrets.token_hex(8), "move", index, position)
+            w.selected_index = w.queue.index(selected_path) if selected_path in w.queue else None
             w._rebuild_queue()
             w._portal_observe_queue()
             return "Queued next." if operation == "queue_next" else "Queue order updated."

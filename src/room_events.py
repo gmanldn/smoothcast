@@ -54,8 +54,9 @@ def replay(events) -> QueueState:
 class QueueStore:
     """Validated commands -> ordered events -> state."""
 
-    def __init__(self) -> None:
-        self.state = QueueState()
+    def __init__(self, items: list[str] | None = None) -> None:
+        """``items`` adopts a live list in place (the window's ``queue``) so every holder keeps seeing it."""
+        self.state = QueueState(items if items is not None else [])
         self.log: list[Event] = []
         self._seen: dict[str, tuple[Event, ...]] = {}
 
@@ -66,7 +67,7 @@ class QueueStore:
             return self._seen[command_id]
         if expected_revision is not None and expected_revision != self.state.revision:
             return ()  # stale: not remembered, so the caller may retry with a fresh fence
-        events = tuple(self._events_for(kind, args))
+        events = tuple(self._events_for(kind, args))  # may be empty: a validated no-op
         for event in events:
             apply(self.state, event)
             self.log.append(event)
