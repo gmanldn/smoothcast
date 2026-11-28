@@ -1209,6 +1209,18 @@ def primary_checkout_refusal() -> str:
     return ""
 
 
+def abandon_generated(remote_before: str, code: int) -> int:
+    """A gate that stops a push must not strand this shipment's generated PATCH/changelog
+    commits: the next ship would stack the agent's fix on top of them and the changelog
+    guard would then refuse as a "hand-edit" (#700). Discard only the verified commits."""
+    try:
+        changelog.recover(ROOT, remote_before)
+        ship_patch.recover_private_patch(ROOT, remote_before)
+    except (ship_patch.PatchAllocationError, changelog.ChangelogError) as exc:
+        print(f"generated PATCH/changelog commits kept (not provably discardable): {exc}")
+    return code
+
+
 def cmd_ship(a: argparse.Namespace) -> int:
     if refusal := primary_checkout_refusal():
         print(refusal)
@@ -1309,7 +1321,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if version_guard.returncode:
             print("VERSION INTEGRITY FAILED; not pushing develop.")
             print((version_guard.stdout + version_guard.stderr)[-1500:])
-            return 6
+            return abandon_generated(remote_before, 6)
         recheck = True
         if checked_base:  # a contended push: re-test only if the newcomers touched our files
             incoming = set(git("diff", "--name-only", checked_base, "origin/develop").split())
@@ -1336,7 +1348,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                     if mine:
                         print((res.stdout + res.stderr)[-1800:])
                         print(f"  YOUR failures: {', '.join(sorted(mine))[:400]}")
-                        return 1
+                        return abandon_generated(remote_before, 1)
                     orphan = unquarantined(ids)
                     if orphan:
                         # Known-red nobody owns trains agents to ignore red (#700): stop here.
@@ -1345,7 +1357,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                               f"{', '.join(orphan)[:300]}")
                         print("  Fix them, or add an entry (owner, ticket, expires) so the red has "
                               "an answerable owner, then rerun ship; your commit is preserved.")
-                        return 1
+                        return abandon_generated(remote_before, 1)
                     print(f"  NOT yours: {len(ids)} quarantined test(s) fail on "
                           f"origin/develop; pushing: {', '.join(ids)[:300]}")
                 else:
@@ -1361,7 +1373,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 if res is None:
                     print(f"  MANDATORY {label} cannot run: {unavailable}; "
                           "install pytest or hold this documentation change")
-                    return 1
+                    return abandon_generated(remote_before, 1)
                 print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} ({time.time() - started:.1f}s)")
                 if res.returncode:
                     ids = failing_ids(res.stdout)
@@ -1370,7 +1382,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         print((res.stdout + res.stderr)[-1500:])
                         print("  Your doc/workflow edit breaks contract tests that pin its wording: update those "
                               f"tests in the SAME commit. Failing: {', '.join(sorted(mine))[:300]}")
-                        return 1
+                        return abandon_generated(remote_before, 1)
                     print(f"  NOT yours: {len(ids)} doc test(s) already fail on origin/develop; pushing anyway")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")

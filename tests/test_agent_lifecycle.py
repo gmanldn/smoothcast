@@ -243,6 +243,47 @@ def test_legacy_assign_patch_flag_does_not_allocate(monkeypatch, tmp_path):
     assert len(deliveries) == 1
 
 
+def test_failed_gate_discards_generated_commits_so_a_fix_can_ship_next(monkeypatch, tmp_path):
+    """#700: a blocked push must not strand its generated PATCH/changelog commits.
+
+    Left in place, the agent's follow-up fix landed on top of them and the changelog
+    guard refused the whole shipment as a hand-edit.
+    """
+    _, _first, worker = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: True)
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *args: True)
+    outcome = {"code": 1}
+
+    def check(cmd, timeout=180):
+        done = subprocess.CompletedProcess(
+            cmd, outcome["code"], stdout="FAILED tests/test_x.py::test_mine\n" if outcome["code"] else "",
+            stderr="")
+        return done, ""
+
+    monkeypatch.setattr(agent, "plan_checks", lambda changed, tests: [("pytest (1 files)", ["pytest"])])
+    monkeypatch.setattr(agent, "run_headless_check", check)
+    monkeypatch.setattr(agent, "failing_on_develop", lambda ids: set())  # the failure is ours
+    args = agent.build_parser().parse_args(["ship", "--next", "none"])
+
+    commit(worker, "feature.txt", "needs a fix\n")
+    assert agent.cmd_ship(args) == 1
+    stranded = run(worker, "log", "--format=%s", "origin/develop..HEAD")
+    assert "[sc-auto-patch]" not in stranded and "[sc-auto-changelog]" not in stranded
+    assert run(worker, "status", "--porcelain") == ""
+
+    commit(worker, "fix.txt", "now green\n")
+    outcome["code"] = 0
+    assert agent.cmd_ship(args) == 0
+    assert run(worker, "rev-parse", "HEAD") == run(worker, "rev-parse", "origin/develop")
+    assert run(worker, "show", "origin/develop:feature.txt") == "needs a fix"
+    assert run(worker, "show", "origin/develop:fix.txt") == "now green"
+
+
 def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
     work = tmp_path / "work"
     work.mkdir()
