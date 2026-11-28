@@ -99,28 +99,19 @@ def shared() -> Stats:
 
 def save(stats: Stats, directory) -> bool:
     """Atomically write the snapshot to ``directory/latency.json``; False when the disk refuses."""
-    import json
-    import os
     from pathlib import Path
-    target = Path(directory) / FILE_NAME
-    tmp = target.with_suffix(".tmp")
-    try:
-        tmp.write_text(json.dumps(stats.snapshot()), encoding="utf-8")
-        os.replace(tmp, target)
-    except OSError:
+    import store
+    if not Path(directory).is_dir():
         return False
-    return True
+    return store.Store(Path(directory) / FILE_NAME).write(stats.snapshot())
 
 
 def load(directory) -> Stats:
     """A fresh Stats restored from ``directory/latency.json``; missing or corrupt files give an empty one."""
-    import json
     from pathlib import Path
+    import store
     stats = Stats()
-    try:
-        stats.restore(json.loads((Path(directory) / FILE_NAME).read_text(encoding="utf-8")))
-    except (OSError, ValueError):
-        pass
+    stats.restore(store.Store(Path(directory) / FILE_NAME).read())
     return stats
 
 

@@ -3,7 +3,7 @@
 Python 3.10+, GTK4/libadwaita, Cast/DLNA. Route tasks via
 `python3 scripts/agent_context.py route <task-or-path>` and the
 [handbook](docs/agents/README.md). [Archive](docs/AGENT_REFERENCE.md) is history,
-not policy. [Issues](docs/ISSUES.md) are authoritative.
+not policy. [GitHub Issues](docs/ISSUES.md) are authoritative.
 
 ## Transport and lifecycle (P0)
 
@@ -26,7 +26,7 @@ durable SHA, checks and next action. Use `agent.py scope --files src/one.py`
 to relinquish unused scope. Never bypass overlapping live leases. Stage named
 files; ship non-force. On exit 5/7 rerun ship in the same worktree to reconcile.
 See [workflow](docs/agents/workflow.md) and [coordination](docs/COORDINATION.md).
-Close only with demonstrated acceptance. `ticket_digest.py --next` is not
+Close only with demonstrated acceptance. `scripts/ticket_digest.py --next` is not
 claim-aware.
 
 ## Version and journal (P0)
