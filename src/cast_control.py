@@ -49,7 +49,7 @@ from cast_queue import QueueMixin
 from cast_retry_ui import RetryController
 from cast_session import SessionMixin
 from cast_av import AvMixin
-from cast_subtitle_files import SubtitleFileMixin
+from cast_subtitle_files import SubtitleFileController
 from cast_lifecycle import LifecycleMixin
 from cast_ui_timers import UiTimerMixin
 from find_ui import FindController
@@ -58,10 +58,14 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._subtitle_files = SubtitleFileController(self)
+        self._subs_file_chosen = self._subtitle_files.subs_file_chosen  # #691
+        self._drop_subtitle = self._subtitle_files.drop_subtitle
+        self._timed_subtitle_preview = self._subtitle_files._timed_subtitle_preview
         self._join_slate = JoinSlateController(self)
         self._join_slate_observe = self._join_slate._join_slate_observe  # #691
         self._join_slate_showing = self._join_slate._join_slate_showing

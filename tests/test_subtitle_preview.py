@@ -103,6 +103,21 @@ def test_embedded_extraction_rejects_bad_indices_failures_and_output_limit(tmp_p
         enc.load_embedded_timed_cues(source, 0)
 
 
+def preview_window_type(monkeypatch, jobs, **module_overrides):
+    """A host that is its own window, with the module's collaborators faked."""
+    import cast_subtitle_files as module
+    monkeypatch.setattr(module, "Async", SimpleNamespace(
+        run=lambda work, done=None, failed=None, **opts: jobs.append((work, done, failed, opts))))
+    for name, value in module_overrides.items():
+        monkeypatch.setattr(module, name, value)
+
+    class W(module.SubtitleFileController):
+        def __init__(self):
+            super().__init__(self)
+
+    return W
+
+
 def test_hover_wiring_is_opt_in_and_preserves_existing_scrub_preview():
     lifecycle = main_window_methods()["_on_hover"]
     assert "self._queue_preview(value, sparse=True)" in lifecycle
@@ -110,19 +125,9 @@ def test_hover_wiring_is_opt_in_and_preserves_existing_scrub_preview():
     assert "self._timed_subtitle_preview(None)" in lifecycle
 
 
-def test_rapid_hover_reuses_worker_and_ignores_old_film(tmp_path):
-    code = main_window_methods()["_timed_subtitle_preview"]
-    import pathlib
-    import textwrap
+def test_rapid_hover_reuses_worker_and_ignores_old_film(tmp_path, monkeypatch):
     jobs = []
-    namespace = {
-        "pathlib": pathlib, "subtitle_encoding": enc, "fmt_time": lambda value: str(value),
-        "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **opts:
-                                  jobs.append((work, done, failed, opts))),
-    }
-    exec(compile("class W:\n" + textwrap.indent(textwrap.dedent(code), "    "),
-                 "<timed-cue-ui>", "exec"), namespace)
-    cls = namespace["W"]
+    cls = preview_window_type(monkeypatch, jobs, fmt_time=lambda value: str(value))
     subtitle = tmp_path / "film.srt"
     subtitle.write_text("1\n00:00:01,000 --> 00:00:03,000\nSubtitle\n")
     window = cls()
@@ -156,10 +161,7 @@ def test_rapid_hover_reuses_worker_and_ignores_old_film(tmp_path):
     assert window._caption_cue_cache[1].cues[0][2] == "Subtitle"
 
 
-def test_embedded_track_preview_extracts_off_thread_and_restores_detail(tmp_path):
-    code = main_window_methods()["_timed_subtitle_preview"]
-    import pathlib
-    import textwrap
+def test_embedded_track_preview_extracts_off_thread_and_restores_detail(tmp_path, monkeypatch):
     jobs = []
     source = tmp_path / "film.mkv"
     source.write_bytes(b"film")
@@ -174,18 +176,13 @@ def test_embedded_track_preview_extracts_off_thread_and_restores_detail(tmp_path
     def choose_track(_media, requested):
         return track if requested in (-1, track.index) else None
 
-    namespace = {
-        "pathlib": pathlib, "subtitle_encoding": SimpleNamespace(
+    cls = preview_window_type(
+        monkeypatch, jobs, fmt_time=lambda value: str(value),
+        subtitle_encoding=SimpleNamespace(
             load_timed_cues=enc.load_timed_cues, load_embedded_timed_cues=extract,
             cue_at=enc.cue_at),
-        "streamer": SimpleNamespace(preferred_embedded_subtitle=choose_track),
-        "fmt_time": lambda value: str(value),
-        "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **opts:
-                                  jobs.append((work, done, failed, opts))),
-    }
-    exec(compile("class W:\n" + textwrap.indent(textwrap.dedent(code), "    "),
-                 "<timed-cue-ui>", "exec"), namespace)
-    window = namespace["W"]()
+        streamer=SimpleNamespace(preferred_embedded_subtitle=choose_track))
+    window = cls()
     window.cfg = {"subs": "embedded", "subtitle_track_by_file": {str(source): 2}}
     window._preview_path = str(source)
     window._preview_generation = 4

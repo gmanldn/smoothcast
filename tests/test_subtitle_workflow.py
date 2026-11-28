@@ -1,12 +1,9 @@
 """GTK-independent checks for subtitle UI, cast and seek orchestration."""
 from __future__ import annotations
 
-import pathlib
-import re
 from pathlib import Path
 import sys
 import tempfile
-import textwrap
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -17,26 +14,23 @@ ROOT = Path(__file__).resolve().parents[1]
 METHODS = main_window_methods()
 sys.path.insert(0, str(ROOT / "src"))
 import streamer
-import subtitle_delay
-import subtitle_encoding
-import subtitle_style
 
 
 class SubtitleWorkflowTests(unittest.TestCase):
     def test_picker_and_drop_share_subtitle_selection(self):
-        self.assertIn("self._select_subtitle_file(gfile)", METHODS["_subs_file_chosen"])
-        names = ("_drop_subtitle", "_select_subtitle_file", "_sync_subtitle_selection")
-        source = "class Window:\n" + "\n".join(
-            textwrap.indent(textwrap.dedent(METHODS[name]), "    ") for name in names
-        )
+        import cast_subtitle_files
+        controller_src = (ROOT / "src" / "cast_subtitle_files.py").read_text(encoding="utf-8")
+        self.assertIn("self._select_subtitle_file(gfile)", controller_src.split("def subs_file_chosen", 1)[1])
         save_config = mock.Mock()
-        namespace = {
-            "pathlib": pathlib, "re": re, "streamer": streamer,
-            "save_config": save_config, "subtitle_delay": subtitle_delay,
-            "subtitle_encoding": subtitle_encoding, "subtitle_style": subtitle_style,
-        }
-        exec(compile(source, "<subtitle drop handlers>", "exec"), namespace)
-        window = namespace["Window"]()
+
+        class Window(cast_subtitle_files.SubtitleFileController):
+            def __init__(self):
+                super().__init__(self, save=save_config)  # the test window is its own host
+
+            def _drop_subtitle(self, *args):
+                return self.drop_subtitle(*args)
+
+        window = Window()
         window.cfg = {"subs": "auto", "subs_path": ""}
         window.toast = mock.Mock()
         window._dlna_renderer = mock.Mock(return_value=None)
@@ -47,7 +41,7 @@ class SubtitleWorkflowTests(unittest.TestCase):
 
         def drop(paths):
             files = [SimpleNamespace(get_path=lambda path=path: path) for path in paths]
-            return window._drop_subtitle(None, SimpleNamespace(get_files=lambda: files), 0, 0)
+            return window.drop_subtitle(None, SimpleNamespace(get_files=lambda: files), 0, 0)
 
         with tempfile.TemporaryDirectory() as folder:
             subtitle = Path(folder) / "film.en.ass"
