@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ed05c905663d8fd82909fee4537d6f3341ab5ea6 -->
+<!-- sc-changelog-through: 2664d9d74ed38be08cf8bc98b027682b991e330c -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:30:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:34:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:34:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2664d9d74ed3`](https://github.com/gmanldn/smoothcast/commit/2664d9d74ed38be08cf8bc98b027682b991e330c)
+
+- 🟦 **09:34:37 · Refactor** — refactor(network-activity): NetworkActivityMixin becomes composed NetworkActivityController (Refs #691) · [`f70f010956b7`](https://github.com/gmanldn/smoothcast/commit/f70f010956b78eb87cd397f797687626d7bb4000)
 
 - ⬜ **09:30:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ed05c905663d`](https://github.com/gmanldn/smoothcast/commit/ed05c905663d8fd82909fee4537d6f3341ab5ea6)
+
+- ⬜ **09:30:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`202dd9c4e472`](https://github.com/gmanldn/smoothcast/commit/202dd9c4e472d8781bfc0c091b8936c37ce99eb0)
 
 - 🟦 **09:30:20 · Refactor** — refactor(settings): SettingsCardMixin becomes composed SettingsCardController; bases 10-&gt;9 (Refs #691) · [`1b476e620242`](https://github.com/gmanldn/smoothcast/commit/1b476e6202424f5f35c370705b76c41e4a4bfe80)
 
