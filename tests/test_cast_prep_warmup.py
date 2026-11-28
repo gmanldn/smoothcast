@@ -1,7 +1,12 @@
 """The FFmpeg version query is paid at window start, not on the first cast."""
 from types import SimpleNamespace
 
-import cast_ui_timers
+import pytest
+
+try:
+    import cast_ui_timers
+except ImportError as exc:  # no usable PyGObject in this environment
+    pytest.skip(f"GTK bindings unavailable: {exc}", allow_module_level=True)
 import streamer
 
 
