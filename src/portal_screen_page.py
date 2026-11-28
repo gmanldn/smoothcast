@@ -289,7 +289,7 @@ _PANEL_HTML = r"""
 </style>
 <section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading" tabindex="-1">Screens</h2><span id="screensCount" class="muted"></span></div>
 <p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if one has been set. Tap Start screen once to allow sound.</p>
-<ul id="screensList"><li class="empty">No screens connected</li></ul>
+<ul id="screensList"><li class="empty">No screens yet. Open the screen page on a TV, tablet or laptop to add one.</li></ul>
 <details class="help"><summary>How to use and control browser screens</summary><div class="help-body"><p><strong>Set up a screen:</strong> open the screen page on the device that will play sound or video, join with a name and the House PIN if required, then choose Start screen on that device.</p><p><strong>Choose from queue</strong> selects an item already in Up Next. <strong>Play</strong> starts it on that individual screen, not the main room TV. Pause, Resume and Stop affect only the named screen.</p><p>If a screen is not responding, controls remain unavailable until it reconnects. Add new media using the room's Find or Add files sections first.</p></div></details>
 <p id="screensMsg" class="muted" role="status" aria-live="polite"></p></section>
 <script>
@@ -408,7 +408,7 @@ _PANEL_HTML = r"""
     count.textContent=screens.length?screens.length+" connected":"";
     const focused=list.contains(document.activeElement)?document.activeElement:null;
     if(!screens.length){
-      if(list.children.length!==1||list.firstElementChild?.className!=="empty")list.replaceChildren(el("li","empty","No screens connected"));
+      if(list.children.length!==1||list.firstElementChild?.className!=="empty")list.replaceChildren(el("li","empty","No screens yet. Open the screen page on a TV, tablet or laptop to add one."));
       if(focused)document.getElementById("screensPanelHeading").focus({preventScroll:true});
       for(const key of Object.keys(choice))delete choice[key];
       return;

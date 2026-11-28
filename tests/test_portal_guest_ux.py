@@ -999,3 +999,18 @@ assert.equal(extraTransportEnvelope("seek_back",state,NaN,40),null);
 """
     result = subprocess.run(["node", "-e", source + checks], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_empty_states_tell_new_guests_what_to_do_next():
+    source = portal._page().decode("utf-8")
+    up_next = "Up Next is empty. Find something to play and add it; everyone in the room will see it."
+    # The static markup and the JS renderer must agree so the text never flickers.
+    assert source.count(up_next) == 2
+    assert "Nothing in Up Next yet" not in source
+    assert 'id="idleHint"' in source
+    # The idle hint must not say "choose something" while the receiver is unusable.
+    hide_rule = source.split('$("idleHint");if(h)h.hidden=', 1)[1].split("}", 1)[0]
+    for state in ("OFFLINE", "ERROR", "UNKNOWN", "EXTERNAL"):
+        assert f'"{state}"' in hide_rule
+    assert "No other SmoothCast computers found on this network yet." in source
+    assert "Nearby-computer discovery is unavailable on this network. This room still works." in source

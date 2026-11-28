@@ -2271,7 +2271,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
-<p id="title" class="big">Nothing playing</p><p id="nowDetails" class="muted" hidden></p><p id="receiver">Playing on: —</p>
+<p id="title" class="big">Nothing playing</p><p id="idleHint" class="field-hint">Nothing is playing yet. Choose something under Find something to play.</p><p id="nowDetails" class="muted" hidden></p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
 <label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking needs a connected TV or speaker and a known length.</p>
@@ -2295,7 +2295,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
 
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
-<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Up Next is empty. Find something to play and add it; everyone in the room will see it.</li></ul>
 <section id="queueIncomingPanel" aria-labelledby="queueIncomingHeading" hidden><h3 id="queueIncomingHeading">Incoming media</h3><ul id="queueIncomingRows" aria-label="Files arriving before queue acceptance"></ul><p class="field-hint">Files appear here immediately, then move into playback or Up Next when accepted.</p></section>
 <section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h3 id="uploadHeading" tabindex="-1">Add files from this device</h3>
@@ -2644,7 +2644,7 @@ function renderQueue(items,revision=queueRevision){
   if(!rows.length){
     const empty=document.createElement("li");
     empty.className="empty";
-    empty.textContent="Nothing in Up Next yet";
+    empty.textContent="Up Next is empty. Find something to play and add it; everyone in the room will see it.";
     nodes.push(empty);
   }else rows.slice(0,queueLimit).forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
@@ -3145,6 +3145,7 @@ function applyStatus(d){
     });
     monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
     monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
+    {const h=$("idleHint");if(h)h.hidden=!!(s.active||s.preparing)||["OFFLINE","ERROR","UNKNOWN","EXTERNAL"].includes(String(s.state||"").toUpperCase())}
     {const d=$("nowDetails"),t=s.active&&typeof s.media_details==="string"?s.media_details:"";if(d){d.textContent=t;d.hidden=!t}}
     monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
@@ -3233,7 +3234,7 @@ function renderPeers(peers,available){
   const entries=available&&Array.isArray(peers)?peers:[];
   const focused=document.activeElement;
   if(!entries.length){
-    const message=available?"No other SmoothCast computers found":"Peer discovery is unavailable on this network";
+    const message=available?"No other SmoothCast computers found on this network yet.":"Nearby-computer discovery is unavailable on this network. This room still works.";
     if(list.firstElementChild?.className==="empty"&&list.firstElementChild.textContent===message)return;
     const empty=document.createElement("li");
     empty.className="empty";
