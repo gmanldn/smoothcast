@@ -207,10 +207,12 @@ function play(seq,start=0){
   apply({kind:"play",seq,url:"/play?item="+seq,start,route:{mode:"transcode"}});
 }
 function networkError(){video.error={code:2};emit("error")}
-play(1,120);
+async function drain(){for(let i=0;i<8;i++)await Promise.resolve()}
+(async()=>{
+play(1,120);await drain();
 for(let i=0;i<8;i++){
   emit("waiting");emit("stalled");emit("playing");
-  networkError();advance(15000);
+  networkError();advance(15000);await drain();
 }
 const ended={loads:loads.length,banners:[...banners],state:state(),
              roomErrors:reports.filter(r=>r.play_seq===1&&r.state==="error")};
@@ -230,6 +232,7 @@ const afterReplacement=loads.length;
 advance(20000);
 console.log(JSON.stringify({ended,nextReloads,pausedReloads,progressReloads,
                             stopped,replacementReloads:loads.length-afterReplacement}));
+})().catch(err=>{console.error(err);process.exitCode=1});
 """
     result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
@@ -244,3 +247,74 @@ console.log(JSON.stringify({ended,nextReloads,pausedReloads,progressReloads,
     assert data["progressReloads"] == 2
     assert data["stopped"] == {"pending": 0, "src": ""}
     assert data["replacementReloads"] == 0
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_screen_reports_coalesce_preserve_end_and_drop_the_old_registration():
+    import json
+    from portal_screens import ScreenRegistry
+
+    script = _scripts(portal_screen_page.screen_page().decode())[0]
+    report_start = script.find("let reportSlot=null;")
+    if report_start < 0:
+        report_start = script.index("async function report(")
+    queue = script[report_start:script.index("function errorText(", report_start)]
+    register = script[script.index("async function register("):script.index("async function begin(")]
+    harness = r"""
+let screenId="old",csrf="token",seq=1,playSeq=1,status="playing";
+let block=true,held=[],current={duration:60},transcoded=false,lastState="",lastReport=0;
+let active={},peak={},seen=[],point=0;
+const video={volume:0.5};
+const safe=()=>{},capabilities=()=>[];
+const textNode={textContent:"TV"};
+function $(id){return textNode}
+function state(){return status}
+function position(){return point}
+function relogin(){throw Error("unexpected re-login")}
+async function api(method,path,body){
+  if(path==="/api/screens")return {screen:{id:"new",seq:0,play_seq:0,name:"TV"}};
+  const key=path.split("/")[3];
+  active[key]=(active[key]||0)+1;peak[key]=Math.max(peak[key]||0,active[key]);
+  if(block){block=false;await new Promise(resolve=>held.push(resolve))}
+  seen.push({key,body});active[key]--;
+}
+async function drain(){for(let i=0;i<12;i++)await Promise.resolve()}
+""" + queue + register + r"""
+(async()=>{
+  report(true,1);
+  for(let i=2;i<=51;i++){point=i;report(true,i)}
+  status="paused";report(true,52);
+  status="ended";report(true,53);
+  held.shift()();await drain();
+  const before=seen.slice();
+  block=true;status="playing";report(true,54);
+  status="paused";report(true,55);
+  await register();
+  status="playing";report(true,1);
+  held.shift()();await drain();
+  const after=seen.slice(before.length),offset=seen.length;
+  block=true;point=10;report(true,2);
+  for(let i=11;i<=20;i++){point=i;report(true,i)}
+  held.shift()();await drain();
+  const coalesced=seen.slice(offset);
+  console.log(JSON.stringify({peak,before,after,coalesced}));
+})().catch(err=>{console.error(err);process.exitCode=1});
+"""
+    result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["peak"] == {"old": 1, "new": 1}
+    assert [(entry["body"]["state"], entry["body"]["ack"]) for entry in data["before"]] == [
+        ("playing", 1), ("ended", 53),
+    ]
+    assert {(entry["key"], entry["body"]["ack"]) for entry in data["after"]} == {
+        ("old", 54), ("new", 1),
+    }
+    assert [(entry["body"]["position"], entry["body"]["ack"]) for entry in data["coalesced"]] == [
+        (10, 2), (20, 20),
+    ]
+    registry = ScreenRegistry()
+    screen = registry.register("owner", "person", "TV", ["video/mp4"])
+    registry.command(screen.id, "play", item="film", suffix=".mp4", follow=True)
+    results = [registry.report(screen.id, "owner", entry["body"]) for entry in data["before"]]
+    assert [reply["advance"] for reply in results] == ["", "film"]
+    assert registry.snapshot()[0]["state"] == "ended"

@@ -134,7 +134,7 @@ const $=id=>document.getElementById(id);
 $("joinAddress").textContent=location.host;
 let csrf="",screenId="",seq=0,playSeq=0,current=null,started=false,polling=false,stopped=false;
 let joining=false,starting=false;
-let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false;
+let failures=0,hideTimer=null,wakeLock=null,fallbackTried=false;
 const video=$("video");
 const safe=(fn)=>{try{return fn()}catch(_){return undefined}};
 const store={get:k=>safe(()=>localStorage.getItem(k))||"",set:(k,v)=>safe(()=>localStorage.setItem(k,v))};
@@ -177,7 +177,7 @@ async function enter(name){
 async function register(){
   const name=$("slateName").textContent||"Screen";
   const d=await api("POST","/api/screens",{name,capabilities:capabilities(),claim:safe(()=>sessionStorage.getItem("sc_screen_id"))||undefined});
-  screenId=d.screen.id;seq=d.screen.seq;playSeq=d.screen.play_seq;$("slateName").textContent=d.screen.name;
+  reportSlot=null;screenId=d.screen.id;seq=d.screen.seq;playSeq=d.screen.play_seq;$("slateName").textContent=d.screen.name;
   safe(()=>sessionStorage.setItem("sc_screen_id",screenId))}
 async function begin(){
   if(starting||started)return;
@@ -189,7 +189,7 @@ async function begin(){
     return}
   finally{starting=false;button.disabled=false;button.textContent="Start screen"}
   started=true;stopped=false;show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
-function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
+function relogin(){reportSlot=null;csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
 function slateLayout(queueEmpty){$("slate").classList.toggle("corner",queueEmpty===false);$("slate").classList.toggle("empty",queueEmpty===true)}
 function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
 const DIM_HINT="Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.";
@@ -252,13 +252,43 @@ function state(){
   if(video.ended)return"ended";
   if(video.paused)return video.readyState<3&&video.currentTime===0?"loading":"paused";
   return video.readyState<3?"buffering":"playing"}
-async function report(force,ack){
-  if(!screenId||!csrf)return;const s=state(),now=Date.now();
-  if(!force&&s===lastState&&now-lastReport<2000)return;lastReport=now;lastState=s;
+let reportSlot=null;
+function report(force,ack){
+  if(!screenId||!csrf)return;
+  if(!reportSlot||reportSlot.id!==screenId||reportSlot.session!==csrf){
+    reportSlot={id:screenId,session:csrf,generation:playSeq,ack:0,ended:false,
+                lastState:"",lastReport:0,terminal:[],pending:null,sending:false};
+  }
+  const slot=reportSlot,s=state(),now=Date.now();
+  if(slot.generation!==playSeq){
+    slot.generation=playSeq;slot.ended=false;slot.lastState="";slot.terminal=[];slot.pending=null;
+  }
+  if(ack!==undefined)slot.ack=Math.max(slot.ack,ack);
+  if(slot.ended&&s!=="ended"&&ack===undefined)return;
+  if(!force&&s===slot.lastState&&now-slot.lastReport<2000)return;
+  slot.lastReport=now;slot.lastState=s;slot.ended=s==="ended";
   const body={state:s,position:position(),duration:(current&&current.duration)||(isFinite(video.duration)&&!transcoded?video.duration:0),volume:Math.round(video.volume*100),play_seq:playSeq};
-  if(ack!==undefined)body.ack=ack;
   if(s==="error")body.error=errorText();
-  const session=csrf;try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(csrf===session&&(err.status===401||err.status===403))relogin()}}
+  if(s==="ended"||s==="error"){
+    // A terminal transition supersedes progress but must reach the room
+    // in order, even when a previous POST is still waiting for a reply.
+    slot.pending=null;
+    const index=slot.terminal.findIndex(item=>item.state===s);
+    if(index===-1)slot.terminal.push(body);else slot.terminal[index]=body;
+  }else slot.pending=body;
+  if(!slot.sending)void flushReports(slot);
+}
+async function flushReports(slot){
+  slot.sending=true;
+  while(slot===reportSlot&&(slot.terminal.length||slot.pending)){
+    const body=slot.terminal.length?slot.terminal.shift():slot.pending;
+    if(body===slot.pending)slot.pending=null;
+    if(slot.ack)body.ack=slot.ack;
+    try{await api("POST","/api/screens/"+slot.id+"/report",body)}
+    catch(err){if(slot===reportSlot&&(err.status===401||err.status===403))relogin()}
+  }
+  slot.sending=false;
+}
 function errorText(){if(recoveryFailed)return RECOVERY_ERROR;const c=video.error&&video.error.code;return c===3||c===4?"This device cannot decode that file":c===2?"Network problem while loading":"Playback failed"}
 let beat=null;function heartbeat(){if(!beat)beat=setInterval(()=>{if(started)report(false);hud()},1000)}
 function hud(){

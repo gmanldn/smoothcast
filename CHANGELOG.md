@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 92d254387dfdce920ff177cb6f7e8c4086028c34 -->
+<!-- sc-changelog-through: 4544dfdd6f4b71a3ec1355b85b7dd61d48962a40 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:52:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **07:53:32 · Fix** — fix(screens): serialize and coalesce browser playback reports (Refs #755) <!-- sc-changelog-pending -->
 
 - ⬜ **07:52:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`92d254387dfd`](https://github.com/gmanldn/smoothcast/commit/92d254387dfdce920ff177cb6f7e8c4086028c34)
+
+- ⬜ **07:52:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4544dfdd6f4b`](https://github.com/gmanldn/smoothcast/commit/4544dfdd6f4b71a3ec1355b85b7dd61d48962a40)
 
 - 🟪 **07:50:32 · Tests** — test(portal): guest upload card fits 320/768/1440 px without overflow (Refs #570) · [`1af2461d5d98`](https://github.com/gmanldn/smoothcast/commit/1af2461d5d980ea8cfaaf60dde633b706e29cc31)
 
