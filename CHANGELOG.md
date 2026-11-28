@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1a5478d3c31d833e060e62b2cadc829e490eb0dc -->
+<!-- sc-changelog-through: 05f152e4f92073a441e292dc3ff858aa0eb287d9 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **06:58:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:00:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:00:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`05f152e4f920`](https://github.com/gmanldn/smoothcast/commit/05f152e4f92073a441e292dc3ff858aa0eb287d9)
+
+- 🟩 **07:00:41 · Feature** — feat(encode-plan): rotation + VAAPI GPU round trip in the pure planner; golden-argv matrix (Refs #697) · [`cfac5ead0ad4`](https://github.com/gmanldn/smoothcast/commit/cfac5ead0ad4ec6afe199fc51b21b5c0ccd54d3e)
 
 - ⬜ **06:58:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1a5478d3c31d`](https://github.com/gmanldn/smoothcast/commit/1a5478d3c31d833e060e62b2cadc829e490eb0dc)
+
+- ⬜ **06:58:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`953b511a6cd4`](https://github.com/gmanldn/smoothcast/commit/953b511a6cd42c2aae9e27ff7561ee6c94ccf9f3)
 
 - 🟥 **06:56:38 · Fix** — fix(fence): serialize claim/accept/release/revoke/owners with a lock for atomic node claims (Refs #739) · [`9964cf43cbe1`](https://github.com/gmanldn/smoothcast/commit/9964cf43cbe194205cf44f1eb3b84b75517bf441)
 
