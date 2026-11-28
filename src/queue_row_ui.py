@@ -9,6 +9,8 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GObject, Gtk, Pango
 
 import playlist_control
+import room_events
+import secrets
 import queue_metadata
 from cast_widgets import fmt_time
 
@@ -29,7 +31,7 @@ class QueueRowController:
         w.selected_index = playlist_control.selection_after_move(
             w.selected_index, index, target,
         )
-        w.queue.insert(target, w.queue.pop(index))
+        room_events.store_for(w).submit(secrets.token_hex(8), "move", index, target)
         w._rebuild_queue()
         w._prewarm_queue_media()
         return True

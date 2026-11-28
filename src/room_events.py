@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class Event:
     seq: int
-    kind: str  # "added" | "removed" | "moved" | "cleared"
+    kind: str  # "added" | "removed" | "moved" | "cleared" | "replaced"
     data: tuple
 
 
@@ -37,6 +37,8 @@ def apply(state: QueueState, event: Event) -> None:
     elif event.kind == "moved":
         src, dst = event.data
         state.items.insert(dst, state.items.pop(src))
+    elif event.kind == "replaced":
+        state.items[:] = event.data
     elif event.kind == "cleared":
         state.items.clear()
     else:
@@ -54,8 +56,9 @@ def replay(events) -> QueueState:
 def store_for(window) -> "QueueStore":
     """The window's store, bound to its live ``queue`` list (re-adopted if the list is replaced)."""
     store = getattr(window, "_queue_store", None)
-    if store is None or store.state.items is not window.queue:
+    if store is None:
         store = window._queue_store = QueueStore(window.queue)
+    store.sync(window.queue)
     return store
 
 
@@ -67,10 +70,23 @@ class QueueStore:
         self.state = QueueState(items if items is not None else [])
         self.log: list[Event] = []
         self._seen: dict[str, tuple[Event, ...]] = {}
+        self._snapshot: tuple[str, ...] = ()
+        self.sync(self.state.items)  # adopting a non-empty list starts the log with its contents
+
+    def sync(self, live: list[str]) -> None:
+        """Record edits made outside the store (or a replaced list) as one ``replaced`` event."""
+        if live is self.state.items and tuple(live) == self._snapshot:
+            return
+        event = Event(self.state.revision + 1, "replaced", tuple(live))
+        self.state.items = live
+        self.state.revision = event.seq
+        self.log.append(event)
+        self._snapshot = tuple(live)
 
     def submit(self, command_id: str, kind: str, *args,
                expected_revision: int | None = None) -> tuple[Event, ...]:
         """Run a command; returns the events it produced (empty for a no-op or rejection)."""
+        self.sync(self.state.items)  # outside edits since the last command become an event first
         if command_id in self._seen:
             return self._seen[command_id]
         if expected_revision is not None and expected_revision != self.state.revision:
@@ -79,6 +95,7 @@ class QueueStore:
         for event in events:
             apply(self.state, event)
             self.log.append(event)
+        self._snapshot = tuple(self.state.items)
         self._seen[command_id] = events
         return events
 

@@ -156,7 +156,9 @@ class PlaylistTests(unittest.TestCase):
 
     def test_queue_drop_reorders_full_queue_and_keeps_selected_preview(self):
         methods = main_window_methods()
-        namespace = {"playlist_control": playlist_control}
+        import room_events
+        import secrets
+        namespace = {"playlist_control": playlist_control, "room_events": room_events, "secrets": secrets}
         for name in ("_move_queue", "_drop_queue_row"):
             exec(textwrap.dedent(methods[name]), namespace)
         queue_list = object()

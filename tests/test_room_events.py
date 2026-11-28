@@ -72,3 +72,19 @@ def test_store_adopts_a_live_list_in_place():
     store = QueueStore(live)
     store.submit("m", "move", 0, 2)
     assert live == ["b", "c", "a"] and store.state.items is live
+
+
+def test_outside_edits_and_rebinds_are_logged_so_replay_matches_live_queue():
+    class Window:
+        queue = ["a", "b"]
+
+    window = Window()
+    from room_events import store_for
+    store = store_for(window)
+    window.queue.append("c")            # direct in-place edit
+    store.submit("m", "move", 0, 2)
+    window.queue = ["z", "y"]           # list rebound (shuffle / checkpoint restore)
+    store = store_for(window)
+    store.submit("r", "remove", 0)
+    assert replay(store.log).items == window.queue == ["y"]
+    assert replay(store.log).revision == store.state.revision
