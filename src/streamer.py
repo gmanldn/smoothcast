@@ -74,6 +74,7 @@ def _hls_server_script() -> str:
 SESSION_FILE = ROOT / "session.json"
 PROGRESS_FILE = ROOT / "progress.log"
 FFMPEG_LOG = ROOT / "ffmpeg.log"
+_FFMPEG_LOG_TAIL_BYTES = 64 * 1024  # per retry and saved encode attempt
 _ATTEMPT_LOG = logging.getLogger("smoothcast.attempts")
 PORT = hls_server.PORT  # default; Session picks a free fallback if it is taken
 FALLBACK_PORTS = 32  # PORT .. PORT+31 are scanned for a free port or our own server
@@ -1289,6 +1290,14 @@ def clear_session() -> None:
     SESSION_FILE.unlink(missing_ok=True)
 
 
+def _ffmpeg_log_tail() -> bytes:
+    with FFMPEG_LOG.open("rb") as handle:
+        end = handle.seek(0, os.SEEK_END)
+        size = min(end, _FFMPEG_LOG_TAIL_BYTES)
+        handle.seek(end - size)
+        return handle.read(size)
+
+
 class Session:
     """A live casting session: HLS transcode (or direct play) plus cast."""
 
@@ -1468,10 +1477,7 @@ class Session:
         if attempt is None:
             return
         try:
-            with open(FFMPEG_LOG, "rb") as handle:
-                handle.seek(0, os.SEEK_END)
-                handle.seek(max(0, handle.tell() - 65536))
-                attempt.write("ffmpeg.log", handle.read())
+            attempt.write("ffmpeg.log", _ffmpeg_log_tail())
         except OSError as exc:
             _ATTEMPT_LOG.warning("could not keep ffmpeg stderr for this attempt: %s", exc)
         try:
@@ -1481,7 +1487,7 @@ class Session:
 
     def log_tail(self, lines: int = 5) -> str:
         try:
-            content = FFMPEG_LOG.read_text(errors="replace").splitlines()
+            content = _ffmpeg_log_tail().decode("utf-8", errors="replace").splitlines()
         except OSError:
             return ""
         return " ".join(line.strip() for line in content[-lines:] if line.strip())

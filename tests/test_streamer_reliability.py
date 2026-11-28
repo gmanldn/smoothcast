@@ -1,6 +1,8 @@
 """Regression tests for safe stream-server startup and stale PID handling."""
 from pathlib import Path
+import os
 import sys
+from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 
@@ -12,6 +14,51 @@ import streamer
 
 
 class StreamerReliabilityTests(unittest.TestCase):
+    def test_ffmpeg_log_tail_reads_only_a_bounded_suffix_of_a_sparse_log(self):
+        limit = 64 * 1024
+        with TemporaryDirectory() as work:
+            path = Path(work) / "ffmpeg.log"
+            with path.open("wb") as handle:
+                handle.seek(64 * 1024 * 1024, os.SEEK_SET)
+                handle.write("\n first \nsecond\n third\nfourth\nfünf\n".encode())
+
+            read_lengths = []
+            real_open = Path.open
+
+            def instrumented_open(file, *args, **kwargs):
+                handle = real_open(file, *args, **kwargs)
+                read = handle.read
+
+                def measure(size=-1):
+                    data = read(size)
+                    read_lengths.append(len(data))
+                    return data
+
+                handle.read = measure
+                return handle
+
+            with (
+                mock.patch.object(streamer, "FFMPEG_LOG", path),
+                mock.patch.object(Path, "open", autospec=True, side_effect=instrumented_open),
+            ):
+                self.assertEqual(streamer.Session().log_tail(), "first second third fourth fünf")
+            self.assertEqual(read_lengths, [limit])
+
+    def test_ffmpeg_log_tail_handles_missing_empty_and_split_utf8(self):
+        with TemporaryDirectory() as work:
+            path = Path(work) / "ffmpeg.log"
+            with mock.patch.object(streamer, "FFMPEG_LOG", path):
+                session = streamer.Session()
+                self.assertEqual(session.log_tail(), "")
+                path.write_bytes(b"")
+                self.assertEqual(session.log_tail(), "")
+                # The byte limit falls inside the opening multibyte character
+                # of a single, very long unterminated line.
+                suffix = "x" * (64 * 1024 - 2)
+                path.write_bytes(("€" + suffix).encode())
+                tail = session.log_tail()
+                self.assertEqual(tail, "��" + suffix)
+
     def test_stalled_vaapi_encoder_falls_back_even_if_process_is_alive(self):
         from tempfile import TemporaryDirectory
         with TemporaryDirectory() as work:
