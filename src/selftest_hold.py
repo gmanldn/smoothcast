@@ -50,16 +50,24 @@ def _scale_probe(app, prefix: str, gtk) -> None:
         Path(prefix + ".scale").write_text(json.dumps({"error": "no window"}), encoding="ascii")
         return
     ctx = GLib_ctx()
-    settle = time.monotonic() + 1.5  # relayout needs frame-clock ticks, not just pending events
-    while time.monotonic() < settle:
-        while ctx.iteration(False):
-            pass
-        time.sleep(0.02)
+
+    def settle() -> None:  # relayout needs frame-clock ticks, not just pending events
+        end = time.monotonic() + 1.5
+        while time.monotonic() < end:
+            while ctx.iteration(False):
+                pass
+            time.sleep(0.02)
+
+    settle()
     checked: list = []
     clipped = clipped_labels(window, gtk, checked)
-    Path(prefix + ".scale").write_text(
-        json.dumps({"scale": scale, "clipped": clipped, "checked": len(checked),
-                    "window_width": window.get_width()}), encoding="utf-8")
+    width = window.get_width()
+    window.set_default_size(1, 1)  # shrink to the smallest size the layout allows
+    settle()
+    result = {"scale": scale, "clipped": clipped, "checked": len(checked), "window_width": width,
+              "min_width": window.get_width(), "min_height": window.get_height(),
+              "min_clipped": clipped_labels(window, gtk)}
+    Path(prefix + ".scale").write_text(json.dumps(result), encoding="utf-8")
 
 
 def GLib_ctx():

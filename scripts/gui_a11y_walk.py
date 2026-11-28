@@ -243,6 +243,9 @@ def main() -> int:
     if scale_file.is_file():
         result = json.loads(scale_file.read_text(encoding="utf-8"))
         scale_bad = [f"clipped at scale: {t!r}" for t in result.get("clipped", [])]
+        scale_bad += [f"clipped at minimum window size: {t!r}" for t in result.get("min_clipped", [])]
+        if result.get("min_width") is not None:
+            print("SCALE minimum window:", result["min_width"], "x", result.get("min_height"))
         if result.get("error"):
             scale_bad.append(f"scale probe failed: {result['error']}")
         if not result.get("error") and not result.get("checked"):
