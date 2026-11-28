@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 244abfd9118c79eccdb83fd15e3e5d5544693620 -->
+<!-- sc-changelog-through: bbb04bc4861b982a102991c7c6ddaffd1528b6cd -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:20:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **04:23:00 · Fix** — fix(bounce): refresh and verify installed build before idle launch (Refs #626) <!-- sc-changelog-pending -->
 
 - ⬜ **04:20:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`244abfd9118c`](https://github.com/gmanldn/smoothcast/commit/244abfd9118c79eccdb83fd15e3e5d5544693620)
+
+- ⬜ **04:20:47 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bbb04bc4861b`](https://github.com/gmanldn/smoothcast/commit/bbb04bc4861b982a102991c7c6ddaffd1528b6cd)
 
 - 🟥 **04:20:42 · Fix** — fix(cast): bound media load command wait (Refs #202) · [`734be6833e02`](https://github.com/gmanldn/smoothcast/commit/734be6833e02548b73f33d77e7f342f54d82fb0e)
 

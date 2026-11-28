@@ -56,19 +56,54 @@ def decide(*, head: str | None, target: str | None, dirty: bool | None,
         return "update", f"Updating to {target[:12]}."
     if running:
         if restart:
-            message = ("Already on the latest build; playback is active, so restart was deferred."
+            message = ("Checkout is current; playback is active, so restart was deferred."
                        if playback else
-                       "Already on the latest build; restart it when playback ends.")
+                       "Checkout is current; running build unverified. Quit SmoothCast normally, then rerun bounce.")
             return "defer", message
         if playback:
             return "noop", "A saved playback session is active; no restart was attempted."
-        return "noop", f"Already running the latest build ({head[:12]})."
-    return "start", f"Already on the latest build ({head[:12]}); starting SmoothCast."
+        return "noop", f"Checkout is current ({head[:12]}); running build unverified. Quit SmoothCast normally, then rerun bounce."
+    return "start", f"Checkout is current ({head[:12]}); starting SmoothCast after install verification."
+
+
+def _prepare_install(target: str) -> bool:
+    """Refresh an idle registered install and verify the selected build."""
+    import sc
+    import checkout_refresh
+    import launch
+    import managed_startup
+
+    platform = sc._target()
+    if platform is None:
+        return False
+    installed = sc._installed_root(platform)
+    if installed is None or installed == ROOT.resolve():
+        return True  # Canonical launcher owns first-time setup.
+    running = lambda: launch.gui_instances(all_installations=True)
+    if running() or _saved_playback():
+        print("SmoothCast became active; update deferred.")
+        return False
+    selected = installed
+    if managed_startup.activated(installed):
+        active = managed_startup.active_launch(installed)
+        if active is None:
+            print("Managed activation could not be verified; use its update controls.")
+            return False
+        selected = active[1].parents[1]
+    elif checkout_refresh.refresh(ROOT, installed, platform, running):
+        return False
+    if (checkout_refresh.installed_revision(selected) != target
+            or checkout_refresh.read_version(selected) != checkout_refresh.read_version(ROOT)):
+        print("Installed build does not match the requested checkout; not launching stale code.")
+        return False
+    print(f"Verified installed build {target[:12]}.")
+    return True
 
 
 def _launch() -> None:
     subprocess.Popen([sys.executable, str(ROOT / "sc.py")], cwd=str(ROOT), start_new_session=True,
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                     stdin=subprocess.DEVNULL,
+                     env={**os.environ, "SMOOTHCAST_UPDATE_APPLIED": "1"})
 
 
 def _saved_playback() -> bool:
@@ -92,7 +127,7 @@ def _running() -> bool:
     sys.path.insert(0, str(ROOT / "src"))
     try:
         import launch
-        return bool(launch.gui_instances())
+        return bool(launch.gui_instances(all_installations=True))
     except Exception:  # an unreadable process table must not look like "idle"
         return True
 
@@ -131,8 +166,15 @@ def main(argv: list[str] | None = None) -> int:
             print("Could not apply the update cleanly; nothing was changed.")
             return 1
         print(f"Prepared {(target or '')[:12]}.")
-    print("Restarting controls…")
-    _launch()
+    try:
+        if _running() or _saved_playback() or not _prepare_install(target or ""):
+            print("Requested build not started; existing playback is untouched.")
+            return 1
+        print("Restarting controls…")
+        _launch()
+    except (OSError, ValueError) as exc:
+        print(f"SmoothCast could not prepare or launch the requested build: {exc}")
+        return 1
     print("SmoothCast is starting.")
     return 0
 
