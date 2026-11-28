@@ -195,6 +195,7 @@ class Screen:
     orders: deque = field(default_factory=lambda: deque(maxlen=MAX_PENDING_ORDERS))
     commands: OrderedDict = field(default_factory=OrderedDict)
     anchor: dict | None = None  # latest play/stop order, kept after the mailbox evicts it
+    resume_ack: int = 0  # reclaimed: this ack proves a new document applied the resume
 
     def public(self, now: float) -> dict:
         age = max(0.0, now - self.last_seen)
@@ -257,6 +258,13 @@ class ScreenRegistry:
                 existing.name = self._unique_name(clean, except_id=existing.id)
                 existing.capabilities = caps
                 existing.last_seen = now
+                # The returning document has an empty player whatever the browser
+                # applied before, so replay the current intent rather than only
+                # the orders it missed (#752).
+                if existing.anchor is not None:
+                    existing.resume_ack = existing.anchor["seq"]
+                elif existing.orders:
+                    existing.resume_ack = existing.orders[0]["seq"]
                 self._generation += 1
                 self._cond.notify_all()
                 return existing
@@ -354,7 +362,8 @@ class ScreenRegistry:
                 if screen is None or screen.owner_key != owner_key:
                     raise ScreenError(404, "This screen is no longer registered")
                 screen.last_seen = now
-                if screen.orders and screen.orders[0]["seq"] > since + 1:
+                if screen.resume_ack or (
+                        screen.orders and screen.orders[0]["seq"] > since + 1):
                     return self._resync(screen)
                 pending = [dict(o) for o in screen.orders if o["seq"] > since]
                 if pending or now >= deadline:
@@ -408,12 +417,14 @@ class ScreenRegistry:
             if (isinstance(ack, int) and not isinstance(ack, bool)
                     and 0 <= ack <= screen.seq):
                 screen.ack = max(screen.ack, ack)
+                if screen.resume_ack and ack >= screen.resume_ack:
+                    screen.resume_ack = 0
             previous = screen.state
             # Legacy clients omit play_seq. Accept them only before any play or
             # stop generation exists; otherwise their playback evidence is
             # ambiguous and may describe an item that has already been replaced.
             about = report.get("play_seq")
-            current = (
+            current = not screen.resume_ack and (
                 (isinstance(about, int) and not isinstance(about, bool)
                  and about == screen.play_seq)
                 or ("play_seq" not in report and screen.play_seq == 0)

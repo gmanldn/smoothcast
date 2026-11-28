@@ -210,6 +210,84 @@ def test_resync_without_any_play_or_stop_replays_only_what_is_retained(registry)
     assert [o["seq"] for o in got["orders"]] == [o["seq"] for o in screen.orders]
 
 
+def _applied(registry, screen, seq, **extra):
+    """The browser reports that it applied order *seq* (what the page does)."""
+    return registry.report(screen.id, "k1", {
+        "state": "playing", "play_seq": screen.play_seq, "ack": seq, **extra})
+
+
+def test_reclaim_replays_what_happened_while_the_page_was_away(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    _applied(registry, screen, 1, position=33.0)
+    # The page disconnects; the room moves on to B before the same session returns.
+    play(registry, screen, item="bbb")
+    again = make(registry)
+    assert again.id == screen.id
+    got = registry.poll(screen.id, "k1", again.seq)
+    assert got["resync"] == {"from": screen.play_seq - 1}
+    assert [(o["kind"], o["item"]) for o in got["orders"]] == [("play", "bbb")]
+
+
+def test_reclaim_after_a_pause_rebuilds_the_film_then_pauses_it(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    _applied(registry, screen, 1, position=33.0)
+    registry.command(screen.id, "pause")
+    make(registry)
+    got = registry.poll(screen.id, "k1", screen.seq)
+    assert [o["kind"] for o in got["orders"]] == ["play", "pause"]
+    assert got["orders"][0]["item"] == "aaa" and got["orders"][0]["start"] == 33.0
+
+
+def test_a_fresh_page_cannot_overwrite_host_state_before_it_applies_the_resume(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    _applied(registry, screen, 1, position=33.0)
+    make(registry)
+    before = registry.snapshot()[0]
+    # The new document has nothing loaded yet; its heartbeat reports an empty player
+    # against the host's current generation, and must not wipe the film or position.
+    registry.report(screen.id, "k1", {"state": "idle", "position": 0,
+                                      "play_seq": screen.play_seq, "ack": 0})
+    after = registry.snapshot()[0]
+    for field in ("state", "position", "item", "duration", "volume"):
+        assert after[field] == before[field]
+    assert registry.poll(screen.id, "k1", screen.seq)["resync"]["from"] == 0
+    # Once it applies the replayed play, its evidence counts again and the replay stops.
+    _applied(registry, screen, screen.play_seq, position=33.0)
+    assert registry.snapshot()[0]["state"] == "playing"
+    assert "resync" not in registry.poll(screen.id, "k1", screen.seq)
+
+
+def test_a_lost_resume_response_is_offered_again_until_acknowledged(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    _applied(registry, screen, 1)
+    make(registry)
+    first = registry.poll(screen.id, "k1", screen.seq)
+    second = registry.poll(screen.id, "k1", screen.seq)     # the answer never arrived
+    assert first["resync"] == second["resync"] and first["orders"] == second["orders"]
+
+
+def test_first_registration_and_expired_replacement_do_not_resume(registry, clock):
+    screen = make(registry)
+    assert "resync" not in registry.poll(screen.id, "k1", screen.seq)
+    play(registry, screen, item="aaa")
+    _applied(registry, screen, 1)
+    clock.now += screens.SCREEN_TTL + 1
+    fresh = make(registry)                      # the old record expired: a new screen
+    assert fresh.id != screen.id
+    assert "resync" not in registry.poll(fresh.id, "k1", fresh.seq)
+
+
+def test_reclaim_with_nothing_ever_ordered_has_nothing_to_replay(registry):
+    screen = make(registry)
+    again = make(registry)
+    assert again.id == screen.id
+    assert "resync" not in registry.poll(screen.id, "k1", again.seq)
+
+
 def test_identical_command_id_is_an_idempotent_retry(registry):
     screen = make(registry)
     first = play(registry, screen, command_id="c-1")
