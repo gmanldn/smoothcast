@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8a7dd4537d0c5bcb8ac4dee3714d26f060c814a7 -->
+<!-- sc-changelog-through: cfe8df78f12504a6b43afdab540f899ae13ca2ab -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:04:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:07:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:07:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cfe8df78f125`](https://github.com/gmanldn/smoothcast/commit/cfe8df78f12504a6b43afdab540f899ae13ca2ab)
+
+- 🟦 **09:07:15 · Refactor** — refactor(room): RoomCheckpointUiMixin becomes composed RoomCheckpointController; bases 14-&gt;13 (Refs #691) · [`8ecc6c91daa3`](https://github.com/gmanldn/smoothcast/commit/8ecc6c91daa3b8abc05eb1c950c577ab74069fec)
 
 - ⬜ **09:04:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8a7dd4537d0c`](https://github.com/gmanldn/smoothcast/commit/8a7dd4537d0c5bcb8ac4dee3714d26f060c814a7)
+
+- ⬜ **09:04:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5d66f6a7527d`](https://github.com/gmanldn/smoothcast/commit/5d66f6a7527d4e91950cb325a6f8fb136bb35e19)
 
 - 🟦 **09:04:22 · Refactor** — refactor(subtitles): SubtitleMixin becomes composed SubtitleController; bases 15-&gt;14 (Refs #691) · [`1109a22ac828`](https://github.com/gmanldn/smoothcast/commit/1109a22ac828c48a6db1c8e695961a738e36f893)
 
