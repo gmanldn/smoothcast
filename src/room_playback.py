@@ -9,7 +9,7 @@ Same contract as ``room_events``: validated commands -> numbered events ->
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,7 @@ class PlaybackEvent:
     seq: int
     kind: str  # claimed | released | playing | paused | stopped | position | poller_attached | poller_detached
     data: tuple
+    cid: str = ""  # command id that produced it ("" for outside edits), kept so idempotency survives a rejoin
 
 
 @dataclass
@@ -75,6 +76,8 @@ class PlaybackStore:
         for event in events:
             apply(store.state, event)
             store.log.append(event)
+            if event.cid:
+                store._seen[event.cid] = store._seen.get(event.cid, ()) + (event,)
         return store
 
     def submit(self, command_id: str, kind: str, actor: str, *args,
@@ -84,7 +87,7 @@ class PlaybackStore:
             return self._seen[command_id]
         if expected_revision is not None and expected_revision != self.state.revision:
             return ()
-        events = tuple(self._events_for(kind, actor, args))
+        events = tuple(replace(e, cid=command_id) for e in self._events_for(kind, actor, args))
         for event in events:
             apply(self.state, event)
             self.log.append(event)

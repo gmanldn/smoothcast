@@ -10,7 +10,7 @@ produces numbered, replayable events. State is only ever changed by
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace, field
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class Event:
     seq: int
     kind: str  # "added" | "removed" | "moved" | "cleared" | "replaced"
     data: tuple
+    cid: str = ""  # command id that produced it ("" for outside edits), kept so idempotency survives a rejoin
 
 
 @dataclass
@@ -80,6 +81,8 @@ class QueueStore:
         for event in events:
             apply(store.state, event)
             store.log.append(event)
+            if event.cid:
+                store._seen[event.cid] = store._seen.get(event.cid, ()) + (event,)
         store._snapshot = tuple(store.state.items)
         return store
 
@@ -101,7 +104,7 @@ class QueueStore:
             return self._seen[command_id]
         if expected_revision is not None and expected_revision != self.state.revision:
             return ()  # stale: not remembered, so the caller may retry with a fresh fence
-        events = tuple(self._events_for(kind, args))  # may be empty: a validated no-op
+        events = tuple(replace(e, cid=command_id) for e in self._events_for(kind, args))  # may be empty: a validated no-op
         for event in events:
             apply(self.state, event)
             self.log.append(event)

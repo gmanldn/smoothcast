@@ -32,3 +32,15 @@ def test_disconnect_and_rejoin_loses_nothing_and_duplicates_nothing(seed):
         assert play.state.status == "idle" or play.state.owner is not None
     assert [e.seq for e in queue.log] == list(range(1, len(queue.log) + 1))
     assert [e.seq for e in play.log] == list(range(1, len(play.log) + 1))
+
+
+def test_idempotency_survives_rejoin():
+    queue = QueueStore()
+    first = queue.submit("c1", "add", ["a"])
+    queue = QueueStore.restore(queue.log)
+    assert queue.submit("c1", "add", ["a", "b"]) == first
+    assert queue.state.items == ["a"]
+    play = PlaybackStore()
+    play.submit("k1", "claim", "a")
+    play = PlaybackStore.restore(play.log)
+    assert play.submit("k1", "claim", "b") and play.state.owner == "a"
