@@ -34,6 +34,7 @@ REFRESH_S = 10.0
 PROBE_CONCURRENCY = 2
 PROBE_TIMEOUT_S = 2.0
 EDGE_QUANTUM_MS = 5_000
+TARGET_FRESH_MS = 15_000
 
 
 @dataclass(frozen=True)
@@ -238,6 +239,16 @@ class Seen:
     reason: str = ""
 
 
+def ready_observation_is_fresh(seen: Seen) -> bool:
+    """Whether a ready target observation is fresh enough to be selected.
+
+    Route planning and the target picker must apply the same observation-age
+    cutoff; capacities have their own independent freshness rule.
+    """
+    return (seen.state == "ready" and type(seen.age_ms) is int
+            and 0 <= seen.age_ms <= TARGET_FRESH_MS)
+
+
 @dataclass(frozen=True)
 class TargetEntry:
     id: str
@@ -324,8 +335,10 @@ def candidate_routes(matrix: VisibilityMatrix, target_id: str,
     candidates: list[RouteCandidate] = []
     excluded: list[tuple[str, str]] = []
     for seen in entry.seen_by:
-        if seen.state == "ready":
+        if ready_observation_is_fresh(seen):
             candidates.append(RouteCandidate(seen.node_id, seen.state, seen.rtt_ms))
+        elif seen.state == "ready":
+            excluded.append((seen.node_id, "Not seen recently"))
         elif seen.state == "busy":
             excluded.append((seen.node_id, "The receiver reports it is busy"))
         elif seen.state == "stale":
@@ -344,5 +357,5 @@ def candidate_routes(matrix: VisibilityMatrix, target_id: str,
 
 __all__ = [
     "Discovered", "LocalObserver", "RouteCandidate", "RouteOptions", "Seen", "TargetEntry",
-    "VisibilityMatrix", "candidate_routes", "connect_probe",
+    "VisibilityMatrix", "candidate_routes", "connect_probe", "ready_observation_is_fresh",
 ]

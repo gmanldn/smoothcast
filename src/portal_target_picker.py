@@ -4,8 +4,9 @@ Rows come from ``VisibilityMatrix.targets()``. Readiness is never inferred from 
 """
 from __future__ import annotations
 
+from mesh_visibility import ready_observation_is_fresh
+
 MAX_ROWS = 64
-STALE_MS = 15_000
 REASONS = {
     "busy": "In use right now",
     "stale": "Hasn't been seen recently",
@@ -16,7 +17,7 @@ REASONS = {
 
 
 def _row(e, me: str | None) -> dict:
-    ready = [s for s in e.seen_by if s.state == "ready" and s.age_ms <= STALE_MS]
+    ready = [s for s in e.seen_by if ready_observation_is_fresh(s)]
     state = "ready" if ready else (e.state if e.state in REASONS else "unreachable")
     reason = ""
     if state != "ready":

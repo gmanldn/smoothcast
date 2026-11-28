@@ -9,8 +9,9 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from mesh_visibility import Seen, TargetEntry
+from mesh_visibility import Seen, TargetEntry, candidate_routes, ready_observation_is_fresh
 from mesh_cast_planner import Capacity, NoRoute, Plan, Request, select, MAX_NODES
+from src import portal_target_picker
 
 
 class Matrix:
@@ -72,6 +73,34 @@ def test_stale_unreachable_and_exhausted_nodes_excluded():
                   ).mode == "direct"
     assert select(req(), Matrix(Seen("a", "ready", 0)), (cap(),),
                   current=None).requires_preflight
+
+
+def test_picker_and_planner_share_target_freshness_cutoff_and_recover_on_refresh():
+    expired = Seen("fast", "ready", 15_001, 1)
+    cutoff = Seen("fresh", "ready", 15_000, 40)
+    assert ready_observation_is_fresh(cutoff)
+    assert not ready_observation_is_fresh(expired)
+
+    mixed = Matrix(expired, cutoff)
+    assert [route.node_id for route in candidate_routes(mixed, "tv").candidates] == ["fresh"]
+    picked = portal_target_picker.rows([mixed.target], ready_only=True)
+    assert len(picked) == 1 and picked[0]["via"] == "fresh"
+    plan = select(req(source_node="source"), mixed,
+                  (cap("fast", rtt_ms=1), cap("fresh", rtt_ms=40)))
+    assert isinstance(plan, Plan) and plan.processing_node_id == "fresh"
+
+    all_expired = Matrix(Seen("fast", "ready", 15_001, 1),
+                         Seen("fresh", "ready", 15_001, 40))
+    unavailable = portal_target_picker.rows([all_expired.target], ready_only=True)
+    assert unavailable == []
+    assert select(req(source_node="source"), all_expired,
+                  (cap("fast", rtt_ms=1), cap("fresh", rtt_ms=40))).code == "target_unreachable"
+
+    refreshed = Matrix(Seen("fast", "ready", 0, 1), cutoff)
+    assert portal_target_picker.rows([refreshed.target], ready_only=True)[0]["via"] == "fast"
+    recovered = select(req(source_node="source"), refreshed,
+                       (cap("fast", rtt_ms=1), cap("fresh", rtt_ms=40)))
+    assert isinstance(recovered, Plan) and recovered.processing_node_id == "fast"
 
 
 def test_unknown_link_does_not_claim_remote_offload():
