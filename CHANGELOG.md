@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 435853806cd61992276c0ad05aaeabf2c8ccacee -->
+<!-- sc-changelog-through: 724b0a1e039a3a007b6cffdf823b6d4df149c00e -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:17:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:19:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:19:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`724b0a1e039a`](https://github.com/gmanldn/smoothcast/commit/724b0a1e039a3a007b6cffdf823b6d4df149c00e)
+
+- 🟩 **03:19:34 · Feature** — feat: map desktop preferences in web settings (Refs #708) · [`6d23410aab7e`](https://github.com/gmanldn/smoothcast/commit/6d23410aab7eb7fc7715f0e0925d86ddfd5a73ba)
 
 - ⬜ **03:17:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`435853806cd6`](https://github.com/gmanldn/smoothcast/commit/435853806cd61992276c0ad05aaeabf2c8ccacee)
+
+- ⬜ **03:17:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`09bcb624a87f`](https://github.com/gmanldn/smoothcast/commit/09bcb624a87f1011f5b5a51dd91dace8d67bb787)
 
 - 🟥 **03:16:57 · Fix** — fix: share target observation freshness cutoff (Refs #744) · [`25ceb3225693`](https://github.com/gmanldn/smoothcast/commit/25ceb32256937d83ba3a2377c99e9695a8c4863d)
 
