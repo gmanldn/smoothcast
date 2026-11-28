@@ -10,6 +10,7 @@ import re
 import subprocess
 
 from async_jobs import UserFacingError
+import errors
 import media_tools
 
 # Linearise the PQ signal before Hable tone mapping, then convert gamut,
@@ -56,7 +57,9 @@ def filters_available() -> bool:
 def require_available(media: object) -> None:
     """Reject unsupported HDR before a current receiver session is replaced."""
     if filter_for(media) and not filters_available():
+        spec = errors.CATALOGUE["ffmpeg.filters_missing"]
         raise TonemapUnavailable(
-            "HDR10 conversion requires FFmpeg filters zscale and tonemap; "
-            "install an FFmpeg build with both filters before casting this film"
+            spec.message,
+            detail="HDR10 conversion requires FFmpeg filters zscale and tonemap",
+            code=spec.code,
         )

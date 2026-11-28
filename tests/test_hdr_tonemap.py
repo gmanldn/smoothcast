@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
+import errors
+import failure_boundary
 import hdr_tonemap
 import streamer
 
@@ -32,9 +34,34 @@ def test_missing_filters_fail_closed_without_probing_sdr():
     with patch.object(hdr_tonemap, "filters_available", return_value=False) as probe:
         hdr_tonemap.require_available(media("bt709", "bt709", "bt709"))
         probe.assert_not_called()
-        with pytest.raises(hdr_tonemap.TonemapUnavailable, match="zscale and tonemap"):
+        with pytest.raises(hdr_tonemap.TonemapUnavailable, match="zscale and tonemap") as caught:
             hdr_tonemap.require_available(media())
+    failure = failure_boundary.describe(caught.value)
+    assert failure.code == "ffmpeg.filters_missing"
+    assert failure.message == errors.CATALOGUE["ffmpeg.filters_missing"].message
     hdr_tonemap.filters_available.cache_clear()
+
+
+def test_streamer_keeps_hdr_filter_code_before_touching_receiver_resources():
+    item = streamer.MediaInfo(Path("film.mkv"), duration=60)
+    item.color_transfer = "smpte2084"
+    item.color_primaries = "bt2020"
+    item.color_space = "bt2020nc"
+    failure = hdr_tonemap.TonemapUnavailable(
+        errors.CATALOGUE["ffmpeg.filters_missing"].message,
+        code="ffmpeg.filters_missing",
+    )
+    with patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
+         patch.object(streamer.hdr_tonemap, "require_available", side_effect=failure), \
+         patch.object(streamer, "host_ip") as host:
+        with pytest.raises(streamer.StreamError) as caught:
+            streamer.Session().start_transcode(
+                item, 0, device="Receiver", quality="balanced",
+                audio_profile="original", subs_file=None, burn_subs=False,
+                title="Film",
+            )
+    assert failure_boundary.describe(caught.value).code == "ffmpeg.filters_missing"
+    host.assert_not_called()
 
 
 def test_ffmpeg_filter_detection_rejects_unrelated_filter_names():

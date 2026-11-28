@@ -168,6 +168,16 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Install FFmpeg 5.0 or newer.
   2. Restart SmoothCast.
 
+<a id="errors-ffmpeg-filters-missing"></a>
+## `ffmpeg.filters_missing`
+
+- Severity: error; retryable: no
+- Message: This HDR film needs conversion filters that are not available.
+- Try:
+  1. Install an FFmpeg build with the zscale and tonemap filters.
+  2. Restart SmoothCast and choose the film again.
+  3. Choose a non-HDR version of the film.
+
 <a id="errors-media-probe-failed"></a>
 ## `media.probe_failed`
 

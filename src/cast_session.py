@@ -24,6 +24,7 @@ import capability_gate
 import cast_recovery
 import castctl
 import command_trace
+import errors
 
 import dlna
 
@@ -202,7 +203,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
             try:
                 hdr_tonemap.require_available(media)
             except hdr_tonemap.TonemapUnavailable as exc:
-                raise streamer.StreamError(str(exc)) from exc
+                raise errors.coded(streamer.StreamError(str(exc)), exc.code) from exc
             effective_subs_path, effective_burn = streamer.audio_cast_options(
                 media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:

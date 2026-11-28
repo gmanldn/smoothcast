@@ -1824,7 +1824,7 @@ class Session:
         try:
             hdr_tonemap.require_available(media)
         except hdr_tonemap.TonemapUnavailable as exc:
-            raise StreamError(str(exc)) from exc
+            raise errors.coded(StreamError(str(exc)), exc.code) from exc
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         audio_delay_ms = audio_delay.normalize(audio_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
