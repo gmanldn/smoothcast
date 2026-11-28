@@ -86,18 +86,26 @@ HOST_CONTROLS: dict[str, HostControl] = {
 }
 
 
+class HostSettingError(ValueError):
+    """A rejected host setting. ``message`` is authored copy that is safe to show."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 def validate_host_setting(key: object, value: object) -> tuple[str, object]:
     """Validate a deliberately small host-only allowlist and exact value types."""
     if not isinstance(key, str) or key not in HOST_CONTROLS:
-        raise ValueError("That host setting cannot be changed from the web room")
+        raise HostSettingError("That host setting cannot be changed from the web room")
     descriptor = HOST_CONTROLS[key]
     if descriptor["kind"] == "boolean":
         if type(value) is not bool:
-            raise ValueError("That setting must be on or off")
+            raise HostSettingError("That setting must be on or off")
         return key, value
     choices = preference_choices.OPTIONS[key]
     if not any(type(choice) is type(value) and choice == value for _label, choice in choices):
-        raise ValueError("Choose one of the listed options")
+        raise HostSettingError("Choose one of the listed options")
     return key, value
 
 

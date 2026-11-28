@@ -233,8 +233,8 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             try:
                 key, value = settings_catalog.validate_host_setting(
                     payload.get("key"), payload.get("value"))
-            except ValueError as exc:
-                raise portal.PortalRequestError(400, str(exc)) from exc
+            except settings_catalog.HostSettingError as exc:
+                raise portal.PortalRequestError(400, exc.message) from exc
             owner.cfg[key] = value
             if key == "color_scheme":
                 # Selecting a fixed scheme ends time-of-day switching just as

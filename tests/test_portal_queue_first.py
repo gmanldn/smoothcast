@@ -55,9 +55,12 @@ def test_room_heading_and_rename_controls_follow_host_permission():
     harness = r"""
 const assert=require("node:assert/strict");
 const elements={roomRenameLink:{hidden:true},roomNameForm:{hidden:true},roomNameInput:{value:""},
-  homeHeading:{textContent:"Your room"},joinTitle:{textContent:"Join the house"}};
+  homeHeading:{textContent:"Your room"},joinTitle:{textContent:"Join the house"},
+  hostSettingsControls:{hidden:false}};
 const document={activeElement:null};
 const $=id=>elements[id];
+let hostSettingsLoads=0;
+function loadHostSettings(){hostSettingsLoads++}
 """
     scenario = r"""
 renderRoomIdentity({name:"Lounge",can_rename:true});
@@ -66,10 +69,14 @@ assert.equal(elements.joinTitle.textContent,"Join Lounge");
 assert.equal(elements.roomRenameLink.hidden,false);
 assert.equal(elements.roomNameForm.hidden,false);
 assert.equal(elements.roomNameInput.value,"Lounge");
+assert.equal(hostSettingsLoads,1);
+assert.equal(elements.hostSettingsControls.hidden,false);
 renderRoomIdentity({name:"Studio",can_rename:false});
 assert.equal(elements.homeHeading.textContent,"Studio");
 assert.equal(elements.roomRenameLink.hidden,true);
 assert.equal(elements.roomNameForm.hidden,true);
+assert.equal(hostSettingsLoads,1);
+assert.equal(elements.hostSettingsControls.hidden,true);
 """
     subprocess.run(["node", "-"], input=harness + identity + scenario,
                    text=True, check=True, timeout=10)
