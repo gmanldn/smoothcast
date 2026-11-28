@@ -35,12 +35,42 @@ def test_unrelated_install_error_does_not_prove_downgrade_rejection(tmp_path, me
     assert not log.exists()  # A stale log cannot qualify a new failure.
 
 
+def test_user_settings_path_uses_appdata_and_shared_app_directory(tmp_path):
+    assert matrix.user_settings_path({"APPDATA": str(tmp_path)}) == (
+        tmp_path / matrix.app_paths.APP_DIR / "config.json"
+    )
+    assert matrix.user_settings_path({"APPDATA": "relative"}, home=tmp_path) == (
+        tmp_path / "AppData" / "Roaming" / matrix.app_paths.APP_DIR / "config.json"
+    )
+
+
+def test_user_settings_fixture_restores_existing_and_absent_state(tmp_path):
+    absent = tmp_path / "new" / matrix.app_paths.APP_DIR / "config.json"
+    expected, existed, made = matrix._prepare_user_settings(absent)
+    assert not existed and absent.read_bytes() == matrix._SETTINGS_FIXTURE
+    absent.write_bytes(b"changed by hypothetical installer")
+    matrix._restore_user_settings(absent, expected, existed, made)
+    assert not absent.exists()
+    assert not absent.parent.exists()
+
+    present = tmp_path / "existing" / matrix.app_paths.APP_DIR / "config.json"
+    present.parent.mkdir(parents=True)
+    original = b'{"existing":"settings"}\n'
+    present.write_bytes(original)
+    snapshot, existed, made = matrix._prepare_user_settings(present)
+    present.write_bytes(b"changed by hypothetical installer")
+    matrix._restore_user_settings(present, snapshot, existed, made)
+    assert existed and present.read_bytes() == original
+
+
 def test_matrix_really_uninstalls_and_checks_registration(tmp_path, monkeypatch):
     windows = tmp_path / "Windows"
     executable = windows / "System32" / "msiexec.exe"
     executable.parent.mkdir(parents=True)
     executable.touch()
     monkeypatch.setenv("SystemRoot", str(windows))
+    appdata = tmp_path / "appdata"
+    monkeypatch.setenv("APPDATA", str(appdata))
     a, b = tmp_path / "a.msi", tmp_path / "b.msi"
     a.write_bytes(b"fixture A")
     b.write_bytes(b"fixture B")
@@ -62,8 +92,10 @@ def test_matrix_really_uninstalls_and_checks_registration(tmp_path, monkeypatch)
         result = matrix.run_matrix(a, b, "2.0.40", "2.0.41", report=tmp_path / "report.json",
                                    os_build="fixture", runner="mock", commit="fixture", run=registry)
     assert result["ok"]
+    assert all("user settings preserved" in step["detail"] for step in result["steps"])
     assert calls == ["/i", "/i", "/i", "/x"]
     assert next(registrations, None) is None
+    assert not appdata.exists()  # the disposable settings sentinel and dirs are restored
 
 
 def write_checksum(path):

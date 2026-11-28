@@ -19,15 +19,18 @@ import subprocess
 import sys
 import time
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+import paths as app_paths  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from msi_install_contract import (  # noqa: E402
     InstallerError, installer_command, run_installer, verify_candidate,
 )
 from smoke_windows_msi import require_disposable  # noqa: E402
-
-ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = "smoothcast-windows-msi-upgrade/1"
 DISPLAY_NAME = "SmoothCast"
+_SETTINGS_FIXTURE = b'{"msi_upgrade_fixture":"must-survive"}\n'
+_MAX_SETTINGS_BYTES = 4 * 1024 * 1024
 _UNINSTALL = ("$ErrorActionPreference = 'Stop'; Get-ItemProperty "
               "'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' "
               f"| Where-Object {{ $_.DisplayName -eq '{DISPLAY_NAME}' }} "
@@ -83,6 +86,91 @@ def registered_version(run=subprocess.run) -> str:
     if result.returncode:
         raise UpgradeError("could not query registered MSI version")
     return parse_registered_version(result.stdout)
+
+
+def user_settings_path(environ: dict | None = None, home: Path | None = None) -> Path:
+    """Return the app's normal current-user config.json path without reading it."""
+    env = os.environ if environ is None else environ
+    home = Path.home() if home is None else Path(home)
+    root = Path(env.get("APPDATA") or home / "AppData" / "Roaming")
+    if not root.is_absolute():
+        root = home / "AppData" / "Roaming"
+    return root / app_paths.APP_DIR / "config.json"
+
+
+def _prepare_user_settings(path: Path) -> tuple[bytes, bool, list[Path]]:
+    """Snapshot existing settings or create a disposable sentinel for the MSI run."""
+    path = Path(path)
+    if path.is_symlink():
+        raise UpgradeError("user settings path is a symlink")
+    missing: list[Path] = []
+    cursor = path.parent
+    while not cursor.exists():
+        if cursor.is_symlink():
+            raise UpgradeError("user settings parent is a symlink")
+        missing.append(cursor)
+        if cursor.parent == cursor:
+            raise UpgradeError("cannot locate user settings parent")
+        cursor = cursor.parent
+    if cursor.is_symlink():
+        raise UpgradeError("user settings parent is a symlink")
+    created_dirs: list[Path] = []
+    created_file = False
+    try:
+        for directory in reversed(missing):
+            directory.mkdir()
+            created_dirs.append(directory)
+        if path.exists():
+            if path.is_symlink() or not path.is_file():
+                raise UpgradeError("user settings is not a regular file")
+            if path.stat().st_size > _MAX_SETTINGS_BYTES:
+                raise UpgradeError("user settings exceeds the bounded preservation snapshot")
+            return path.read_bytes(), True, created_dirs
+        with path.open("xb") as stream:
+            created_file = True
+            stream.write(_SETTINGS_FIXTURE)
+        return _SETTINGS_FIXTURE, False, created_dirs
+    except Exception:
+        if created_file and not path.is_symlink() and path.is_file():
+            path.unlink()
+        for directory in reversed(created_dirs):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+        raise
+
+
+def _assert_user_settings(path: Path, expected: bytes) -> None:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_SETTINGS_BYTES:
+        raise UpgradeError("MSI lifecycle removed or replaced user settings")
+    if path.read_bytes() != expected:
+        raise UpgradeError("MSI lifecycle changed user settings")
+
+
+def _restore_user_settings(path: Path, original: bytes, existed: bool,
+                           created_dirs: list[Path]) -> None:
+    """Restore pre-existing runner data or remove only our fixture after the matrix."""
+    if path.is_symlink():
+        raise UpgradeError("refusing to restore through a user settings symlink")
+    if existed:
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(original)
+        elif not path.is_file():
+            raise UpgradeError("cannot restore non-regular user settings")
+        elif path.read_bytes() != original:
+            path.write_bytes(original)
+    elif path.exists():
+        if not path.is_file():
+            raise UpgradeError("refusing to remove non-regular user settings fixture")
+        path.unlink()
+    for directory in reversed(created_dirs):
+        try:
+            directory.rmdir()
+        except OSError:
+            # Keep any unexpected nonempty directory; the runner is disposable.
+            pass
 
 
 def step_record(spec: dict, *, ok: bool, detail: str) -> dict:
@@ -144,36 +232,53 @@ def run_matrix(fixture_a: Path, fixture_b: Path, version_a: str, version_b: str,
     logs = report.parent / "msi-upgrade-logs"
     logs.mkdir(exist_ok=True)
     fixtures = {"a": fixture_a, "b": fixture_b}
-    for spec in plan():
-        msi = fixtures[spec["fixture"]]
-        expected = version_a if spec["fixture"] == "a" else version_b
-        try:
-            action = spec["action"]
-            log = logs / f"{spec['name']}.log"
-            if action in {"install", "uninstall"}:
-                verify_candidate(msi, digests[spec["fixture"]])
-                _operation(executable, action, msi, log)
-                if action == "uninstall" and registered_version(run):
-                    raise UpgradeError("uninstall left a registered SmoothCast product")
-                steps.append(step_record(spec, ok=True, detail=f"{action} returned 0"))
-            elif action == "expect_version":
-                found = registered_version(run)
-                if found != expected:
-                    raise UpgradeError(f"registered {found!r}, expected {expected!r}")
-                steps.append(step_record(spec, ok=True, detail=f"registered {found!r}"))
-            elif action == "reject":
-                verify_candidate(msi, digests[spec["fixture"]])
-                _downgrade_rejected(executable, msi, log)
-                if registered_version(run) != version_b:
-                    raise UpgradeError("downgrade rejection did not preserve fixture B")
-                steps.append(step_record(spec, ok=True, detail="downgrade policy rejected A; B retained"))
-            else:
-                raise UpgradeError(f"unknown matrix operation: {action}")
-        except (InstallerError, OSError, subprocess.SubprocessError) as exc:
-            steps.append(step_record(spec, ok=False, detail=str(exc)))
-            break
-    return record(commit=commit, version=version_a, os_build=os_build, runner=runner,
-                  started=started, duration=time.monotonic() - began, fixtures=digests, steps=steps)
+    settings_path = user_settings_path()
+    settings_bytes, settings_existed, created_dirs = _prepare_user_settings(settings_path)
+    try:
+        for spec in plan():
+            msi = fixtures[spec["fixture"]]
+            expected = version_a if spec["fixture"] == "a" else version_b
+            try:
+                action = spec["action"]
+                log = logs / f"{spec['name']}.log"
+                if action in {"install", "uninstall"}:
+                    verify_candidate(msi, digests[spec["fixture"]])
+                    _operation(executable, action, msi, log)
+                    if action == "uninstall" and registered_version(run):
+                        raise UpgradeError("uninstall left a registered SmoothCast product")
+                    _assert_user_settings(settings_path, settings_bytes)
+                    steps.append(step_record(
+                        spec, ok=True, detail=f"{action} returned 0; user settings preserved",
+                    ))
+                elif action == "expect_version":
+                    found = registered_version(run)
+                    if found != expected:
+                        raise UpgradeError(f"registered {found!r}, expected {expected!r}")
+                    _assert_user_settings(settings_path, settings_bytes)
+                    steps.append(step_record(
+                        spec, ok=True, detail=f"registered {found!r}; user settings preserved",
+                    ))
+                elif action == "reject":
+                    verify_candidate(msi, digests[spec["fixture"]])
+                    _downgrade_rejected(executable, msi, log)
+                    if registered_version(run) != version_b:
+                        raise UpgradeError("downgrade rejection did not preserve fixture B")
+                    _assert_user_settings(settings_path, settings_bytes)
+                    steps.append(step_record(
+                        spec, ok=True,
+                        detail="downgrade rejected; fixture B and user settings preserved",
+                    ))
+                else:
+                    raise UpgradeError(f"unknown matrix operation: {action}")
+            except (InstallerError, OSError, subprocess.SubprocessError) as exc:
+                steps.append(step_record(spec, ok=False, detail=str(exc)))
+                break
+        return record(commit=commit, version=version_a, os_build=os_build, runner=runner,
+                      started=started, duration=time.monotonic() - began,
+                      fixtures=digests, steps=steps)
+    finally:
+        _restore_user_settings(settings_path, settings_bytes, settings_existed, created_dirs)
+
 
 
 def _fixture_digest(path: Path) -> str:

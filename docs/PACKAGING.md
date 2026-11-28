@@ -147,8 +147,10 @@ touches a receiver or changes the firewall.
 with an increasing ProductVersion and the same permanent UpgradeCode **without
 editing `src/version.py`**; fixtures are never published.
 `scripts/ci/msi_upgrade_matrix.py` consumes those fixtures on a disposable
-Windows target: install A, assert the registered DisplayVersion, upgrade to B,
-assert it again, prove a downgrade is **rejected**, then uninstall. It writes
+Windows target: create or snapshot the disposable user's `config.json`, install A,
+assert the registered DisplayVersion, upgrade to B, reject a downgrade and uninstall.
+Each stage verifies the user settings bytes are unchanged; the original fixture state
+is restored after the run. It writes
 `dist/windows-msi-upgrade-results.json`, reuses the `msi_install_contract`
 primitives, and its `--dry-run` emits the untested contract off Windows.
 
