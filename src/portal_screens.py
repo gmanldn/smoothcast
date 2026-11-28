@@ -179,6 +179,7 @@ class Screen:
     capabilities: frozenset[str]
     registered: float
     last_seen: float
+    _orders_changed: threading.Condition = field(repr=False, compare=False)
     state: str = "idle"
     position: float = 0.0
     duration: float = 0.0
@@ -217,17 +218,19 @@ class ScreenRegistry:
                  can_transcode: Callable[[], bool] = lambda: True) -> None:
         self._clock = clock
         self._can_transcode = can_transcode
-        self._cond = threading.Condition(threading.RLock())
+        self._lock = threading.RLock()
         self._screens: dict[str, Screen] = {}
         self._ids = 0
-        self._generation = 0   # bumps on any change; wakes long pollers
 
     # -- lifecycle -----------------------------------------------------------
     def _expire(self, now: float) -> None:
         for screen_id, screen in list(self._screens.items()):
             if now - screen.last_seen > SCREEN_TTL:
-                self._screens.pop(screen_id, None)
-                self._generation += 1
+                self._drop_screen(screen_id)
+
+    def _drop_screen(self, screen_id: str) -> None:
+        screen = self._screens.pop(screen_id)
+        screen._orders_changed.notify_all()
 
     def _new_id(self) -> str:
         import secrets
@@ -242,7 +245,7 @@ class ScreenRegistry:
         now = self._clock()
         caps = clean_capabilities(capabilities)
         clean = clean_name(name)
-        with self._cond:
+        with self._lock:
             self._expire(now)
             existing = None
             if isinstance(claim, str) and _ID.fullmatch(claim):
@@ -265,17 +268,15 @@ class ScreenRegistry:
                     existing.resume_ack = existing.anchor["seq"]
                 elif existing.orders:
                     existing.resume_ack = existing.orders[0]["seq"]
-                self._generation += 1
-                self._cond.notify_all()
+                if existing.resume_ack:
+                    existing._orders_changed.notify_all()
                 return existing
             if len(self._screens) >= MAX_SCREENS:
                 raise ScreenError(409, "This room already has the maximum number "
                                        "of screens")
             screen = Screen(self._new_id(), self._unique_name(clean), owner_key,
-                            owner_id, caps, now, now)
+                            owner_id, caps, now, now, threading.Condition(self._lock))
             self._screens[screen.id] = screen
-            self._generation += 1
-            self._cond.notify_all()
             return screen
 
     def _unique_name(self, name: str, *, except_id: str = "") -> str:
@@ -290,55 +291,46 @@ class ScreenRegistry:
         return name
 
     def remove(self, screen_id: str, owner_key: str) -> bool:
-        with self._cond:
+        with self._lock:
             screen = self._screens.get(screen_id)
             if screen is None or screen.owner_key != owner_key:
                 return False
-            self._screens.pop(screen_id, None)
-            self._generation += 1
-            self._cond.notify_all()
+            self._drop_screen(screen_id)
             return True
 
     def drop_owner_keys(self, keys: set[str] | frozenset[str]) -> int:
         """Remove screens whose paired session was revoked or expired."""
-        with self._cond:
+        with self._lock:
             doomed = [sid for sid, s in self._screens.items()
                       if s.owner_key in keys]
             for sid in doomed:
-                self._screens.pop(sid, None)
-            if doomed:
-                self._generation += 1
-                self._cond.notify_all()
+                self._drop_screen(sid)
             return len(doomed)
 
     def retain_owner_keys(self, is_active: Callable[[str], bool]) -> int:
         """Drop screens whose session is no longer valid."""
-        with self._cond:
+        with self._lock:
             doomed = [sid for sid, s in self._screens.items()
                       if not is_active(s.owner_key)]
             for sid in doomed:
-                self._screens.pop(sid, None)
-            if doomed:
-                self._generation += 1
-                self._cond.notify_all()
+                self._drop_screen(sid)
             return len(doomed)
 
     def close(self) -> None:
-        with self._cond:
-            self._screens.clear()
-            self._generation += 1
-            self._cond.notify_all()
+        with self._lock:
+            for screen_id in list(self._screens):
+                self._drop_screen(screen_id)
 
     # -- reads ---------------------------------------------------------------
     def snapshot(self) -> list[dict]:
         now = self._clock()
-        with self._cond:
+        with self._lock:
             self._expire(now)
             return [s.public(now) for s in sorted(
                 self._screens.values(), key=lambda s: (s.registered, s.id))]
 
     def get(self, screen_id: str) -> Screen | None:
-        with self._cond:
+        with self._lock:
             self._expire(self._clock())
             return self._screens.get(screen_id)
 
@@ -354,7 +346,7 @@ class ScreenRegistry:
         Polling counts as contact, so an idle screen stays registered.
         """
         deadline = self._clock() + max(0.0, min(wait, POLL_WAIT_MAX))
-        with self._cond:
+        with self._lock:
             while True:
                 now = self._clock()
                 self._expire(now)
@@ -368,7 +360,7 @@ class ScreenRegistry:
                 pending = [dict(o) for o in screen.orders if o["seq"] > since]
                 if pending or now >= deadline:
                     return {"seq": screen.seq, "orders": pending}
-                self._cond.wait(timeout=min(0.5, max(0.0, deadline - now)))
+                screen._orders_changed.wait(timeout=deadline - now)
 
     @staticmethod
     def _resync(screen: Screen) -> dict:
@@ -407,7 +399,7 @@ class ScreenRegistry:
         if state not in STATES:
             raise ScreenError(400, "Unknown playback state")
         now = self._clock()
-        with self._cond:
+        with self._lock:
             self._expire(now)
             screen = self._screens.get(screen_id)
             if screen is None or screen.owner_key != owner_key:
@@ -445,8 +437,6 @@ class ScreenRegistry:
                 if state == "ended" and previous != "ended" and screen.follow \
                         and screen.item:
                     advance = screen.item
-            self._generation += 1
-            self._cond.notify_all()
             return {"advance": advance, "play_seq": screen.play_seq}
 
     # -- controller side -----------------------------------------------------
@@ -463,7 +453,7 @@ class ScreenRegistry:
                 or not _COMMAND_ID.fullmatch(command_id)):
             raise ScreenError(400, "Command ID is invalid")
         now = self._clock()
-        with self._cond:
+        with self._lock:
             self._expire(now)
             screen = self._screens.get(screen_id)
             if screen is None:
@@ -537,6 +527,5 @@ class ScreenRegistry:
                 screen.commands[command_id] = (intent, receipt)
                 while len(screen.commands) > COMMAND_CACHE:
                     screen.commands.popitem(last=False)
-            self._generation += 1
-            self._cond.notify_all()
+            screen._orders_changed.notify_all()
             return dict(receipt)

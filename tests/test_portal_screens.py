@@ -1,6 +1,7 @@
 """Screen registry: ownership, fencing, expiry, routing and auto-advance."""
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 import sys
 import threading
@@ -536,6 +537,68 @@ def test_long_poll_returns_empty_at_the_deadline_and_close_wakes_pollers():
     registry.close()
     thread.join(2)
     assert results == [404]
+
+
+def test_reports_do_not_wake_unrelated_screen_polls():
+    registry = screens.ScreenRegistry()
+    room = [make(registry, key=f"owner-{i}") for i in range(8)]
+    play(registry, room[1])
+    parked = [threading.Event() for _ in room]
+    finished = [threading.Event() for _ in room]
+    unrelated_recheck = threading.Event()
+    outcomes = {}
+
+    class ObservedOrders(deque):
+        def __init__(self, orders, index):
+            super().__init__(orders, maxlen=orders.maxlen)
+            self.index = index
+
+        def __iter__(self):
+            if threading.current_thread().name == f"screen-poll-{self.index}":
+                if self.index and parked[self.index].is_set():
+                    unrelated_recheck.set()
+                parked[self.index].set()
+            return super().__iter__()
+
+    def poll(index, screen):
+        try:
+            outcomes[index] = registry.poll(screen.id, screen.owner_key, screen.seq, wait=8)
+        except screens.ScreenError as exc:
+            outcomes[index] = exc.status
+        finally:
+            finished[index].set()
+
+    for index, screen in enumerate(room):
+        screen.orders = ObservedOrders(screen.orders, index)
+    threads = [threading.Thread(target=poll, args=(i, screen), name=f"screen-poll-{i}")
+               for i, screen in enumerate(room)]
+    for thread in threads:
+        thread.start()
+    try:
+        assert all(event.wait(2) for event in parked)
+        for position in range(30):
+            registry.report(room[0].id, room[0].owner_key, {"state": "playing", "position": position})
+        # Also cross the former 500 ms unconditional wake interval.
+        assert not unrelated_recheck.wait(0.65)
+        assert not any(event.is_set() for event in finished)
+
+        registry.command(room[1].id, "pause")
+        assert finished[1].wait(1)
+        assert outcomes[1]["orders"][0]["kind"] == "pause"
+
+        assert registry.remove(room[2].id, room[2].owner_key)
+        assert finished[2].wait(1)
+        assert outcomes[2] == 404
+        assert registry.drop_owner_keys({room[3].owner_key}) == 1
+        assert finished[3].wait(1)
+        assert outcomes[3] == 404
+        assert not any(finished[i].is_set() for i in [0, 4, 5, 6, 7])
+    finally:
+        registry.close()
+        for thread in threads:
+            thread.join(2)
+    assert all(not thread.is_alive() for thread in threads)
+    assert all(outcomes[i] == 404 for i in [0, 4, 5, 6, 7])
 
 
 def test_hundreds_of_concurrent_commands_keep_sequence_unique(registry):
