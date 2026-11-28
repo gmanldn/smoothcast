@@ -6,6 +6,7 @@ INV-011 read budget; the methods run on the same ``LifecycleMixin`` instance.
 """
 from __future__ import annotations
 
+import donate
 import settings
 import shortcut_map
 import version
@@ -123,6 +124,9 @@ class LifecycleActionsMixin:
             developer_name="gridout",
             comments="A modern companion for casting local videos to a Chromecast: live HLS transcoding or direct play, queue, captions, sound profiles and full remote control.",
         )
+        url = donate.donation_url()
+        if url:
+            about.add_link("Support SmoothCast", url)
         about.present(self)
     def perform_action(self, name: str) -> None:
         if name == "open":

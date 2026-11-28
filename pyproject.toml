@@ -130,6 +130,7 @@ py-modules = [
     "doctor_firewall",
     "doctor_ssdp",
     "doctor_vpn",
+    "donate",
     "drain",
     "encode_plan",
     "encoder_ladder",
