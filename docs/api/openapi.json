@@ -42,12 +42,25 @@
           "key": {
             "enum": [
               "accent",
+              "aspect_override",
+              "audio",
+              "audio_gain",
+              "audio_loudness",
+              "auto_crop",
+              "auto_deinterlace",
               "auto_theme",
               "autonext",
+              "burn_subs",
               "color_scheme",
               "density",
+              "direct",
+              "keep_streaming",
               "loop",
-              "loop_all"
+              "loop_all",
+              "music_autogain",
+              "quality",
+              "rotation",
+              "subtitle_style"
             ],
             "type": "string"
           },
@@ -199,7 +212,7 @@
   "info": {
     "description": "HTTP/SSE API of a SmoothCast node on the trusted home LAN. Sessions are cookie-based; mutations also need the CSRF token returned by /api/login in X-CSRF-Token.",
     "title": "SmoothCast room API",
-    "version": "1.4"
+    "version": "1.5"
   },
   "openapi": "3.1.0",
   "paths": {

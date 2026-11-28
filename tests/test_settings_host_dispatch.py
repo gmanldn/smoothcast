@@ -1,6 +1,7 @@
 """Host-only appearance setting dispatch stays narrow and runs on GTK owner."""
 from __future__ import annotations
 
+import ast
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +28,7 @@ class _HostServer:
 def _window(is_host=True):
     window = object.__new__(cast_portal.PortalMixin)
     window._closing = False
+    window._syncing = False
     window._portal = SimpleNamespace(server=_HostServer(is_host))
     window.cfg = {
         "color_scheme": "prefer-dark", "auto_theme": True,
@@ -43,6 +45,14 @@ def _window(is_host=True):
     window._refresh_responsive_layout = lambda: setattr(window, "density_applied", True)
     window.autonext_switch = SimpleNamespace(
         active=False, set_active=lambda value: setattr(window.autonext_switch, "active", value))
+    for name in ("quality_dropdown", "audio_dropdown", "loudness_dropdown", "rotation_dropdown"):
+        setattr(window, name, SimpleNamespace(selected=None, set_selected=lambda value, n=name: setattr(
+            getattr(window, n), "selected", value)))
+    for name in ("direct_switch", "keep_switch", "burn_switch", "music_autogain_switch"):
+        setattr(window, name, SimpleNamespace(active=None, set_active=lambda value, n=name: setattr(
+            getattr(window, n), "active", value)))
+    window.gain_spin = SimpleNamespace(value=None, set_value=lambda value: setattr(
+        window.gain_spin, "value", value))
     window._preferences_window = SimpleNamespace(sync_from_owner=lambda: setattr(
         window, "preferences_synced", True))
     return window
@@ -98,10 +108,14 @@ def test_host_control_choices_and_defaults_match_desktop_preferences():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
+    gtk_paths = list((root / "src").glob("*preferences*ui.py")) + [root / "src/cast_settings.py"]
     gtk_preferences = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (root / "src").glob("*preferences*ui.py")
+        node.value
+        for path in gtk_paths
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
     )
+    html = settings_catalog.host_controls_html()
     for key, descriptor in settings_catalog.HOST_CONTROLS.items():
         assert cast_widgets.DEFAULTS[key] == descriptor["default"]
         assert descriptor["title"] in gtk_preferences
@@ -111,10 +125,57 @@ def test_host_control_choices_and_defaults_match_desktop_preferences():
         assert descriptor["apply_timing"]
         if descriptor["kind"] == "choice":
             assert key in preference_choices.OPTIONS
+            for _label, option in preference_choices.OPTIONS[key]:
+                assert settings_catalog.validate_host_setting(key, option) == (key, option)
             assert settings_catalog.validate_host_setting(
                 key, descriptor["default"])[1] == descriptor["default"]
-    html = settings_catalog.host_controls_html()
+        elif descriptor["kind"] == "number":
+            assert settings_catalog.validate_host_setting(key, descriptor["default"]) == (key, descriptor["default"])
+            assert f'Default: {descriptor["default"]:g} dB' in html
     assert 'id="hostSettingsControls"' in html
     assert 'aria-describedby="hostSetting-autonext-help"' in html
+    assert 'type="number" min="0" max="24" step="1"' in html
     assert "Default: Comfortable" in html
     assert "Applies when the current item finishes." in html
+
+
+def test_host_playback_and_caption_preferences_sync_with_desktop_controls(monkeypatch):
+    window = _window()
+    saved = []
+    monkeypatch.setattr(cast_portal, "save_config", lambda cfg: saved.append(dict(cfg)))
+    key = "a" * 64
+    changes = {
+        "quality": "high", "rotation": 180, "aspect_override": "fit",
+        "direct": False, "keep_streaming": False, "auto_crop": True,
+        "auto_deinterlace": True, "audio": "night", "audio_loudness": "programme",
+        "audio_gain": 12, "music_autogain": True,
+        "burn_subs": True, "subtitle_style": "large",
+    }
+    for name, value in changes.items():
+        window._portal_handle("settings_update", {
+            "_portal_auth_key": key, "key": name, "value": value,
+        })
+    assert {name: window.cfg[name] for name in changes} == changes
+    assert window.cfg["quality_auto"] is False
+    assert window.quality_dropdown.selected == 0
+    assert window.rotation_dropdown.selected == 2
+    assert window.audio_dropdown.selected == 2
+    assert window.loudness_dropdown.selected == 1
+    assert window.gain_spin.value == 12.0
+    assert window.direct_switch.active is False
+    assert window.keep_switch.active is False
+    assert window.burn_switch.active is True
+    assert window.music_autogain_switch.active is True
+    assert len(saved) == len(changes)
+
+
+@pytest.mark.parametrize("value", [-1, 25, "nan", True, None])
+def test_host_dialogue_gain_rejects_values_outside_its_documented_range(value):
+    with pytest.raises(settings_catalog.HostSettingError, match="number from 0 to 24"):
+        settings_catalog.validate_host_setting("audio_gain", value)
+
+
+def test_web_rotation_select_preserves_integer_preference_type():
+    assert settings_catalog.validate_host_setting("rotation", "90") == ("rotation", 90)
+    with pytest.raises(settings_catalog.HostSettingError, match="listed options"):
+        settings_catalog.validate_host_setting("rotation", "91")

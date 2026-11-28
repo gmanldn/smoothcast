@@ -15,6 +15,42 @@ from cast_widgets import Async
 
 
 class PortalHostMixin:
+    def _sync_host_setting_widgets(self, key: str, value: object) -> None:
+        """Keep visible in-player controls in step with a web host setting."""
+        widgets = {
+            "quality": ("quality_dropdown", "choice"),
+            "audio": ("audio_dropdown", "choice"),
+            "audio_loudness": ("loudness_dropdown", "choice"),
+            "audio_gain": ("gain_spin", "number"),
+            "music_autogain": ("music_autogain_switch", "boolean"),
+            "rotation": ("rotation_dropdown", "choice"),
+            "direct": ("direct_switch", "boolean"),
+            "keep_streaming": ("keep_switch", "boolean"),
+            "burn_subs": ("burn_switch", "boolean"),
+            "autonext": ("autonext_switch", "boolean"),
+        }
+        if key == "quality":
+            self.cfg["quality_auto"] = False
+        target = getattr(self, widgets.get(key, ("", ""))[0], None)
+        if target is None:
+            return
+        kind = widgets[key][1]
+        if key == "autonext":
+            target.set_active(value)
+            return
+        old_syncing = getattr(self, "_syncing", False)
+        self._syncing = True
+        try:
+            if kind == "boolean":
+                target.set_active(value)
+            elif kind == "number":
+                target.set_value(float(value))
+            else:
+                import preference_choices
+                target.set_selected(preference_choices.selected_index(key, value))
+        finally:
+            self._syncing = old_syncing
+
     def _attach_update_runner(self) -> None:
         """Give the portal and the front page one shared one-click updater (#711)."""
         server = self._portal.server

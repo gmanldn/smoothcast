@@ -3294,7 +3294,7 @@ async function loadHostSettings(){
     const data=await response.json();
     if(!response.ok)throw Error(data.error||"Host settings are unavailable");
     renderHostSettings(data.settings);$("hostSettingsControls").hidden=false;
-    $("hostSettingsStatus").textContent="Saved on this computer. Changes apply to its interface immediately.";
+    $("hostSettingsStatus").textContent="Saved on this computer. Each setting explains when it takes effect.";
   }catch(_){$("hostSettingsControls").hidden=true}
   finally{hostSettingsLoaded=true;hostSettingsLoading=false}
 }
@@ -3305,7 +3305,7 @@ async function saveHostSetting(key,input){
   try{
     const data=await post("/api/settings",{key,value});
     renderHostSettings(data.settings);
-    $("hostSettingsStatus").textContent="Saved on this computer. Changes apply to its interface immediately.";
+    $("hostSettingsStatus").textContent="Saved on this computer. Each setting explains when it takes effect.";
   }catch(error){$("hostSettingsStatus").textContent=error.message||"Could not save this setting.";input.disabled=false}
 }
 function renderRoomIdentity(room){

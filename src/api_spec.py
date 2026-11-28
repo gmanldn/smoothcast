@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import settings_catalog
 
-API_VERSION = "1.4"  # bumped only when the HTTP contract changes
+API_VERSION = "1.5"  # bumped only when the HTTP contract changes
 
 JSON = "application/json"
 ERR = {"description": "Error", "content": {JSON: {"schema": {"$ref": "#/components/schemas/Error"}}}}

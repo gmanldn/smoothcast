@@ -47,3 +47,5 @@ def test_host_settings_controls_stay_hidden_until_authorized_values_load():
     assert 'fetch("/api/settings"' in web
     assert 'if(!canRename&&hostControls)hostControls.hidden=true' in web
     assert 'renderHostSettings(data.settings);$("hostSettingsControls").hidden=false' in web
+    assert "Saved on this computer. Each setting explains when it takes effect." in web
+    assert "Changes apply to its interface immediately." not in web
