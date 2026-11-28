@@ -27,9 +27,12 @@ def test_fence_one_owner_and_stale_commands_rejected():
 
 
 def test_release_then_new_owner_gets_new_epoch_and_old_epoch_dies():
-    f = nt.Fence(); e1, _ = f.claim("b", "A")
-    f.release("b", "other", e1); assert f.owners() == {"b": "A"}
-    f.release("b", "A", e1); e2, _ = f.claim("b", "B")
+    f = nt.Fence()
+    e1, _ = f.claim("b", "A")
+    f.release("b", "other", e1)
+    assert f.owners() == {"b": "A"}
+    f.release("b", "A", e1)
+    e2, _ = f.claim("b", "B")
     assert e2 != e1 and not f.accept("b", "A", e1, "seek")[0] and f.accept("b", "B", e2, "seek")[0]
 
 
