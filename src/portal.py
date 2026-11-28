@@ -4153,6 +4153,7 @@ $("uploadButton").addEventListener("click",async()=>{
       batchAdded=0;
       batchTotal=selected.length;
       batchQueueOnly=queueIntent;
+      updateUploadControls();
       if(selected.length>1)announceBatch(selected,1);
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
@@ -4180,6 +4181,7 @@ $("uploadButton").addEventListener("click",async()=>{
           monitorText("transferDelivery","Up Next — another upload has priority");
         }
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
+        updateUploadControls();
         monitorText("transferOperation","Reading local file fingerprint");
         const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));

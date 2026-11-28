@@ -252,3 +252,56 @@ def test_guest_upload_card_never_overflows_viewport(guest_room, width):
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+def test_guest_upload_cancel_mid_transfer_delivers_nothing(guest_room, monkeypatch, tmp_path):
+    """#570: Cancel during a slow transfer stops it and nothing reaches the room."""
+    import threading
+    import time
+    from playwright.sync_api import expect, sync_playwright
+
+    rig, uploads, deliveries = guest_room
+    audio = tmp_path / "slow.wav"
+    audio.write_bytes(_audio_bytes())
+    original_append = uploads.append
+    entered = threading.Event()
+
+    def slow_append(*args, **kwargs):
+        entered.set()
+        time.sleep(4)
+        return original_append(*args, **kwargs)
+
+    monkeypatch.setattr(uploads, "append", slow_append)
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Cancel guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.locator("#videoFile").set_input_files(str(audio))
+            page.locator("#uploadButton").click()
+            for _ in range(100):  # never block Playwright's loop with a threading wait
+                if entered.is_set():
+                    break
+                page.wait_for_timeout(100)
+            assert entered.is_set()
+            expect(page.locator("#cancelUpload")).to_be_visible()
+            page.locator("#cancelUpload").click()
+            expect(page.locator("#cancelUpload")).to_be_hidden(timeout=15000)
+            expect(page.locator("#uploadStatus")).to_have_text("Upload cancelled")
+            expect(page.locator("#uploadButton")).to_have_text("Upload and add")
+            expect(page.locator("#videoFile")).to_have_value("")
+            assert deliveries == []
+        finally:
+            context.close()
+            browser.close()
