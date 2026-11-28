@@ -115,3 +115,10 @@ print(world.report())                  # p50/p99/max per metric, egress per node
 - **Model limits:** independent links (no shared-medium contention), RPC loss is
   modelled as retransmission delay, CPU is not simulated. Real networks are
   qualified separately under #208.
+
+## GTK-dependent tests without PyGObject
+
+Tests that need a working PyGObject skip, with the reason "requires a working PyGObject (gi)",
+when it cannot load (a headless container or minimal image). `tests/conftest.py` applies this to
+collection errors and failures that are only an unusable `gi` import. When `CI` or
+`GITHUB_ACTIONS` is set the skip is disabled, so a broken GTK install on CI still fails loudly.

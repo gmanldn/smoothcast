@@ -108,7 +108,8 @@ def layout_for_size(
     panel = 0 if stacked else min(PANEL_MAX, max(PANEL_MIN, int(width * 0.32)))
     page_width = width - 2 * margin
     left_width = page_width if stacked else page_width - panel - margin
-    card_padding = density.px(12 if compact else 18, scale, 4)
+    base = density.BASE_COMPACT if compact else density.BASE  # mirrors the stylesheet's .card padding
+    card_padding = density.px(base["card_padding"], scale, 4)
     inner = max(1, left_width - 2 * card_padding)
     needed = _dimension(transport_min, 0) or density.px(560, scale)
     # A 16:9 picture, but never more than ~36 % (wide) / 30 % (stacked) of the

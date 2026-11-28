@@ -197,3 +197,39 @@ def pytest_terminal_summary(terminalreporter):
     terminalreporter.section("test time per tier (report only)")
     for tier, (seconds, count) in sorted(_TIER_SECONDS.items(), key=lambda kv: -kv[1][0]):
         terminalreporter.line(f"{tier:<12}{count:>6} tests{seconds:>9.1f}s")
+
+
+# --- GTK-dependent tests skip, never fail, when PyGObject cannot load --------------------------
+# A headless container or minimal image may lack a usable PyGObject. That is an environment gap,
+# not a product defect, so those tests skip with a reason (as tests/test_update_verification.py
+# always did). CI installs GTK and must still fail loudly if it is broken, so it stays strict.
+_STRICT_GTK = bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"))
+_GTK_SKIP_REASON = "requires a working PyGObject (gi); not available in this environment"
+
+
+def _gtk_unusable(exc) -> bool:
+    if not isinstance(exc, ImportError):
+        return False
+    return (getattr(exc, "name", "") or "").split(".")[0] in {"gi", "_gi"} or "'_gi'" in str(exc)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if (not _STRICT_GTK and report.failed and call.excinfo is not None
+            and _gtk_unusable(call.excinfo.value)):
+        report.outcome = "skipped"
+        report.longrepr = (str(item.fspath), item.location[1] or 0, f"Skipped: {_GTK_SKIP_REASON}")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_make_collect_report(collector):
+    outcome = yield
+    report = outcome.get_result()
+    if _STRICT_GTK or not report.failed:
+        return
+    text = str(report.longrepr)
+    if "cannot import name '_gi'" in text or "No module named 'gi'" in text:
+        report.outcome = "skipped"
+        report.longrepr = (str(getattr(collector, "path", collector.name)), 0, f"Skipped: {_GTK_SKIP_REASON}")

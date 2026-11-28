@@ -24,13 +24,13 @@ _SCALES = {preset_id: scale for preset_id, _label, scale in PRESETS}
 
 # Base values (px) from ui_theme.CSS, for the normal and the ".compact" layout state.
 BASE = {
-    "card_padding": 18, "hero_padding": 22, "empty_padding": 18,
-    "chip_pad_y": 4, "chip_pad_x": 10,
+    "card_padding": 22, "hero_padding": 22, "empty_padding": 16,
+    "chip_pad_y": 4, "chip_pad_x": 8,
     "big_play": 62, "transport": 44, "action_min_width": 84, "action_min_height": 44,
-    "setting_group_top": 8, "volume_row_top": 6,
+    "setting_group_top": 8, "volume_row_top": 4,
 }
 BASE_COMPACT = {
-    "card_padding": 12, "big_play": 52, "transport": 44, "pill_pad_y": 5, "pill_pad_x": 5,
+    "card_padding": 12, "big_play": 52, "transport": 44, "pill_pad_y": 4, "pill_pad_x": 4,
 }
 
 
