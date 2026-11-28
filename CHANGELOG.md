@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bc22a4096f3346598b503e1fd8b2a2d02e016abe -->
+<!-- sc-changelog-through: 75ffd8e19f20fce80e09958ccfe83ca15fc410cf -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:04:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:06:00 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:06:00 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`75ffd8e19f20`](https://github.com/gmanldn/smoothcast/commit/75ffd8e19f20fce80e09958ccfe83ca15fc410cf)
+
+- 🟥 **02:05:52 · Fix** — fix: record the commit time in staged generation markers so both UIs show 'vX - date time - Codename' (Refs #580) · [`4cda66959625`](https://github.com/gmanldn/smoothcast/commit/4cda669596253e7784335cc5842420d8d025d9d2)
 
 - ⬜ **02:04:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bc22a4096f33`](https://github.com/gmanldn/smoothcast/commit/bc22a4096f3346598b503e1fd8b2a2d02e016abe)
+
+- ⬜ **02:04:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`125500ceb482`](https://github.com/gmanldn/smoothcast/commit/125500ceb482268e2d80077261eb899b1494cc6f)
 
 - 🟪 **02:04:09 · Tests** — test(join-slate): follow the switch wiring into preferences\_room\_ui (stale since #706 split) · [`a2f06c36f740`](https://github.com/gmanldn/smoothcast/commit/a2f06c36f740b6b7f15868c3581fb2d6aaa74a8a)
 
