@@ -5,17 +5,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
 import managed_generations as mg
-
-# Native Win32 reparse-point-safe open is a separate #580 requirement.
-pytestmark = pytest.mark.skipif(
-    not hasattr(os, "O_NOFOLLOW"), reason="No race-safe source file open",
-)
 
 COMMIT = "a" * 40
 
@@ -106,6 +103,30 @@ def test_staging_refuses_symlink_without_copying_private_target(tmp_path):
         mg.stage_local_snapshot(root, source, COMMIT, files)
     assert victim.read_text() == "secret"
     assert not (root / "releases" / COMMIT).exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction regression")
+def test_staging_refuses_windows_reparse_directory(tmp_path):
+    source, root, files = sample(tmp_path)
+    source_dir = source / "src"
+    shutil.rmtree(source_dir)
+    private = tmp_path / "private-source"
+    private.mkdir()
+    victim = private / "entry.py"
+    victim.write_text("private content")
+    result = subprocess.run(
+        ["cmd.exe", "/c", "mklink", "/J", str(source_dir), str(private)],
+        check=False, capture_output=True, text=True,
+    )
+    if result.returncode:
+        pytest.skip("Windows junction creation is unavailable")
+    try:
+        with pytest.raises(mg.StageError, match="symbolic-link component"):
+            mg.stage_local_snapshot(root, source, COMMIT, files)
+        assert victim.read_text() == "private content"
+        assert not (root / "releases" / COMMIT).exists()
+    finally:
+        source_dir.rmdir()
 
 
 def test_oversize_and_invalid_commit_are_rejected(tmp_path):

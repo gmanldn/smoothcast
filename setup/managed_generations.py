@@ -106,17 +106,82 @@ def _manifest(entries: object) -> list[tuple[str, int, str]]:
     return sorted(planned)
 
 
+def _open_source_file(source: Path) -> int:
+    """Open one ordinary source file without following its final link.
+
+    POSIX uses ``O_NOFOLLOW``. Windows opens the reparse point itself and
+    inspects the resulting handle before transferring it to a CRT descriptor;
+    path-only checks are not enough for an archive or checkout that can change
+    between validation and open.
+    """
+    if os.name != "nt":
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        return os.open(source, flags)
+
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    class _ByHandleFileInformation(ctypes.Structure):
+        _fields_ = [
+            ("attributes", wintypes.DWORD),
+            ("creation_time_low", wintypes.DWORD), ("creation_time_high", wintypes.DWORD),
+            ("access_time_low", wintypes.DWORD), ("access_time_high", wintypes.DWORD),
+            ("write_time_low", wintypes.DWORD), ("write_time_high", wintypes.DWORD),
+            ("volume_serial", wintypes.DWORD), ("size_high", wintypes.DWORD),
+            ("size_low", wintypes.DWORD), ("links", wintypes.DWORD),
+            ("file_index_high", wintypes.DWORD), ("file_index_low", wintypes.DWORD),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                            wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD,
+                            wintypes.HANDLE)
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+    handle = create_file(str(source), 0x80000000, 0x1, None, 3,
+                         0x00200000 | 0x08000000, None)  # OPEN_REPARSE_POINT | SEQUENTIAL_SCAN
+    invalid = ctypes.c_void_p(-1).value
+    if handle == invalid:
+        error = ctypes.get_last_error()
+        raise OSError(error, os.strerror(error), str(source))
+
+    try:
+        information = _ByHandleFileInformation()
+        get_information = kernel32.GetFileInformationByHandle
+        get_information.argtypes = (wintypes.HANDLE,
+                                    ctypes.POINTER(_ByHandleFileInformation))
+        get_information.restype = wintypes.BOOL
+        if not get_information(handle, ctypes.byref(information)):
+            error = ctypes.get_last_error()
+            raise OSError(error, os.strerror(error), str(source))
+        if information.attributes & 0x400 or information.links != 1:
+            raise StageError("Source is a reparse point or hard link")
+        return msvcrt.open_osfhandle(int(handle), os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    except BaseException:
+        close_handle(handle)
+        raise
+
+
 def _copy_one(source: Path, dest: Path, size: int, digest: str) -> None:
-    # Validate every parent component before opening a source path. O_NOFOLLOW
-    # and fstat reject swapped final symlinks, special files and hard links.
+    # Validate every parent component before opening a source path. On Windows,
+    # lstat exposes junction/reparse attributes as well as symbolic links.
     for parent in (source, *source.parents):
-        if parent.is_symlink():
+        try:
+            linked = parent.is_symlink()
+            if os.name == "nt":
+                linked = linked or bool(parent.lstat().st_file_attributes & 0x400)
+        except OSError as exc:
+            raise StageError("Cannot safely inspect candidate path") from exc
+        if linked:
             raise StageError("Source contains a symbolic-link component")
     # A FIFO can block in open() before fstat can reject it. Regular files
-    # ignore O_NONBLOCK, so validate the opened descriptor without waiting.
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    # ignore O_NONBLOCK, so POSIX validates the descriptor without waiting.
     try:
-        fd = os.open(source, flags)
+        fd = _open_source_file(source)
         with os.fdopen(fd, "rb") as reader:
             info = os.fstat(reader.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -165,7 +230,7 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object,
     """
     # Do not silently weaken race-resistant source handles on Windows.
     # Win32 FILE_FLAG_OPEN_REPARSE_POINT verification is a later #580 gate.
-    if not hasattr(os, "O_NOFOLLOW"):
+    if os.name != "nt" and not hasattr(os, "O_NOFOLLOW"):
         raise StageError("Secure source staging requires no-follow file handles")
     if not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
         raise StageError("Candidate commit must be an immutable lowercase SHA")
