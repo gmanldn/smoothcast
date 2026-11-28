@@ -73,7 +73,7 @@ def test_wake_lock_pip_and_dim_hint_contract():
 def test_direct_decode_fallback_route_survives_seek_recovery_and_next_item(tmp_path):
     html = portal_screen_page.screen_page().decode()
     script = _scripts(html)[0]
-    signatures = ("let transcoded=false,baseStart=0,activeUrl=null;", "function load(",
+    signatures = ("let transcoded=false,baseStart=0,activeUrl=null,", "function load(",
                   "function position(", "function seekTo(", "function stopPlayback(",
                   "function recover()")
     lines = script.splitlines()
@@ -96,6 +96,8 @@ function tryPlay(){{}}
 function safe(fn){{try{{return fn()}}catch(_){{}}}}
 function show(){{}}
 function setSlate(){{}}
+function banner(){{}}
+function report(){{}}
 {route_code}
 load(current.url,0,false);video.currentTime=38;
 load(current.fallback,position(),true);
@@ -172,4 +174,64 @@ loop().then(()=>console.log(JSON.stringify({{log,seq}})));
         "poll since=19", "apply seek@21",
     ]
     assert got["seq"] == 21
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_recovery_budget_limits_reloads_then_terminal_error(tmp_path):
+    """Repeated stalls without forward progress: at most 2 reloads, then a
+    terminal error instead of unbounded reconversion."""
+    script = _scripts(portal_screen_page.screen_page().decode())[0]
+
+    load_start = script.index("function load(")
+    load_end = script.index("async function tryPlay(", load_start)
+    load_code = script[load_start:load_end].strip()
+
+    state_line = next(
+        line for line in script.splitlines()
+        if line.startswith("let transcoded=false,baseStart=0,activeUrl=null,"))
+
+    position_start = script.index("function position(")
+    position_end = script.index("function seekTo(", position_start)
+    position_code = script[position_start:position_end].strip()
+
+    recover_start = script.index("function recover(")
+    recover_end = script.index("function wake(", recover_start)
+    recover_code = script[recover_start:recover_end].strip()
+
+    route_code = "\n".join([state_line, load_code, position_code, recover_code])
+
+    harness = f'''\
+let requests=[];
+let bannerMessages=[];
+let current={{url:"https://host/play?id=first&mode=direct",fallback:"https://host/play?id=first&mode=transcode"}};
+let recoverAt=0,stallTimer=null;
+const video={{src:"",currentTime:0,paused:false,
+  load(){{requests.push(this.src)}},play(){{}},pause(){{this.paused=true}},
+  removeAttribute(){{this.src=""}},addEventListener(){{}}}};
+function clearTimeout(){{}}
+function setTimeout(){{}}
+function tryPlay(){{}}
+function safe(fn){{try{{return fn()}}catch(_){{}}}}
+function show(){{}}
+function setSlate(){{}}
+function banner(text){{bannerMessages.push(text)}}
+function report(){{}}
+{route_code}
+// Start a transcoded play (budget=2)
+load(current.fallback,0,true);
+// First recovery - budget 2 -> 1
+recover();
+// Second recovery - budget 1 -> 0
+recover();
+// Third recovery - budget 0 -> terminal error, no load
+recover();
+console.log(JSON.stringify({{requests, bannerMessages}}));
+'''
+    result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    import json
+    data = json.loads(result.stdout)
+    # Initial load + 2 recoveries = 3 requests; 3rd recovery blocked by budget
+    assert len(data["requests"]) == 3
+    assert data["bannerMessages"] == ["Playback stalled on this screen. Stop and start again."]
 

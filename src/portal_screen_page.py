@@ -213,7 +213,7 @@ async function loop(){
   polling=false}
 function banner(text){const b=$("banner");b.textContent=text;b.hidden=!text}
 function apply(o){
-  if(o.kind==="play"){playSeq=o.seq;current={...o,fell:false};fallbackTried=false;load(o.url,o.start||0,o.route&&o.route.mode==="transcode");
+  if(o.kind==="play"){playSeq=o.seq;current={...o,fell:false};fallbackTried=false;recoverBudget=2;lastPosition=0;load(o.url,o.start||0,o.route&&o.route.mode==="transcode");
     $("hudTitle").textContent=o.title;$("audioTitle").textContent=o.title;
     const audio=o.route&&o.route.kind==="audio";video.style.visibility=audio?"hidden":"visible";$("audioArt").hidden=!audio;
     show("player");banner("");wake()}
@@ -223,7 +223,7 @@ function apply(o){
   else if(o.kind==="volume"){video.volume=o.value/100}
   else if(o.kind==="stop"){playSeq=o.seq;stopPlayback()}
   report(true,o.seq)}
-let transcoded=false,baseStart=0,activeUrl=null;
+let transcoded=false,baseStart=0,activeUrl=null,recoverBudget=2,lastPosition=0;
 function load(url,start,convert){
   activeUrl=url;transcoded=!!convert;baseStart=start||0;clearTimeout(stallTimer);
   const src=convert?url+(url.includes("?")?"&":"?")+"start="+encodeURIComponent(baseStart):url;
@@ -233,7 +233,7 @@ function load(url,start,convert){
 async function tryPlay(){try{await video.play()}catch(err){if(err&&err.name==="NotAllowedError"){banner("Tap the screen to start playback")}}}
 function position(){return transcoded?baseStart+(video.currentTime||0):(video.currentTime||0)}
 function seekTo(t){t=Math.max(0,Number(t)||0);if(transcoded){load(activeUrl,t,true)}else{safe(()=>{video.currentTime=t})}}
-function stopPlayback(){current=null;activeUrl=null;transcoded=false;baseStart=0;clearTimeout(stallTimer);video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
+function stopPlayback(){current=null;activeUrl=null;transcoded=false;baseStart=0;clearTimeout(stallTimer);recoverBudget=0;video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
 document.addEventListener("click",()=>{if(current&&video.paused&&!$("banner").hidden)tryPlay();wake()});
 function state(){
   if(!current)return"idle";if(video.error)return"error";if(video.ended)return"ended";
@@ -254,8 +254,8 @@ function hud(){
   $("hudTime").textContent=clock(pos)+(dur?" / "+clock(dur):"");
   const s=state();$("hudState").textContent=s==="playing"?"Playing":s==="paused"?"Paused":s==="buffering"||s==="loading"?"Loading…":s==="ended"?"Finished":"";
   $("audioArt").classList.toggle("paused",s!=="playing")}
-video.addEventListener("playing",()=>{banner("");clearTimeout(stallTimer);report(true)});
-video.addEventListener("pause",()=>report(true));
+video.addEventListener("playing",()=>{banner("");clearTimeout(stallTimer);const pos=position();if(pos>lastPosition){recoverBudget=2;lastPosition=pos}report(true)});
+video.addEventListener("pause",()=>{clearTimeout(stallTimer);report(true)});
 video.addEventListener("ended",()=>{report(true)});
 video.addEventListener("waiting",()=>{report(true);if(transcoded){clearTimeout(stallTimer);stallTimer=setTimeout(recover,15000)}});
 video.addEventListener("stalled",()=>{if(transcoded){clearTimeout(stallTimer);stallTimer=setTimeout(recover,15000)}});
@@ -266,7 +266,7 @@ video.addEventListener("error",()=>{
   // A converted stream can drop while paused or buffering: resume where we were.
   if(transcoded&&Date.now()-recoverAt>4000&&video.error&&video.error.code===2){recover();return}
   report(true)});
-function recover(){if(!current||!transcoded||!activeUrl)return;recoverAt=Date.now();const at=position();load(activeUrl,at,true)}
+function recover(){if(!current||!transcoded||!activeUrl)return;if(recoverBudget<=0){banner("Playback stalled on this screen. Stop and start again.");report(true);return}recoverBudget--;recoverAt=Date.now();const at=position();load(activeUrl,at,true)}
 function wake(){const hud=$("hud"),tools=$("tools"),home=$("homeLink"),ver=$("scVersion");hud.classList.remove("hide");tools.classList.remove("hide");home.classList.remove("hide");ver.classList.remove("hide");clearTimeout(hideTimer);
   hideTimer=setTimeout(()=>{if(!video.paused&&!$("player").hidden){hud.classList.add("hide");tools.classList.add("hide");home.classList.add("hide");ver.classList.add("hide")}},3500)}
 document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(!e.repeat&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.target?.isContentEditable&&!["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target?.tagName)&&(!$("slate").hidden||!$("player").hidden)&&(e.key==="f"||e.key==="F")){e.preventDefault();fullscreen()}});
