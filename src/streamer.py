@@ -1340,10 +1340,9 @@ class Session:
 
     def restore(self, state: SessionState) -> None:
         self.state = state
-        self._playlist_name, self._segment_pattern = _hls_names_from_url(
-            state.stream_url if state.mode == "transcode" else "",
-        )
-        self._init_name = _hls_init_from_url(state.stream_url)
+        hls_url = state.stream_url if state.mode == "transcode" else ""
+        self._playlist_name, self._segment_pattern = _hls_names_from_url(hls_url)
+        self._init_name = _hls_init_from_url(hls_url)
         self.audio_chain = audio_filters(
             state.audio, state.audio_gain_db, state.audio_loudness)
         def recovered(pid: int, role: str, created_at: float):
@@ -1356,7 +1355,13 @@ class Session:
         self.ffmpeg = recovered(state.ffmpeg_pid, "encoder", state.ffmpeg_created_at)
         self.server = recovered(state.server_pid, "server", state.server_created_at)
         self.caster = recovered(state.caster_pid, "caster", state.caster_created_at)
-        self._start_sampler()
+        if state.mode == "transcode":
+            self._start_sampler()
+        else:
+            self._stop_sampler()
+            with self._snapshot_lock:
+                self._progress_snapshot = progress_model.EMPTY
+                self._segments_snapshot = 0
 
     def active(self) -> bool:
         if self.mode == "direct":

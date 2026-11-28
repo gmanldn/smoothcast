@@ -1,4 +1,5 @@
 """Regression tests for safe stream-server startup and stale PID handling."""
+from dataclasses import replace
 from pathlib import Path
 import os
 import sys
@@ -508,6 +509,50 @@ class ProgressSamplerTests(unittest.TestCase):
                 release_new.set()
                 session._stop_sampler()
                 old_worker.join(2)
+
+    def test_restore_direct_does_not_start_an_hls_sampler_or_read_its_files(self):
+        session = streamer.Session()
+        state = streamer.SessionState(file="film.mp4", mode="direct", offset=0,
+                                      duration=60, device="TV", title="Film")
+        with (
+            mock.patch.object(session, "_read_progress") as progress,
+            mock.patch.object(session, "_count_segments") as segments,
+            mock.patch.object(session, "_start_sampler", wraps=session._start_sampler) as start,
+        ):
+            try:
+                session.restore(state)
+                progress.assert_not_called()
+                segments.assert_not_called()
+                start.assert_not_called()
+                self.assertIsNone(session._sampler)
+                self.assertTrue(session.active())
+            finally:
+                session._stop_sampler()
+
+    def test_restore_transcode_samples_then_direct_retires_the_sampler_and_snapshot(self):
+        session = streamer.Session()
+        state = streamer.SessionState(
+            file="film.mp4", mode="transcode", offset=0, duration=60, device="TV", title="Film",
+            stream_url="http://192.168.1.14:8767/movie.m3u8",
+        )
+        sample = progress_model.Progress(speed=1.5, out_time=8.0)
+        with (
+            mock.patch.object(session, "_read_progress", return_value=sample),
+            mock.patch.object(session, "_count_segments", return_value=4),
+        ):
+            try:
+                session.restore(state)
+                worker = session._sampler
+                self.assertTrue(worker.is_alive())
+                self.assertEqual(session.progress(), sample)
+                self.assertEqual(session.segment_count(), 4)
+                session.restore(replace(state, mode="direct", stream_url=""))
+                self.assertFalse(worker.is_alive())
+                self.assertIsNone(session._sampler)
+                self.assertEqual(session.progress(), progress_model.EMPTY)
+                self.assertEqual(session.segment_count(), 0)
+            finally:
+                session._stop_sampler()
 
     def test_sampler_primes_the_snapshot_and_stops_cleanly(self):
         session = streamer.Session()

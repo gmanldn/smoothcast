@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e6ab31c5ee018737d4557b7ce686e0c731dd4cd7 -->
+<!-- sc-changelog-through: 26073165149fb98bd23c39a668028b35b5f293ed -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:36:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟦 **07:37:23 · Performance** — perf(hls): skip HLS sampling when restoring a direct cast (Refs #732) <!-- sc-changelog-pending -->
 
 - ⬜ **07:36:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e6ab31c5ee01`](https://github.com/gmanldn/smoothcast/commit/e6ab31c5ee018737d4557b7ce686e0c731dd4cd7)
+
+- ⬜ **07:36:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`26073165149f`](https://github.com/gmanldn/smoothcast/commit/26073165149fb98bd23c39a668028b35b5f293ed)
 
 - ⬜ **07:35:38 · Maintenance** — chore(baseline): rebaseline queue\_component.py 40-&gt;46 lines for QueueComponent.move (Refs #691) · [`38bcfac55438`](https://github.com/gmanldn/smoothcast/commit/38bcfac554386624be1903617fca275809afb85f)
 
