@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c2243c8a265feea72a3f7ecae6d796d9fbd8687c -->
+<!-- sc-changelog-through: 819e20c2c4e39e21b345ace0eabe345a244c0b6d -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **07:33:33 · Performance** — perf(screens): avoid fetching full room status to start playback (Refs #756) <!-- sc-changelog-pending -->
+- 🟥 **07:34:26 · Fix** — fix(hls): stop retired samplers from publishing into a replacement cast (Refs #734) <!-- sc-changelog-pending -->
+
+- 🟦 **07:33:42 · Performance** — perf(screens): avoid fetching full room status to start playback (Refs #756) · [`819e20c2c4e3`](https://github.com/gmanldn/smoothcast/commit/819e20c2c4e39e21b345ace0eabe345a244c0b6d)
 
 - ⬜ **07:31:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2e4c34be9796`](https://github.com/gmanldn/smoothcast/commit/2e4c34be979638c1366335784cd381a762b9abd5)
 

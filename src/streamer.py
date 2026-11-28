@@ -1443,7 +1443,8 @@ class Session:
     def _start_sampler(self) -> None:
         """Sample progress and segment count off the GTK thread."""
         self._stop_sampler()
-        self._sampler_stop = threading.Event()
+        stop = threading.Event()
+        self._sampler_stop = stop
         # Bind the paths now so a session created inside a patched test
         # environment cannot later read the real cache.
         progress_path = PROGRESS_FILE
@@ -1457,13 +1458,19 @@ class Session:
             self._segments_snapshot = segments
 
         def pump():
-            while not self._sampler_stop.is_set():
+            while not stop.is_set():
                 progress = self._read_progress(progress_path)
+                if stop.is_set():
+                    return
                 segments = self._count_segments(root, pattern)
                 with self._snapshot_lock:
+                    # A timed-out join does not let this worker publish to
+                    # a replacement cast once its disk read returns.
+                    if stop.is_set():
+                        return
                     self._progress_snapshot = progress
                     self._segments_snapshot = segments
-                self._sampler_stop.wait(0.5)
+                stop.wait(0.5)
 
         self._sampler = threading.Thread(target=pump, daemon=True)
         self._sampler.start()

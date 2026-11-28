@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 import sys
+import threading
 from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
@@ -458,6 +459,55 @@ class ProgressSamplerTests(unittest.TestCase):
             self.assertEqual(session.progress().speed, 1.5)
             self.assertEqual(session.segment_count(), 7)
             root.glob.assert_not_called()
+
+    def test_retired_sampler_cannot_publish_after_a_replacement_starts(self):
+        session = streamer.Session()
+        old_blocked = threading.Event()
+        new_blocked = threading.Event()
+        release_old = threading.Event()
+        release_new = threading.Event()
+        old_threads = []
+        old_reads = []
+        old_progress = progress_model.Progress(speed=1.0)
+        new_progress = progress_model.Progress(speed=2.0)
+
+        def read_progress(_path):
+            worker = threading.current_thread()
+            if worker is threading.main_thread():
+                return new_progress if old_blocked.is_set() else old_progress
+            if not old_threads:
+                old_threads.append(worker)
+            if worker is old_threads[0]:
+                old_reads.append(worker)
+                old_blocked.set()
+                release_old.wait(5)
+                return old_progress
+            new_blocked.set()
+            release_new.wait(5)
+            return new_progress
+
+        with (
+            mock.patch.object(session, "_read_progress", side_effect=read_progress),
+            mock.patch.object(session, "_count_segments", return_value=3),
+        ):
+            session._start_sampler()
+            old_worker = session._sampler
+            try:
+                self.assertTrue(old_blocked.wait(2))
+                session._start_sampler()  # its one-second join cannot unblock the old read
+                self.assertTrue(new_blocked.wait(2))
+                self.assertIsNot(session._sampler, old_worker)
+                self.assertTrue(old_worker.is_alive())
+                release_old.set()
+                old_worker.join(0.75)
+                self.assertFalse(old_worker.is_alive())
+                self.assertEqual(session.progress(), new_progress)
+                self.assertEqual(len(old_reads), 1)
+            finally:
+                release_old.set()
+                release_new.set()
+                session._stop_sampler()
+                old_worker.join(2)
 
     def test_sampler_primes_the_snapshot_and_stops_cleanly(self):
         session = streamer.Session()
