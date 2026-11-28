@@ -118,10 +118,10 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
 
 def test_hover_is_approximate_only_while_exact_frame_step_remains_precise():
     methods = main_window_methods()
-    assert "self._queue_preview(value, sparse=True)" in methods["_on_hover"]
+    assert "w._queue_preview(value, sparse=True)" in methods["_on_hover"]
     assert "self._preview_sparse = sparse" in methods["_queue_preview"]
     assert "delay = 180 if sparse else 1" in methods["_queue_preview"]
-    assert "if self.seekbar.scrubbing:" in methods["_on_hover"]
+    assert "if w.seekbar.scrubbing:" in methods["_on_hover"]
     assert "if latest and sparse:" in methods["_start_preview"]
     assert "if self._preview_busy" in methods["_start_preview"]
     assert "cached = cache.get(key)" in methods["_start_preview"]

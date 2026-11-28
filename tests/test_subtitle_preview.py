@@ -120,9 +120,9 @@ def preview_window_type(monkeypatch, jobs, **module_overrides):
 
 def test_hover_wiring_is_opt_in_and_preserves_existing_scrub_preview():
     lifecycle = main_window_methods()["_on_hover"]
-    assert "self._queue_preview(value, sparse=True)" in lifecycle
-    assert "self._timed_subtitle_preview(value)" in lifecycle
-    assert "self._timed_subtitle_preview(None)" in lifecycle
+    assert "w._queue_preview(value, sparse=True)" in lifecycle
+    assert "w._timed_subtitle_preview(value)" in lifecycle
+    assert "w._timed_subtitle_preview(None)" in lifecycle
 
 
 def test_rapid_hover_reuses_worker_and_ignores_old_film(tmp_path, monkeypatch):

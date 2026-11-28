@@ -26,9 +26,8 @@ class FrameStepTests(unittest.TestCase):
 
     def test_frame_step_uses_the_media_frame_rate(self):
         class Fake:
-            _frame_step = cast_lifecycle.LifecycleMixin._frame_step
-
             def __init__(self, fps):
+                self._frame_step = cast_lifecycle.LifecycleController(self)._frame_step
                 self.media = SimpleNamespace(fps=fps)
                 self.skips = []
 

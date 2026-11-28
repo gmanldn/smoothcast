@@ -64,7 +64,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "SettingsCardController", "PortalHostController", "PortalController", "UiTimerController", "PortalQueueController", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "SettingsCardController", "PortalHostController", "PortalController", "UiTimerController", "PortalQueueController", "LifecycleController", "LifecycleActionsController", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
@@ -109,6 +109,8 @@ def _cached_main_window_method_nodes():
             for method in node.body:
                 if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     segment = "".join(lines[method.lineno - 1:method.end_lineno])
+                    # Controller methods read ``w = self.w``; exec'd test hosts have no ``.w``.
+                    segment = segment.replace("        w = self.w\n", '        w = getattr(self, "w", self)\n')
                     methods.append((source, method, segment))
     return tuple(methods)
 

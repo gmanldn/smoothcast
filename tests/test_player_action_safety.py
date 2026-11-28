@@ -91,7 +91,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("session.stop(device, send_stop=False)", cast)
         self.assertLess(cast.index("if self._closing:"), cast.index("self.session = session"))
         self.assertIn("if self._closing:", cast[cast.index("def failed(message):"):])
-        self.assertIn("self._closing = True", self.methods["_on_close"])
+        self.assertIn("w._closing = True", self.methods["_on_close"])
 
     def test_manual_target_does_not_switch_tv_mid_cast(self):
         # Manual IPv4 entry (Return and Add IP) must obey the same ownership
@@ -125,7 +125,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
         )
         shuffle = self.methods["_shuffle_queue"]
         self.assertIn("playback_state.shuffle_order(", shuffle)
-        self.assertIn("self._rebuild_queue()", shuffle)
+        self.assertIn("w._rebuild_queue()", shuffle)
 
 
     def test_custom_speed_is_wired_and_bounded(self):
@@ -133,7 +133,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("app.custom-speed", self.methods["_build_menu"])
         custom = self.methods["action_custom_speed"]
         self.assertIn("Gtk.SpinButton.new_with_range(0.25, 4.0", custom)
-        self.assertIn("self._set_speed(spin.get_value())", custom)
+        self.assertIn("w._set_speed(spin.get_value())", custom)
 
 
     def test_file_favourites_are_wired(self):

@@ -157,7 +157,7 @@ def test_lifecycle_close_uses_named_steps_and_records_a_clean_exit():
                      "house_services", "receiver_watch", "media", "settings"]
     assert body.index('plan.run("sc_core"') < body.index('plan.run("portal"')
     assert body.index('plan.run("portal"') < body.index('plan.run("house_services"')
-    assert body.rstrip().endswith("return False") and "self._finish_shutdown()" in body
+    assert body.rstrip().endswith("return False") and "w._finish_shutdown()" in body
     host = (Path(__file__).resolve().parents[1] / "src" / "cast_portal_host.py").read_text(encoding="utf-8")
     assert "ShutdownLedger().end(report)" in host
     control = (Path(__file__).resolve().parents[1] / "src" / "cast_control.py").read_text(encoding="utf-8")

@@ -39,14 +39,23 @@ def desktop_shortcuts() -> list[tuple[str, str]]:
     ]
 
 
-class LifecycleActionsMixin:
+class LifecycleActionsController:
+    """Composition replacement for LifecycleActionsMixin (#691); all state stays on the window."""
+
+    def __init__(self, window) -> None:
+        self.w = window
+
     def action_open(self, *_args) -> None:
-        self.open_video()
+        w = self.w
+        w.open_video()
     def action_add_files(self, *_args) -> None:
-        self.add_files()
+        w = self.w
+        w.add_files()
     def action_stop(self, *_args) -> None:
-        self.stop_stream()
+        w = self.w
+        w.stop_stream()
     def action_shortcuts(self, *_args) -> None:
+        w = self.w
         dialog = Adw.Dialog()
         dialog.set_title("Keyboard shortcuts")
         dialog.set_content_width(420)
@@ -85,9 +94,10 @@ class LifecycleActionsMixin:
         scroller.set_child(box)
         toolbar.set_content(scroller)
         dialog.set_child(toolbar)
-        dialog.present(self)
+        dialog.present(w)
     def action_custom_speed(self, *_args) -> None:
         """Pick a precise playback rate; validated to a safe 0.25x-4x range."""
+        w = self.w
         dialog = Adw.Dialog()
         dialog.set_title("Custom playback speed")
         dialog.set_content_width(340)
@@ -102,21 +112,22 @@ class LifecycleActionsMixin:
         spin = Gtk.SpinButton.new_with_range(0.25, 4.0, 0.05)
         spin.set_digits(2)
         spin.update_property([Gtk.AccessibleProperty.LABEL], ["Playback speed"])
-        spin.set_value(settings.PlaybackSettings.from_config(self.cfg).speed)
+        spin.set_value(settings.PlaybackSettings.from_config(w.cfg).speed)
         box.append(spin)
         apply = Gtk.Button(label="Apply")
         apply.add_css_class("suggested-action")
 
         def on_apply(_button):
             dialog.close()
-            self._set_speed(spin.get_value())
+            w._set_speed(spin.get_value())
 
         apply.connect("clicked", on_apply)
         box.append(apply)
         toolbar.set_content(box)
         dialog.set_child(toolbar)
-        dialog.present(self)
+        dialog.present(w)
     def action_about(self, *_args) -> None:
+        w = self.w
         about = Adw.AboutDialog(
             application_name=APP_NAME,
             application_icon=ICON_NAME,
@@ -127,13 +138,14 @@ class LifecycleActionsMixin:
         url = donate.donation_url()
         if url:
             about.add_link("Support SmoothCast", url)
-        about.present(self)
+        about.present(w)
     def perform_action(self, name: str) -> None:
+        w = self.w
         if name == "open":
-            self.action_open()
+            w.action_open()
         elif name == "add":
-            self.action_add_files()
+            w.action_add_files()
         elif name == "stop":
-            self.action_stop()
+            w.action_stop()
         elif name == "shortcuts":
-            self.action_shortcuts()
+            w.action_shortcuts()
