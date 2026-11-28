@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import cache_policy
 import config_control
+import errors
+import failure_boundary
 import network_routes
 import server
 import streamer
@@ -200,6 +202,10 @@ class PortSelectionTests(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertIn("occupied", str(error))
         self.assertIn("8767", str(error))
+        self.assertEqual(error.code, "network.port_in_use")
+        failure = failure_boundary.describe(error)
+        self.assertEqual(failure.code, "network.port_in_use")
+        self.assertEqual(failure.message, errors.CATALOGUE["network.port_in_use"].message)
         popen.assert_not_called()
 
     def test_stream_url_uses_the_port_actually_chosen(self):

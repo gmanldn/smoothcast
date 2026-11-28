@@ -1574,9 +1574,10 @@ class Session:
             # Pass 2: the first port nobody is listening on.
             free = next((p for p in ports if p not in busy), None)
             if free is None:
-                raise StreamError(
+                raise errors.coded(StreamError(
                     f"Port {ports[0]} is already occupied by an unrecognised server and no "
-                    f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free")
+                    f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free"),
+                    "network.port_in_use")
             self.port = free
         self.server = subprocess.Popen(
             frozen_runtime.server_command(pathlib.Path(_hls_server_script()))
