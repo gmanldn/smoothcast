@@ -441,7 +441,9 @@ class AvMixin:
             return False
         path, position, generation = self._preview_pending
         sparse = bool(getattr(self, "_preview_sparse", False))
+        fast = bool(getattr(self, "_preview_fast", False)) and not sparse
         self._preview_sparse = False
+        self._preview_fast = False
         self._preview_pending = None
         if path != self._preview_path or generation != self._preview_generation:
             return False
@@ -450,25 +452,35 @@ class AvMixin:
 
         def finish(frame=None):
             self._preview_busy = False
-            latest = (path == self._preview_path
-                      and generation == self._preview_generation
-                      and self.session is None and not self.external
-                      and not getattr(self, "_local_video_path", None)
-                      and not getattr(self, "_closing", False)
-                      and self._preview_pending is None)
-            # A finished decode must never overwrite a newer position the
-            # user selected while FFmpeg was still extracting the old frame.
+            owned = (path == self._preview_path
+                     and generation == self._preview_generation
+                     and self.session is None and not self.external
+                     and not getattr(self, "_local_video_path", None)
+                     and not getattr(self, "_closing", False))
+            latest = owned and self._preview_pending is None
+            # Show a decoded frame whenever it is at least as close to the
+            # playhead as the one on screen. Dropping every frame while a newer
+            # request was pending froze the picture until the drag stopped and
+            # then made it jump; going backwards to an older frame is what a
+            # stale decode must never do.
+            head = getattr(self, "_preview_head", position)
+            shown = getattr(self, "_preview_shown", None)
+            shown_position = shown[2] if shown and shown[:2] == (path, generation) else None
+            closer = (shown_position is None
+                      or abs(position - head) <= abs(shown_position - head))
             if latest and sparse:
                 self._refresh_thumbnail_strip(position, visible=True)
-            elif latest:
+            elif owned and not sparse and closer:
                 if frame is not None:
                     try:
                         texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(frame))
                         self.preview_picture.set_paintable(texture)
                         self.preview_picture.set_visible(True)
+                        self._preview_shown = (path, generation, position)
                     except GLib.Error:
                         self.preview_picture.set_visible(False)
-                else:
+                        self._preview_shown = None
+                elif shown_position is None:
                     self.preview_picture.set_visible(False)
             if self._preview_pending is not None and not self._preview_timer_id:
                 delay = 120 if self._preview_sparse else 1
@@ -512,6 +524,8 @@ class AvMixin:
             )
             return False
         # An explicit seek or frame step must not be approximated by a hover bin.
+        if fast:
+            aspect_options = {**aspect_options, "fast": True}
         Async.run(
             lambda: screenshot.preview_frame(
                 pathlib.Path(path), position, video_stream_index=video_index, picture_config=picture_config, **aspect_options,
@@ -581,7 +595,35 @@ class AvMixin:
         self.seek_to(positions[index])
 
 
-    def _queue_preview(self, position: float, *, sparse: bool = False) -> None:
+    def _show_nearest_preview(self, position: float) -> None:
+        """Put the closest already-decoded frame on screen at once.
+
+        Called on the GTK thread for every scrub step: a cache lookup and one
+        small JPEG upload, never a decoder. The exact frame replaces it later.
+        """
+        source = self._thumbnail_identity()
+        cache = getattr(self, "_sparse_frame_cache", None)
+        if source is None or cache is None or getattr(self, "_local_video_path", None):
+            return
+        found = cache.nearest(*source, position)
+        if found is None:
+            return
+        moment, image = found
+        shown = getattr(self, "_preview_shown", None)
+        if shown is not None and shown[:2] == source[:2]:
+            # Keep whatever is already closer to the playhead (e.g. an exact frame).
+            if abs(shown[2] - position) <= abs(moment - position):
+                return
+        try:
+            texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(image))
+        except GLib.Error:
+            return
+        self.preview_picture.set_paintable(texture)
+        self.preview_picture.set_visible(True)
+        self._preview_shown = (source[0], source[1], moment)
+
+
+    def _queue_preview(self, position: float, *, sparse: bool = False, fast: bool = False) -> None:
         """Debounce frame decoding, with at most one FFmpeg worker at a time."""
         if (self._preview_path is None or self.session is not None or self.external
                 or self._local_stream() is not None):
@@ -592,6 +634,9 @@ class AvMixin:
             return
         self._preview_pending = (self._preview_path, max(0.0, position),
                                  self._preview_generation)
+        if not sparse:
+            self._preview_head = max(0.0, position)  # where the playhead is now
+        self._preview_fast = fast and not sparse
         self._preview_sparse = sparse
         if not sparse and self._preview_timer_id:
             GLib.source_remove(self._preview_timer_id)

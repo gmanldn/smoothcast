@@ -488,6 +488,17 @@ class PyChromecastBackend:
         except Exception:  # noqa: BLE001 - status refresh is best-effort
             return
         self._publish(identifier, self._status_dict(media_status, cast_status))
+        # The cached objects can be stale or still empty (UNKNOWN) after a
+        # reconnect: ask the receiver for fresh status. The answers arrive
+        # through the registered listeners and replace this snapshot.
+        for request in (
+            lambda: cast.socket_client.receiver_controller.update_status(),
+            lambda: cast.media_controller.update_status(),
+        ):
+            try:
+                request()
+            except Exception:  # noqa: BLE001 - a refresh request is best-effort
+                continue
 
     def close(self) -> None:
         with self._changed:

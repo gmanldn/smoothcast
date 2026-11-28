@@ -2109,6 +2109,8 @@ class Session:
         observed = False
         known_state = False
         last_status = {}
+        silent_since: float | None = None
+        resets = 0
         while True:
             if self.caster is not None and self.caster.poll() not in (None, 0):
                 raise StreamPreparationError(
@@ -2127,6 +2129,21 @@ class Session:
                 known_state |= castctl.player_state(info) not in {"UNKNOWN", "OFFLINE"}
             if matches(info):
                 return
+            # A reply that never carries a playback state means the kept status
+            # connection is stale (TV standby, app switch). Drop it so the next
+            # read reconnects, instead of polling the same dead cache for 40 s.
+            if known_state or not observed:
+                silent_since = None
+            else:
+                now = time.monotonic()
+                silent_since = now if silent_since is None else silent_since
+                if now - silent_since >= 4.0 and resets < 3:
+                    resets += 1
+                    silent_since = now
+                    try:
+                        castctl.reset_status_route(device)
+                    except Exception as exc:  # noqa: BLE001 - best-effort recovery only
+                        castctl.log_backend_failure(f"status route reset failed: {exc}")
             remaining = deadline - time.monotonic()
             if remaining > 0:
                 time.sleep(min(interval, remaining))

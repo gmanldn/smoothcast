@@ -73,6 +73,8 @@ def fixture(mode="direct", *, paused=False):
             self._toggle_local_preview = mock.Mock()
             self._cast_path = mock.Mock()
             self._queue_preview = mock.Mock()
+            self._show_nearest_preview = mock.Mock()
+            self._defer_seek = mock.Mock()
             self.elapsed_label = mock.Mock()
             self.remaining_label = mock.Mock()
 
@@ -282,3 +284,34 @@ def test_local_preview_still_seeks_without_remote_command():
     assert window._preview_position == 30
     window._queue_preview.assert_called_once_with(30)
     assert not window.busy
+
+
+def test_bar_seek_while_busy_is_held_not_lost_and_never_overlaps():
+    window, jobs, cast, _ = fixture()
+    window.toggle_play()
+    assert window.busy
+    window.seek_to(25)  # a click/drag on the seekbar: no feedback label
+    window._defer_seek.assert_called_once_with(25)
+    assert len(jobs) == 1 and not window.seekbar.set_state.called
+    window.toast.assert_not_called()
+    run_job(jobs)
+    cast.seek.assert_not_called()  # applied later by the retry, never concurrently
+
+
+def test_labelled_or_exact_seeks_while_busy_are_still_refused():
+    for kwargs in ({"feedback_label": "A–B repeat"}, {"exact_source_time": True}):
+        window, jobs, cast, _ = fixture()
+        window.toggle_play()
+        window.seek_to(25, **kwargs)
+        window._defer_seek.assert_not_called()
+        window.toast.assert_called_with("Hold on — finishing the last command")
+        assert len(jobs) == 1
+
+
+def test_local_preview_seek_shows_the_nearest_cached_frame_before_decoding():
+    window, _jobs, _, _ = fixture()
+    window.session = None
+    window._preview_path = "/film.mkv"
+    window.seek_to(30)
+    window._show_nearest_preview.assert_called_once_with(30)
+    window._queue_preview.assert_called_once_with(30)

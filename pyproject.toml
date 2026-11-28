@@ -169,6 +169,7 @@ py-modules = [
     "house_history",
     "house_library",
     "house_rules",
+    "hover_coalescer",
     "hw_encoder_state",
     "hw_port",
     "idle_chrome",

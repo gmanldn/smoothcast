@@ -579,6 +579,11 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 exact_source_time: bool = False) -> None:
         # Guard before seekbar moves.
         if self.busy:
+            if feedback_label is None and not exact_source_time:
+                # A click or drag on the bar must not be lost: hold the knob where
+                # the user put it and apply the seek the moment the TV is free.
+                self._defer_seek(target)
+                return
             self.toast("Hold on — finishing the last command")
             return
         if self.external:
@@ -608,6 +613,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 else:
                     self._local_start_pending = target
             else:
+                self._show_nearest_preview(target)
                 self._queue_preview(target)
             if feedback_label:
                 self.toast(f"{feedback_label} — {fmt_time(target)} (local preview)")
@@ -674,6 +680,24 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                    else f"Restarting stream at {fmt_time(target)}…")
         self.tracker.device_update(target, duration)
         self._restart_at(session, target, feedback_label=feedback_label)
+
+    def _defer_seek(self, target: float) -> None:
+        self._deferred_seek = max(0.0, target)
+        self._deferred_seek_ticks = 0
+        if not getattr(self, "_deferred_seek_timer", 0):
+            self._deferred_seek_timer = GLib.timeout_add(100, self._retry_deferred_seek)
+
+    def _retry_deferred_seek(self) -> bool:
+        target = getattr(self, "_deferred_seek", None)
+        self._deferred_seek_ticks = getattr(self, "_deferred_seek_ticks", 0) + 1
+        if target is not None and self.busy and self._deferred_seek_ticks < 150 \
+                and not getattr(self, "_closing", False):
+            return True  # still finishing the previous command (about 15 s at most)
+        self._deferred_seek = None
+        self._deferred_seek_timer = 0
+        if target is not None and not self.busy and not getattr(self, "_closing", False):
+            self.seek_to(target)
+        return False
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None,
@@ -959,6 +983,9 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 self.session.state.offset, snapshot.out_time, duration,
                 speed=self.session.state.speed,
             )
+        deferred = getattr(self, "_deferred_seek", None)
+        if deferred is not None and not self.external:
+            position = deferred  # the knob stays where the user clicked
         # Pure watchdog: no blocking I/O on the GTK tick.
         stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered,

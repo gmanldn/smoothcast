@@ -15,6 +15,7 @@ import castctl
 import config_control
 import config_persistence
 import idle_chrome
+from hover_coalescer import HoverCoalescer
 import slider_accessibility
 
 import audio_monitor
@@ -176,6 +177,11 @@ class SeekBar(Gtk.DrawingArea):
         self._start_value = 0.0
         self.on_seek = on_seek
         self.on_hover = on_hover
+        # Pointer motion reaches the window once per frame (see hover_coalescer);
+        # the knob itself is drawn from the latest value, so it never lags.
+        self._hover_frames = HoverCoalescer(
+            lambda value: self.on_hover(True, value),
+            schedule=GLib.timeout_add, cancel=GLib.source_remove)
         self.set_hexpand(True)
         self.set_size_request(-1, 30)
         self.set_draw_func(self._draw)
@@ -212,7 +218,8 @@ class SeekBar(Gtk.DrawingArea):
         self.scrubbing = True
         self._start_value = self._x_to_value(x)
         self.scrub_value = self._start_value
-        self.on_hover(True, self.scrub_value)
+        self._hover_frames.drop()
+        self.on_hover(True, self.scrub_value)  # a click shows its frame at once
         self.queue_draw()
 
     def _drag_update(self, _gesture, offset_x, _y) -> None:
@@ -220,12 +227,13 @@ class SeekBar(Gtk.DrawingArea):
             return
         width = max(1, self.get_width())
         self.scrub_value = max(0.0, min(self.duration, self._start_value + offset_x / width * self.duration))
-        self.on_hover(True, self.scrub_value)
+        self._hover_frames.push(self.scrub_value)
         self.queue_draw()
 
     def _drag_end(self, _gesture, _offset_x, _offset_y) -> None:
         if not self.scrubbing:
             return
+        self._hover_frames.drop()
         self.scrubbing = False
         self.on_hover(False, self.scrub_value)
         value = self.scrub_value
@@ -238,12 +246,13 @@ class SeekBar(Gtk.DrawingArea):
         self._hover = True
         self._hover_value = self._x_to_value(x)
         if not self.scrubbing:
-            self.on_hover(True, self._hover_value)
+            self._hover_frames.push(self._hover_value)
         self.queue_draw()
 
     def _leave(self, _controller) -> None:
         self._hover = False
         if not self.scrubbing:
+            self._hover_frames.drop()
             self.on_hover(False, 0.0)
         self.queue_draw()
 
