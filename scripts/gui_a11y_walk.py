@@ -26,6 +26,9 @@ MAX_NODES = 6000
 MAX_DEPTH = 60
 
 
+SCREEN_WIDTH = 1280  # isolated Xvfb screen (scripts/test_gui_isolated.py)
+
+
 def find_unnamed(nodes: list[dict]) -> list[dict]:
     """Showing, enabled interactive nodes whose accessible name is empty."""
     return [n for n in nodes
@@ -244,6 +247,8 @@ def main() -> int:
             scale_bad.append(f"scale probe failed: {result['error']}")
         if not result.get("error") and not result.get("checked"):
             scale_bad.append("scale probe inspected no labels (vacuous)")
+        if (result.get("window_width") or 0) > SCREEN_WIDTH:
+            scale_bad.append(f"window grew to {result['window_width']}px, wider than the {SCREEN_WIDTH}px screen")
         print("SCALE detail:", {k: result.get(k) for k in ("scale", "window_width")})
         print(f"SCALE: {len(result.get('clipped', []))} clipped of {result.get('checked', 0)} labels")
         for problem in scale_bad:

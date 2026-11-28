@@ -49,9 +49,11 @@ def _scale_probe(app, prefix: str, gtk) -> None:
         Path(prefix + ".scale").write_text(json.dumps({"error": "no window"}), encoding="ascii")
         return
     ctx = GLib_ctx()
-    for _ in range(50):  # let the toolkit relayout at the new scale
-        if not ctx.iteration(False):
-            break
+    settle = time.monotonic() + 1.5  # relayout needs frame-clock ticks, not just pending events
+    while time.monotonic() < settle:
+        while ctx.iteration(False):
+            pass
+        time.sleep(0.02)
     checked: list = []
     clipped = clipped_labels(window, gtk, checked)
     Path(prefix + ".scale").write_text(
