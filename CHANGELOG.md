@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2187dff5aa2f27b2be3b2e99009329ed032eb983 -->
+<!-- sc-changelog-through: 87475d771c677ec9fb1fed9a9eca65cfa5a65452 -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **07:40:47 · Performance** — perf(hls): validate fMP4 init once per playlist check (Refs #731) <!-- sc-changelog-pending -->
+- ⬜ **07:41:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:41:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`87475d771c67`](https://github.com/gmanldn/smoothcast/commit/87475d771c677ec9fb1fed9a9eca65cfa5a65452)
+
+- 🟥 **07:41:27 · Fix** — fix(picker): treat conflicting fresh ready/foreign-busy as temporarily unavailable (Refs #743) · [`92b31c6826be`](https://github.com/gmanldn/smoothcast/commit/92b31c6826be73cbf6e939458eb4f568560e0862)
+
+- 🟥 **07:41:27 · Fix** — fix(picker): treat conflicting fresh ready/foreign-busy as temporarily unavailable (Refs #743) · [`a8ab472f0607`](https://github.com/gmanldn/smoothcast/commit/a8ab472f0607b3a739d324175e5790d54d72b6c5)
+
+- 🟦 **07:40:56 · Performance** — perf(hls): validate fMP4 init once per playlist check (Refs #731) · [`6130190a0570`](https://github.com/gmanldn/smoothcast/commit/6130190a057088a74b45245980b4a53a82a27f35)
 
 - 🟦 **07:39:21 · Performance** — perf(dlna): start renderer descriptions while SSDP replies arrive (Refs #724) · [`2187dff5aa2f`](https://github.com/gmanldn/smoothcast/commit/2187dff5aa2f27b2be3b2e99009329ed032eb983)
 
