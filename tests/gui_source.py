@@ -36,6 +36,7 @@ GUI_MODULES = (
     "panel_ui.py",
     "cast_settings.py",
     "preferences_ui.py",
+    "preferences_room_ui.py",
     "library_folders_ui.py",
     "cast_queue.py",
     "cast_discovery.py",

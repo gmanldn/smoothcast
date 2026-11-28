@@ -58,7 +58,7 @@ def test_screen_css_has_no_independent_literal_palette():
     assert not _literal_css_colours(body), "Use shared semantic colour tokens"
     assert "var(--accent)" in body and "var(--text)" in body
     assert "var(--qr-paper)" in body
-    assert "--qr-paper:#ffffff" in css
+    assert "--qr-paper:#ffffff" in css.lower()  # tokens are emitted as uppercase hex
     assert "--ink:" not in body and "--mut:" not in body
 
 

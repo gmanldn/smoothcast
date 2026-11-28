@@ -11,7 +11,9 @@ import api_spec
 from test_room_conformance import RoomHarness
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = ("portal.py", "portal_screens_http.py", "portal_mesh_http.py")
+# Route literals live wherever the portal split put them (#689).
+SOURCES = ("portal.py", "portal_routing.py", "portal_screens_http.py", "portal_mesh_http.py",
+           "library_replication.py")
 
 
 def source_routes() -> set[str]:
@@ -21,7 +23,7 @@ def source_routes() -> set[str]:
         for match in re.finditer(
                 r'''["'`](\^?/(?:api|mesh)/[^"'`\s?\\)]*|/screen|/nodes|/silence\.wav)''', text):
             found.add(re.split(r"\(", match.group(1).lstrip("^"))[0])
-    return found
+    return {route for route in found if "*" not in route}  # docstring wildcards are prose, not routes
 
 
 def spec_regex(path: str) -> re.Pattern:

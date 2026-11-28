@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import re
 import shutil
 import subprocess
 import pytest
@@ -32,7 +33,8 @@ def test_upload_journey_and_queue_accessibility():
         assert name in page.ids
     assert page.ids["queueFeedback"]["aria-live"] == "polite"
     assert page.ids["uploadProgress"]["aria-label"] == "File transfer bytes received"
-    assert portal._HTML.count('data-stage="') == 5
+    # Five transfer steps; the stylesheet also has one [data-stage] selector.
+    assert len(re.findall(r'<[a-zA-Z][^>]*\sdata-stage="', portal._HTML)) == 5
     assert "Cross-node routing will appear only when" in portal._HTML
     assert 'if(pauseRequested)throw Error("Transfer paused")' in portal._HTML
     assert 'state=await uploadRequest("GET","/api/uploads/"+pendingUpload.id)' in portal._HTML
@@ -59,6 +61,7 @@ const el={transferSteps:{children:steps},uploadQueue:{checked:true},
   transferDestination:{},transferPercent:{},transferBytes:{},transferRate:{},
   transferEta:{},transferStage:{},uploadProgress:{max:1,value:0}};
 const $=id=>el[id];
+function localUploadProgress(){}  // list painting lives outside the extracted slice
 """
     checks = """
 transferView("choose");
@@ -130,6 +133,7 @@ const assert = require("node:assert/strict");
 const performance = {now:()=>0};
 const elements = {};
 const $ = id => elements[id] ||= {textContent:"",value:0,checked:true};
+function localUploadProgress(){}  // list painting lives outside the extracted slice
 """
     checks = """
 transferView("choose");
