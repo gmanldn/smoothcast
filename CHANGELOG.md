@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e198c5a2a7fff544a93b3e27831b7b39907f036d -->
+<!-- sc-changelog-through: 4a0a1274230ec44ec90204af23e356ffa2a92d7f -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **01:42:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **01:54:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **01:54:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4a0a1274230e`](https://github.com/gmanldn/smoothcast/commit/4a0a1274230ec44ec90204af23e356ffa2a92d7f)
+
+- 🟥 **01:54:32 · Fix** — fix: stale Chromecast status link; instant, ordered scrub preview · [`622f5c9627d0`](https://github.com/gmanldn/smoothcast/commit/622f5c9627d08c9c5a46175fc797eedf729d3ceb)
 
 - ⬜ **01:42:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e198c5a2a7ff`](https://github.com/gmanldn/smoothcast/commit/e198c5a2a7fff544a93b3e27831b7b39907f036d)
+
+- ⬜ **01:42:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`940ad47b3530`](https://github.com/gmanldn/smoothcast/commit/940ad47b3530f056352e8826d25d5ad1301b4b9a)
 
 - 🟥 **01:42:06 · Fix** — fix: persist latency stats via store.Store; restore docs wording and stale known\_nodes test expectation (Refs #706) · [`ddaa8b10ec99`](https://github.com/gmanldn/smoothcast/commit/ddaa8b10ec9974a955edad5474aa8ee028a82361)
 
