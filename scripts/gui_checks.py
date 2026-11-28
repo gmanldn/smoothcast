@@ -54,6 +54,7 @@ SCENARIOS: dict[str, str | None] = {
     "side-panel": None,
     "bookmarks": None,
     "network-view": None,
+    "demo-journey-keys": None,  # same journey, each step a real xdotool key press
     "demo-journey": None,  # runs against the loopback fake receiver (demo runtime)
 }
 
@@ -70,7 +71,7 @@ def parse_checks(output: str) -> list[tuple[str, str, bool, str]]:
     return parsed
 
 
-def journey_wire_checks(calls: list) -> list[tuple[str, str, bool, str]]:
+def journey_wire_checks(calls: list, name: str = "demo-journey") -> list[tuple[str, str, bool, str]]:
     """What the fake receiver saw on the wire, in order: LOAD, PAUSE, SEEK, STOP."""
     seen = [str(data.get("type", "")) for _ns, data in calls]
     order = [t for t in seen if t in JOURNEY_WIRE]
@@ -78,7 +79,7 @@ def journey_wire_checks(calls: list) -> list[tuple[str, str, bool, str]]:
     # after the pause is as good a seek as a SEEK message.
     sought = "PAUSE" in order and ("SEEK" in order or "LOAD" in order[order.index("PAUSE"):])
     ok = bool(order) and order[0] == "LOAD" and order[-1] == "STOP" and sought
-    return [("demo-journey", "receiver saw LOAD, PAUSE, a seek and STOP in order", ok, " ".join(order))]
+    return [(name, "receiver saw LOAD, PAUSE, a seek and STOP in order", ok, " ".join(order))]
 
 
 def _demo_runtime(stack, env: dict[str, str], holder: dict):
@@ -104,7 +105,7 @@ def _demo_runtime(stack, env: dict[str, str], holder: dict):
 
 def run_scenario(name: str) -> tuple[int, list[tuple[str, str, bool, str]]]:
     scratch = Path(tempfile.mkdtemp(prefix="smoothcast-guicheck-"))
-    demo = name == "demo-journey"
+    demo = name in ("demo-journey", "demo-journey-keys")
     holder: dict = {}
     try:
         with contextlib.ExitStack() as stack:
@@ -133,7 +134,7 @@ def run_scenario(name: str) -> tuple[int, list[tuple[str, str, bool, str]]]:
                 print(f"[{name}] child stderr:\n{err.strip()[-1500:]}", file=sys.stderr)
             checks = parse_checks(out)
             if demo:
-                checks += journey_wire_checks(holder["receiver"].calls)
+                checks += journey_wire_checks(holder["receiver"].calls, name)
             return process.returncode, checks
     finally:
         isolation.discard_scratch(scratch)

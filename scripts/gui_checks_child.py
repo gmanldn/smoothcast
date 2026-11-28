@@ -893,7 +893,53 @@ def demo_journey(app, window) -> None:
     check("Stop TV is disabled again", not window.stop_tv_button.get_sensitive())
 
 
-SCENARIOS = {"demo-journey": demo_journey, "network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+def _key(window, widget, key: str) -> None:
+    """Give ``widget`` keyboard focus and press ``key`` as a real X key event."""
+    import shutil
+    import subprocess
+    xdotool = shutil.which("xdotool")
+    ids = subprocess.run([xdotool, "search", "--onlyvisible", "--name", "."], capture_output=True,
+                         text=True, timeout=10, check=False).stdout.split() if xdotool else []
+    if ids:  # no window manager in the private display: focus the toplevel by hand
+        subprocess.run([xdotool, "windowfocus", ids[-1]], timeout=10, check=False)
+    widget.grab_focus()
+    pump(0.3)
+    subprocess.run([xdotool, "key", key], timeout=5, check=False)
+    pump(0.3)
+
+
+def demo_journey_keys(app, window) -> None:
+    """The #449 journey with Cast, pause, seek and Stop driven by key presses (open is scripted:
+    the native file dialog is not reachable in the private display)."""
+    clip = Path(os.environ["SMOOTHCAST_DEMO_MEDIA"]) / "demo-video.mp4"
+    window.open_paths([str(clip)])
+    pump(0.3)
+    import castctl
+    castctl.scan(timeout=8)
+    app.selftest = False
+    try:
+        _key(window, window.cast_button, "Return")
+        _settle(window, lambda: window.session is not None and not window.busy, 60)
+    finally:
+        app.selftest = True
+    check("Return on Cast starts a session", window.session is not None and not window.busy)
+    if window.session is None:
+        return
+    _settle(window, lambda: window.device_state == "PLAYING", 15)
+    _key(window, window.play_button, "space")
+    _settle(window, lambda: not window.busy and window.device_state == "PAUSED", 15)
+    check("Space on the play button pauses", window.device_state == "PAUSED", str(window.device_state))
+    before = window.seekbar.get_value() if hasattr(window.seekbar, "get_value") else None
+    _key(window, window.seekbar, "Right")
+    _settle(window, lambda: not window.busy, 20)
+    check("Right arrow on the seekbar keeps the session", window.session is not None and not window.busy,
+          f"value {before}")
+    _key(window, window.stop_tv_button, "Return")
+    _settle(window, lambda: window.session is None and not window.busy, 20)
+    check("Return on Stop TV ends the session", window.session is None and not window.busy)
+
+
+SCENARIOS = {"demo-journey-keys": demo_journey_keys, "demo-journey": demo_journey, "network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
              "room-recovery": room_recovery,
              "picture-options": picture_options, "aspect-override": aspect_override_preferences, "accent": accent_choice,
