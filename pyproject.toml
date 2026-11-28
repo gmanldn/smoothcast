@@ -342,6 +342,7 @@ py-modules = [
     "requests_board",
     "resident_profiles",
     "responsive_layout",
+    "retry_component",
     "room_activity",
     "room_checkpoint",
     "room_checkpoint_ui",

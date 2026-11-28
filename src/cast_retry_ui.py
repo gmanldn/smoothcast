@@ -9,30 +9,20 @@ from __future__ import annotations
 
 import pathlib
 
+import retry_component
 from cast_widgets import fmt_time
 
-LABELS = {"retry": "Try again", "alternate_encoding": "Convert and retry"}
 
 
 class RetryMixin:
     def _retry_receiver_identity(self):
         """Read a unique receiver identity from cached discovery, never the network."""
         name = self._device()
-        if not name:
-            return None
-        if name.startswith("DLNA · ") or name in self.cfg.get("cast_targets", []):
-            host = self._device_host(name)
-            return (name, "", host) if host else None
-        matches = [row for row in self.devices if row.name == name]
-        if len(matches) != 1:
-            return None
-        row = matches[0]
-        saved = self.cfg.get("device_uuid") or ""
-        uuid = getattr(row, "uuid", "") or ""
-        host = getattr(row, "host", "") or ""
-        if (saved and uuid != saved) or not (uuid or host):
-            return None
-        return name, uuid, host
+        is_saved = bool(name) and (name.startswith("DLNA · ") or name in self.cfg.get("cast_targets", []))
+        return retry_component.receiver_identity(
+            name, cast_targets=self.cfg.get("cast_targets", []),
+            host_for_saved=self._device_host(name) if is_saved else None,
+            devices=self.devices, saved_uuid=self.cfg.get("device_uuid") or "")
 
     def _retry_action(self):
         """(label, callback) for the plan's first option, or None."""
@@ -42,8 +32,7 @@ class RetryMixin:
             return None
         self._cast_failure_id = getattr(self, "_cast_failure_id", 0) + 1
         token = self._cast_failure_id
-        label = (f"Continue on {option.device}" if option.kind == "alternate_target"
-                 else LABELS.get(option.kind, "Try again"))
+        label = retry_component.action_label(option.kind, option.device)
         selection = self._device()
         identity = self._retry_receiver_identity()
         return label, lambda: self._retry_cast(
@@ -61,14 +50,17 @@ class RetryMixin:
     def _retry_cast(self, token: int, path, position: float,
                     kind: str, device: str, selection: str, identity) -> None:
         """Re-run the normal cast entry at the saved place, only if nothing else began."""
-        if (getattr(self, "_closing", False) or token != getattr(self, "_cast_failure_id", 0)
-                or self.busy or getattr(self, "external", False)
-                or (self.session is not None and self.session.active())):
+        if retry_component.playback_changed(
+                closing=getattr(self, "_closing", False), token=token,
+                current_token=getattr(self, "_cast_failure_id", 0), busy=self.busy,
+                external=getattr(self, "external", False),
+                session_active=self.session is not None and self.session.active()):
             self.toast("Playback changed; not retrying automatically")
             return
-        if (self._device() != selection
-                or (identity is not None and self._retry_receiver_identity() != identity)
-                or (identity is None and kind != "alternate_target")):
+        if retry_component.receiver_changed(
+                selection=selection, current_selection=self._device(), identity=identity,
+                current_identity=self._retry_receiver_identity() if identity is not None else None,
+                kind=kind):
             self.toast("Receiver changed or could not be identified; choose a receiver and cast again")
             return
         if kind == "alternate_target" and not self._select_receiver(device):
