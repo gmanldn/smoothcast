@@ -69,7 +69,7 @@ def test_guest_roster_rename_preserves_selection_and_avoids_unchanged_rebuild():
     source = Path(__file__).resolve().parents[1] / "src" / "cast_portal_host.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
-               and n.name == "PortalHostMixin")
+               and n.name == "PortalHostController")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
                   and n.name == "_sync_portal_guest_roster")
     invalid = 2**32 - 1
@@ -97,27 +97,31 @@ def test_guest_roster_rename_preserves_selection_and_avoids_unchanged_rebuild():
                             _sync_room_glance=lambda: glance_updates.append(True))
     sync = ns["_sync_portal_guest_roster"]
     guests = [{"id": "a", "name": "Sam"}, {"id": "b", "name": "Jo"}]
-    sync(owner, guests)
+    owner_ctl = SimpleNamespace(w=owner)
+    sync(owner_ctl, guests)
     drop.selected = 1
-    sync(owner, guests)
+    owner_ctl = SimpleNamespace(w=owner)
+    sync(owner_ctl, guests)
     assert len(drop.models) == 1
     guests[1]["name"] = "Joseph"
-    sync(owner, guests)
+    owner_ctl = SimpleNamespace(w=owner)
+    sync(owner_ctl, guests)
     assert drop.models[-1] == ["Sam", "Joseph"]
     assert owner.portal_guest_ids[drop.selected] == "b"
     model_count = len(drop.models)
     guests[1]["online"] = False
-    sync(owner, guests)
+    owner_ctl = SimpleNamespace(w=owner)
+    sync(owner_ctl, guests)
     assert owner.portal_guest_online_names == ("Sam",)
     assert len(drop.models) == model_count
     assert glance_updates[-1]
-    sync(owner, guests[::-1])
+    sync(owner_ctl, guests[::-1])
     assert drop.selected == 0 and owner.portal_guest_ids[0] == "b"
-    sync(owner, guests[:1])
+    sync(owner_ctl, guests[:1])
     assert drop.selected == invalid
-    sync(owner, guests[:1])
+    sync(owner_ctl, guests[:1])
     assert drop.selected == invalid
-    sync(owner, [])
+    sync(owner_ctl, [])
     assert not drop.sensitive
 
 

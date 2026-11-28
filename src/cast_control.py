@@ -30,6 +30,7 @@ import responsive_layout
 import gui_test_safety
 from cast_portal import PortalMixin
 from network_activity_ui import NetworkActivityController
+from cast_portal_host import PortalHostController
 from cast_portal_room import PortalRoomController
 from portal_upload_recovery import PortalUploadRecoveryController
 from cast_portal_queue import PortalQueueMixin
@@ -76,6 +77,21 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiT
         self._rename_portal_room = self._portal_room._rename_portal_room
         self._publish_portal_status = self._portal_room._publish_portal_status
         self._portal_upload_target = self._portal_room._portal_upload_target
+        self._portal_host = PortalHostController(self)
+        self._sync_host_setting_widgets = self._portal_host._sync_host_setting_widgets
+        self._attach_update_runner = self._portal_host._attach_update_runner
+        self._portal_timing = self._portal_host._portal_timing
+        self._shutdown_plan = self._portal_host._shutdown_plan
+        self._finish_shutdown = self._portal_host._finish_shutdown
+        self._stop_house_services = self._portal_host._stop_house_services
+        self._ensure_library_indexer = self._portal_host._ensure_library_indexer
+        self._ensure_mesh_library = self._portal_host._ensure_mesh_library
+        self.on_library_folders_changed = self._portal_host.on_library_folders_changed
+        self._portal_revoke_selected = self._portal_host._portal_revoke_selected
+        self._portal_confirm_end_access = self._portal_host._portal_confirm_end_access
+        self._portal_end_guest_access = self._portal_host._portal_end_guest_access
+        self._sync_portal_guest_roster = self._portal_host._sync_portal_guest_roster
+        self._refresh_portal_activity = self._portal_host._refresh_portal_activity
         self._upload_recovery = PortalUploadRecoveryController(self)
         self._reconcile_portal_casts = self._upload_recovery.reconcile  # #691
         self._retry_portal_cast = self._upload_recovery.retry

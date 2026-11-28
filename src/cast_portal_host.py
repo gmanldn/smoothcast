@@ -14,9 +14,15 @@ import portal_uploads
 from cast_widgets import Async
 
 
-class PortalHostMixin:
+class PortalHostController:
+    """Composition replacement for PortalHostMixin (#691); state and widgets stay on the window."""
+
+    def __init__(self, window) -> None:
+        self.w = window
+
     def _sync_host_setting_widgets(self, key: str, value: object) -> None:
         """Keep visible in-player controls in step with a web host setting."""
+        w = self.w
         widgets = {
             "quality": ("quality_dropdown", "choice"),
             "audio": ("audio_dropdown", "choice"),
@@ -30,16 +36,16 @@ class PortalHostMixin:
             "autonext": ("autonext_switch", "boolean"),
         }
         if key == "quality":
-            self.cfg["quality_auto"] = False
-        target = getattr(self, widgets.get(key, ("", ""))[0], None)
+            w.cfg["quality_auto"] = False
+        target = getattr(w, widgets.get(key, ("", ""))[0], None)
         if target is None:
             return
         kind = widgets[key][1]
         if key == "autonext":
             target.set_active(value)
             return
-        old_syncing = getattr(self, "_syncing", False)
-        self._syncing = True
+        old_syncing = getattr(w, "_syncing", False)
+        w._syncing = True
         try:
             if kind == "boolean":
                 target.set_active(value)
@@ -49,47 +55,50 @@ class PortalHostMixin:
                 import preference_choices
                 target.set_selected(preference_choices.selected_index(key, value))
         finally:
-            self._syncing = old_syncing
+            w._syncing = old_syncing
 
     def _attach_update_runner(self) -> None:
         """Give the portal and the front page one shared one-click updater (#711)."""
-        server = self._portal.server
+        w = self.w
+        server = w._portal.server
         if getattr(server, "update_runner", None) is not None:
             return
         from pathlib import Path
         from gi.repository import GLib
         import update_action
-        cfg = getattr(self, "cfg", {}) or {}
+        cfg = getattr(w, "cfg", {}) or {}
 
         def busy() -> bool:
-            stream = getattr(self, "stream", None)
-            return bool(getattr(self, "session", None) is not None
+            stream = getattr(w, "stream", None)
+            return bool(getattr(w, "session", None) is not None
                         or (stream is not None and stream.get_playing()))
 
         def quit_app() -> None:
-            app = self.get_application()
+            app = w.get_application()
             if app is not None:
                 GLib.idle_add(app.quit)
 
-        server.update_runner = self.update_runner = update_action.UpdateRunner(
+        server.update_runner = w.update_runner = update_action.UpdateRunner(
             Path(__file__).resolve().parents[1], channel=settings.UpdateSettings.from_config(cfg).channel,
             verify=cfg.get("verify_updates") is True, busy=busy, quit_app=quit_app)
 
     def _portal_timing(self) -> tuple[float | None, float]:
         """Position and total runtime for guests; external media uses the receiver's own length."""
-        if self.external:
-            clock = getattr(self, "_external_display_clock", None)
+        w = self.w
+        if w.external:
+            clock = getattr(w, "_external_display_clock", None)
             if clock is not None:
                 return clock.value(), clock.duration
-            return getattr(self, "_external_runtime", None) or (None, 0.0)
-        return self.tracker.value(), self.tracker.duration or (self.media.duration if self.media else 0.0)
+            return getattr(w, "_external_runtime", None) or (None, 0.0)
+        return w.tracker.value(), w.tracker.duration or (w.media.duration if w.media else 0.0)
 
     def _shutdown_plan(self):
         """The one ordered, deadline-bounded shutdown plan for this window (#465)."""
-        plan = self.__dict__.get("_shutdown_plan_obj")
+        w = self.w
+        plan = w.__dict__.get("_shutdown_plan_obj")
         if plan is None:
             plan = shutdown_plan.ShutdownPlan(log=error_log.log)
-            self._shutdown_plan_obj = plan
+            w._shutdown_plan_obj = plan
         return plan
 
     def _finish_shutdown(self) -> None:
@@ -112,8 +121,9 @@ class PortalHostMixin:
         key cache (used when casting and queueing) survives; only application
         exit closes it.
         """
-        mesh, self._mesh_library = getattr(self, "_mesh_library", None), None
-        indexer, self._library_indexer = getattr(self, "_library_indexer", None), None
+        w = self.w
+        mesh, w._mesh_library = getattr(w, "_mesh_library", None), None
+        indexer, w._library_indexer = getattr(w, "_library_indexer", None), None
         if mesh is not None:
             mesh.stop()
         if indexer is not None:
@@ -124,23 +134,24 @@ class PortalHostMixin:
 
     def _ensure_library_indexer(self, folders=None) -> None:
         """Start the shared-library indexer once folders exist (#408)."""
+        w = self.w
         import library_index_v2          # sqlite + search stack: only when folders exist (#463)
         import library_replication
-        if not settings.PortalSettings.from_config(self.cfg).library_indexer:
+        if not settings.PortalSettings.from_config(w.cfg).library_indexer:
             return
-        folders = library_folders.load(self.cfg) if folders is None else folders
-        indexer = getattr(self, "_library_indexer", None)
+        folders = library_folders.load(w.cfg) if folders is None else folders
+        indexer = getattr(w, "_library_indexer", None)
         if indexer is None and folders:
             try:
                 indexer = library_index_v2.LibraryIndexer(
-                    busy=lambda: bool(getattr(self, "session", None) and self.busy))
+                    busy=lambda: bool(getattr(w, "session", None) and w.busy))
             except Exception:  # noqa: BLE001 - library indexing is optional; run without it
                 return
-            self._library_indexer = indexer
+            w._library_indexer = indexer
             indexer.start()
         if indexer is not None:
             indexer.set_folders(folders)
-            current = getattr(self, "_portal", None)
+            current = getattr(w, "_portal", None)
             if current is not None:
                 current.server.library_search = indexer.search
                 self._ensure_mesh_library(indexer, current)
@@ -149,15 +160,16 @@ class PortalHostMixin:
 
     def _ensure_mesh_library(self, indexer, current) -> None:
         """House-wide search: replicas of peers' shared libraries (#411, #412)."""
+        w = self.w
         import mesh_library
-        mesh = getattr(self, "_mesh_library", None)
+        mesh = getattr(w, "_mesh_library", None)
         if mesh is None:
             try:
                 mesh = mesh_library.MeshLibrary(
-                    indexer, busy=lambda: bool(getattr(self, "session", None) and self.busy))
+                    indexer, busy=lambda: bool(getattr(w, "session", None) and w.busy))
             except Exception:  # noqa: BLE001 - mesh library is optional; run without it
                 return
-            self._mesh_library = mesh
+            w._mesh_library = mesh
             mesh.start()
         current.server.library_search = mesh.search_service.search
         current.server.library_search_stream = mesh.search_service.stream
@@ -169,27 +181,29 @@ class PortalHostMixin:
 
     def _portal_revoke_selected(self, *_args) -> None:
         """Only the local desktop host may eject an identified room guest."""
-        current = getattr(self, "_portal", None)
-        ids = getattr(self, "portal_guest_ids", ())
-        dropdown = getattr(self, "portal_guest_dropdown", None)
+        w = self.w
+        current = getattr(w, "_portal", None)
+        ids = getattr(w, "portal_guest_ids", ())
+        dropdown = getattr(w, "portal_guest_dropdown", None)
         selected = dropdown.get_selected() if dropdown is not None else len(ids)
         if current is None or selected >= len(ids):
-            self.toast("No guest is selected", error=True)
+            w.toast("No guest is selected", error=True)
             return
         removed = current.revoke_guest(ids[selected])
         if removed:
-            self.toast("Guest access revoked; playback continues")
+            w.toast("Guest access revoked; playback continues")
             self._refresh_portal_activity()
         else:
-            self.toast("That guest has already left")
+            w.toast("That guest has already left")
 
     def _portal_confirm_end_access(self, *_args) -> None:
         """Confirmation prevents accidental all-room ejection."""
-        if getattr(self, "_portal", None) is None:
-            self.toast("The shared room is not running", error=True)
+        w = self.w
+        if getattr(w, "_portal", None) is None:
+            w.toast("The shared room is not running", error=True)
             return
         dialog = Adw.MessageDialog.new(
-            self, "Sign everyone out?",
+            w, "Sign everyone out?",
             "Every connected browser will be signed out and the room PIN "
             "will change. The current film, queue and receiver keep playing.")
         dialog.add_response("cancel", "Cancel")
@@ -203,17 +217,19 @@ class PortalHostMixin:
         dialog.present()
 
     def _portal_end_guest_access(self) -> None:
-        current = getattr(self, "_portal", None)
+        w = self.w
+        current = getattr(w, "_portal", None)
         if current is None:
             return
-        self.portal_pin_label.set_text(current.end_guest_access())
-        self.portal_guest_ids = ()
+        w.portal_pin_label.set_text(current.end_guest_access())
+        w.portal_guest_ids = ()
         self._refresh_portal_activity()
-        self.toast("Everyone signed out. New room PIN ready; playback continues.")
+        w.toast("Everyone signed out. New room PIN ready; playback continues.")
 
     def _sync_portal_guest_roster(self, participants) -> None:
         """Refresh labels without moving a selection to a different guest."""
-        dropdown = getattr(self, "portal_guest_dropdown", None)
+        w = self.w
+        dropdown = getattr(w, "portal_guest_dropdown", None)
         if dropdown is None:
             return
         roster = tuple((person["id"], str(person.get("name") or "Guest"))
@@ -224,19 +240,19 @@ class PortalHostMixin:
                              and isinstance(person.get("id"), str)
                              and person.get("online", True) is True)
         ids = tuple(guest_id for guest_id, _ in roster)
-        prior = getattr(self, "portal_guest_ids", ())
-        if ids == prior and roster == getattr(self, "_portal_guest_roster", None):
-            if online_names != getattr(self, "portal_guest_online_names", None):
-                self.portal_guest_online_names = online_names
-                update_glance = getattr(self, "_sync_room_glance", None)
+        prior = getattr(w, "portal_guest_ids", ())
+        if ids == prior and roster == getattr(w, "_portal_guest_roster", None):
+            if online_names != getattr(w, "portal_guest_online_names", None):
+                w.portal_guest_online_names = online_names
+                update_glance = getattr(w, "_sync_room_glance", None)
                 if callable(update_glance):
                     update_glance()
             return
         selected = dropdown.get_selected()
         chosen = prior[selected] if 0 <= selected < len(prior) else None
-        self.portal_guest_ids = ids
-        self._portal_guest_roster = roster
-        self.portal_guest_online_names = online_names
+        w.portal_guest_ids = ids
+        w._portal_guest_roster = roster
+        w.portal_guest_online_names = online_names
         dropdown.set_model(Gtk.StringList.new(
             [name for _, name in roster] or ["No guests connected"]))
         # A departed selected guest must not silently select someone else.
@@ -244,26 +260,27 @@ class PortalHostMixin:
             0 if not prior and ids else Gtk.INVALID_LIST_POSITION)
         dropdown.set_selected(index)
         dropdown.set_sensitive(bool(ids))
-        self.portal_revoke_button.set_sensitive(bool(ids))
-        update_glance = getattr(self, "_sync_room_glance", None)
+        w.portal_revoke_button.set_sensitive(bool(ids))
+        update_glance = getattr(w, "_sync_room_glance", None)
         if callable(update_glance):
             update_glance()
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""
-        label = getattr(self, "portal_activity_label", None)
-        if label is None or getattr(self, "_closing", False):
-            self._portal_activity_timer = None
+        w = self.w
+        label = getattr(w, "portal_activity_label", None)
+        if label is None or getattr(w, "_closing", False):
+            w._portal_activity_timer = None
             return False
-        refresh_qr = getattr(self, "_refresh_portal_qr", None)
+        refresh_qr = getattr(w, "_refresh_portal_qr", None)
         if refresh_qr is not None:
             refresh_qr()
-        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
+        uploads = getattr(getattr(w, "_portal", None), "uploads", None)
         try:
             activity = uploads.snapshot() if uploads is not None else []
         except Exception:  # noqa: BLE001 - an unreadable upload snapshot shows no activity
             activity = []
-        room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
+        room = getattr(getattr(getattr(w, "_portal", None), "server", None), "room", None)
         room_state = room.snapshot() if room is not None else {}
         participants = room_state.get("participants", [])
         names = [person["name"] for person in participants if isinstance(person, dict)
@@ -274,7 +291,7 @@ class PortalHostMixin:
         self._sync_portal_guest_roster(participants)
         summary = portal_uploads.format_portal_activity(activity)
         presence = f"In room: {roster}" if roster else "No guests connected"
-        screens = getattr(getattr(self._portal, "server", None), "screens", None)
+        screens = getattr(getattr(w._portal, "server", None), "screens", None)
         try:
             screen_rows = screens.snapshot() if screens is not None else []
         except Exception:  # noqa: BLE001 - an unreadable screens snapshot shows no screens
@@ -286,18 +303,18 @@ class PortalHostMixin:
         activity_text = f"{room_name} · {presence} · {summary}{shown}"
         if label.get_text() != activity_text:
             label.set_text(activity_text)
-        peers = getattr(getattr(self, "_portal", None), "peers", None)
+        peers = getattr(getattr(w, "_portal", None), "peers", None)
         peer_list = peers.snapshot() if peers is not None else []
-        available = getattr(getattr(self, "_portal", None),
+        available = getattr(getattr(w, "_portal", None),
                             "peer_discovery_available", False)
-        peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
-        if getattr(self, "_portal", None) is not None:
-            self._portal.server.nodes_provider = lambda: peer_list
+        peer_discovery_ui.refresh_peer_links(w, peer_list, available=available)
+        if getattr(w, "_portal", None) is not None:
+            w._portal.server.nodes_provider = lambda: peer_list
             self._attach_update_runner()
-        mesh = getattr(self, "_mesh_library", None)
+        mesh = getattr(w, "_mesh_library", None)
         if mesh is not None:
             Async.run(lambda: mesh.observe_peers(peer_list), domain="background")
-        self._reconcile_portal_casts()
+        w._reconcile_portal_casts()
         import cast_mesh
-        cast_mesh.push_clients(self)
+        cast_mesh.push_clients(w)
         return True

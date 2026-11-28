@@ -108,7 +108,7 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     from gui_source import main_window_methods
 
     methods = main_window_methods()
-    method = methods["_portal_handle"] + "\n" + methods["_portal_timing"]
+    method = methods["_portal_handle"]
     state_label = SimpleNamespace(label="Playing", short="Playing",
                                   accessible="Playing", icon="play")
     namespace = {
@@ -122,6 +122,8 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     exec(compile("class Window:\n" + textwrap.indent(method, "    "),
                  "<isolated-room-status>", "exec"), namespace)
     window = namespace["Window"]()
+    import cast_portal_host
+    window._portal_timing = cast_portal_host.PortalHostController(window)._portal_timing
     window._closing = False
     window._portal = None
     window.tracker = SimpleNamespace(value=lambda: 18.0, duration=120.0,
