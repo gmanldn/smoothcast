@@ -29,7 +29,9 @@ def test_second_chunk_checkpoints_by_bytes(upload, monkeypatch):
 
     def sync(fd):
         real_sync(fd)
-        synced.append(os.fstat(fd).st_size)
+        size = os.fstat(fd).st_size
+        if size >= total:  # sidecar and directory syncs are separate metadata costs
+            synced.append(size)
 
     monkeypatch.setattr(os, "fsync", sync)
     first = manager.append("owner", upload_id, f"bytes 0-{chunk_size - 1}/{total}",
@@ -98,3 +100,66 @@ def test_finalize_syncs_trailing_bytes(upload, monkeypatch):
     assert manager.status("owner", upload_id)["committed"] == 3
     assert stat.S_ISREG(synced[0])
     assert final.read_bytes() == b"abc"
+
+
+def test_restart_recovers_queue_upload_only_to_the_durable_offset(tmp_path, monkeypatch):
+    now = [1.0]
+    first = portal_uploads.UploadManager(tmp_path, clock=lambda: now[0])
+    monkeypatch.setattr(portal_uploads, "CHECKPOINT_BYTES", 3)
+    created = first.create("owner", "song.mp3", 6, queue_only=True)
+    upload_id = created["id"]
+    first.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+
+    monkeypatch.setattr(portal_uploads, "CHECKPOINT_BYTES", 100)
+    volatile = first.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    assert (volatile["received"], volatile["committed"]) == (6, 3)
+    sidecar = tmp_path / f"{upload_id}.upload.json"
+    assert b'"owner":"owner"' not in sidecar.read_bytes()
+
+    recovered = portal_uploads.UploadManager(tmp_path, clock=lambda: now[0])
+    status = recovered.status("owner", upload_id)
+    assert (status["received"], status["committed"]) == (3, 3)
+    assert (tmp_path / f"{upload_id}.partial").read_bytes() == b"abc"
+    with pytest.raises(portal_uploads.UploadError):
+        recovered.status("another-owner", upload_id)
+
+    retry = recovered.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    assert (retry["received"], retry["committed"]) == (6, 3)
+    assert (tmp_path / f"{upload_id}.partial").read_bytes() == b"abcdef"
+    assert sidecar.exists()
+    recovered.close()
+    first.close()
+
+
+def test_torn_checkpoint_metadata_never_recovers_or_authorizes_partial(tmp_path):
+    first = portal_uploads.UploadManager(tmp_path, clock=lambda: 1.0)
+    created = first.create("owner", "song.mp3", 3, queue_only=True)
+    upload_id = created["id"]
+    first.append("owner", upload_id, "bytes 0-2/3", 3, BytesIO(b"abc"))
+    (tmp_path / f"{upload_id}.upload.json").write_text("{torn", encoding="utf-8")
+
+    recovered = portal_uploads.UploadManager(tmp_path, clock=lambda: 2.0)
+    with pytest.raises(portal_uploads.UploadError):
+        recovered.status("owner", upload_id)
+    assert (tmp_path / f"{upload_id}.partial").read_bytes() == b"abc"
+    assert not (tmp_path / f"{upload_id}.upload.json").exists()
+    recovered.close()
+    first.close()
+
+
+def test_restart_preserves_expiry_and_removes_abandoned_metadata_temp(tmp_path):
+    first = portal_uploads.UploadManager(tmp_path, clock=lambda: 1.0)
+    upload_id = first.create("owner", "song.mp3", 3, queue_only=True)["id"]
+    first.append("owner", upload_id, "bytes 0-2/3", 3, BytesIO(b"abc"))
+    temp = tmp_path / f".{upload_id}.upload.tmp"
+    temp.write_text("interrupted write", encoding="ascii")
+
+    recovered = portal_uploads.UploadManager(
+        tmp_path, clock=lambda: 2 + portal_uploads.PARTIAL_TTL_SECONDS)
+    with pytest.raises(portal_uploads.UploadError):
+        recovered.status("owner", upload_id)
+    assert not temp.exists()
+    assert not (tmp_path / f"{upload_id}.upload.json").exists()
+    assert (tmp_path / f"{upload_id}.partial").read_bytes() == b"abc"
+    recovered.close()
+    first.close()

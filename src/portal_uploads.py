@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import guest_messages
 import hashlib
 import hmac
+import json
 import math
 import os
 from pathlib import Path
@@ -37,6 +38,8 @@ PARTIAL_TTL_SECONDS = 24 * 60 * 60
 # at start-up; without this the private upload folder grows without bound.
 COMPLETED_TTL_SECONDS = 14 * 24 * 60 * 60
 _UPLOAD_STEM = re.compile(r"[A-Za-z0-9_-]{32}")
+_UPLOAD_META_SUFFIX = ".upload.json"
+_UPLOAD_META_VERSION = 1
 ANNOUNCE_TTL_SECONDS = 15 * 60
 ANNOUNCE_MAX = 100
 VIDEO_SUFFIXES = frozenset({
@@ -246,6 +249,144 @@ class UploadManager:
         self._lock = threading.RLock()
         self._remove_expired_partials()
         self._remove_stale_completed()
+        self._recover_uploads()
+
+    def _metadata_path(self, upload_id: str) -> Path:
+        return self.root / f"{upload_id}{_UPLOAD_META_SUFFIX}"
+
+    def _sync_directory(self) -> None:
+        if os.name == "nt":
+            return
+        fd = os.open(self.root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    def _remove_metadata(self, upload_id: str) -> None:
+        for path in (self._metadata_path(upload_id),
+                     self.root / f".{upload_id}.upload.tmp"):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _write_metadata(self, upload: _Upload) -> None:
+        """Atomically checkpoint only the fsynced offset and its owner-bound recipe."""
+        metadata = {
+            "version": _UPLOAD_META_VERSION,
+            "id": upload.upload_id,
+            "owner": upload.owner,
+            "name": upload.name,
+            "suffix": upload.suffix,
+            "size": upload.size,
+            "committed": upload.committed,
+            "created_at": upload.created_at,
+            "last_at": upload.last_at,
+            "queue_only": upload.queue_only,
+            "audio_only": upload.audio_only,
+            "batch_index": upload.batch_index,
+            "batch_total": upload.batch_total,
+        }
+        raw = json.dumps(metadata, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+        temp = self.root / f".{upload.upload_id}.upload.tmp"
+        target = self._metadata_path(upload.upload_id)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(temp, flags, 0o600)
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            view = memoryview(raw)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise OSError("short write while storing upload checkpoint")
+                view = view[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(temp, target)
+        self._sync_directory()
+
+    def _recover_uploads(self) -> None:
+        """Recover queue-only uploads at their last durable checkpoint, never volatile bytes."""
+        try:
+            for temp in self.root.glob(".*.upload.tmp"):
+                if temp.is_symlink() or temp.is_file():
+                    temp.unlink(missing_ok=True)
+            metadata_paths = tuple(self.root.glob(f"*{_UPLOAD_META_SUFFIX}"))
+        except OSError:
+            return
+        now = self._clock()
+        for meta_path in metadata_paths:
+            upload_id = meta_path.name[:-len(_UPLOAD_META_SUFFIX)]
+            if not _UPLOAD_ID.fullmatch(upload_id):
+                continue
+            try:
+                meta_info = meta_path.lstat()
+                if (not stat.S_ISREG(meta_info.st_mode) or meta_path.is_symlink()
+                        or meta_info.st_size > 4096):
+                    raise ValueError("unsafe upload metadata")
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+                if (not isinstance(data, dict) or data.get("version") != _UPLOAD_META_VERSION
+                        or data.get("id") != upload_id
+                        or not isinstance(data.get("owner"), str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", data["owner"])):
+                    raise ValueError("invalid upload metadata identity")
+                name, suffix, audio_only = _safe_name(data.get("name"))
+                size, committed = data.get("size"), data.get("committed")
+                created_at, last_at = data.get("created_at"), data.get("last_at")
+                if (type(created_at) not in (int, float) or type(last_at) not in (int, float)
+                        or not math.isfinite(created_at) or not math.isfinite(last_at)
+                        or created_at > last_at or last_at > now
+                        or now - last_at > PARTIAL_TTL_SECONDS):
+                    raise ValueError("expired or invalid upload metadata timestamps")
+                if (type(size) is not int or not 0 < size <= MAX_UPLOAD_BYTES
+                        or type(committed) is not int or not 0 <= committed <= size
+                        or suffix != data.get("suffix")
+                        or type(data.get("queue_only")) is not bool
+                        or data.get("queue_only") is not True
+                        or type(data.get("audio_only")) is not bool
+                        or data.get("audio_only") != audio_only):
+                    raise ValueError("invalid upload metadata fields")
+                partial = self.root / f"{upload_id}.partial"
+                info = partial.lstat()
+                if partial.is_symlink() or not stat.S_ISREG(info.st_mode):
+                    raise ValueError("unsafe partial upload")
+                if info.st_size < committed or info.st_size > size:
+                    raise ValueError("partial does not contain its committed prefix")
+                if info.st_size != committed:
+                    fd = os.open(partial, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
+                    try:
+                        os.ftruncate(fd, committed)
+                        os.fsync(fd)
+                    finally:
+                        os.close(fd)
+                upload = _Upload(
+                    upload_id, data["owner"], name, suffix, size, partial,
+                    created_at=float(created_at), last_at=float(last_at), received=committed,
+                    committed=committed, queue_only=True, audio_only=audio_only,
+                    last_checkpoint=float(last_at),
+                    batch_index=(data.get("batch_index") if type(data.get("batch_index")) is int else 0),
+                    batch_total=(data.get("batch_total") if type(data.get("batch_total")) is int else 0),
+                )
+                with self._lock:
+                    if len(self._uploads) < MAX_ACTIVE_UPLOADS:
+                        self._uploads[upload_id] = upload
+            except FileNotFoundError:
+                # A finalized or cancelled upload may have lost its partial
+                # before its sidecar cleanup; it is not a resumable transfer.
+                try:
+                    meta_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            except (OSError, UnicodeError, ValueError, TypeError, UploadError):
+                # Torn or malformed metadata never authorizes an arbitrary path
+                # or byte range. Leave its file for the TTL sweep.
+                try:
+                    meta_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _remove_stale_completed(self) -> None:
         cutoff = self._clock() - COMPLETED_TTL_SECONDS
@@ -261,6 +402,7 @@ class UploadManager:
                 info = path.lstat()
                 if stat.S_ISREG(info.st_mode) and max(info.st_mtime, info.st_atime) < cutoff:
                     path.unlink()
+                    self._remove_metadata(path.stem)
             except OSError:
                 continue
 
@@ -271,6 +413,7 @@ class UploadManager:
                 info = path.lstat()
                 if path.is_file() and not path.is_symlink() and info.st_mtime < cutoff:
                     path.unlink()
+                    self._remove_metadata(path.stem.removesuffix(".partial"))
             except OSError:
                 continue
 
@@ -294,6 +437,7 @@ class UploadManager:
                         upload.partial_path.unlink(missing_ok=True)
                     except OSError:
                         continue
+                    self._remove_metadata(upload_id)
                     upload.cancelled = True
                     self._uploads.pop(upload_id)
             finally:
@@ -353,6 +497,15 @@ class UploadManager:
                              audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
             if batch and 1 <= batch[0] <= batch[1] <= 500:
                 upload.batch_index, upload.batch_total = batch
+            try:
+                self._write_metadata(upload)
+            except OSError:
+                self._remove_metadata(upload_id)
+                try:
+                    partial.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise UploadError(507, "The host could not save the upload checkpoint") from None
             self._uploads[upload_id] = upload
             held = self._announced.get(owner_key)
             if held:
@@ -585,6 +738,7 @@ class UploadManager:
             previous_received = upload.received
             previous_committed = upload.committed
             previous_checkpoint = upload.last_checkpoint
+            previous_last_at = upload.last_at
             try:
                 info = os.fstat(fd)
                 if not stat.S_ISREG(info.st_mode) or info.st_size < start:
@@ -617,6 +771,8 @@ class UploadManager:
                     os.fsync(fd)
                     upload.committed = received
                     upload.last_checkpoint = now
+                    upload.last_at = now
+                    self._write_metadata(upload)
                 upload.received = received
             except BaseException:  # noqa: BLE001 - roll back the in-memory append then re-raise
                 # The append is one in-memory transaction too: never report
@@ -624,6 +780,7 @@ class UploadManager:
                 upload.received = previous_received
                 upload.committed = previous_committed
                 upload.last_checkpoint = previous_checkpoint
+                upload.last_at = previous_last_at
                 if rollback_safe:
                     try:
                         # External truncation must not turn lost bytes into zeros.
@@ -695,6 +852,7 @@ class UploadManager:
                         os.fsync(fd)
                         upload.committed = upload.received
                         upload.last_checkpoint = self._clock()
+                        self._write_metadata(upload)
                     finally:
                         os.close(fd)
                 if upload.received != upload.size:
@@ -730,6 +888,8 @@ class UploadManager:
                     if os.name != "nt":
                         raise
                 upload.directory_synced = True
+            # Complete uploads no longer need a partial-transfer checkpoint.
+            self._remove_metadata(upload_id)
             if intent and not upload.media_validated:
                 try:
                     import streamer
@@ -791,6 +951,7 @@ class UploadManager:
                 (upload.complete_path or upload.partial_path).unlink()
             except FileNotFoundError:
                 pass
+            self._remove_metadata(upload_id)
             upload.cancelled = True
             with self._lock:
                 self._uploads.pop(upload_id, None)
@@ -822,6 +983,7 @@ class UploadManager:
                     (upload.complete_path or upload.partial_path).unlink(missing_ok=True)
                 except OSError:
                     pass  # Do not break room revocation over disk cleanup.
+                self._remove_metadata(upload.upload_id)
             finally:
                 upload.lock.release()
         return len(targets)
@@ -843,3 +1005,4 @@ class UploadManager:
                         # cleanup of the remaining transfers. Startup expiry
                         # can reclaim it once the filesystem permits removal.
                         continue
+                    self._remove_metadata(upload.upload_id)

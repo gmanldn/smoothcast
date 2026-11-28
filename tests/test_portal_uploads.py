@@ -328,9 +328,9 @@ def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
         assert result["received"] == size
         assert len(source.reads) == size // portal_uploads.READ_SIZE
         assert synced.call_count == 0  # below 16 MiB checkpoint threshold
-        # finalize flushes the remaining durable bytes (file + directory).
+        # Finalization syncs trailing data, checkpoint metadata and both directory updates.
         uploads.finalize("owner", created["id"])
-        assert synced.call_count == 2
+        assert synced.call_count == 4
     uploads.close()
 
 

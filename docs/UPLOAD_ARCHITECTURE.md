@@ -25,10 +25,15 @@ Source of truth: `src/portal_uploads.py` (`UploadManager`). Tests:
   the file rolls back but the reported received offset can stay ahead, blocking
   that retry. A lost acknowledged prefix is rejected to avoid zero-filled data.
 - **Resume.** While the host process is running, the browser can resume at
-  `received`. After a restart, the host has no record of the session, even if
-  the partial file and some synced bytes still exist. The browser must start a
-  new upload. Crash-safe resume requires persisting the session owner, file
-  identity and committed offset together, then recovering only that prefix.
+  `received`. Queue-only uploads also persist an owner digest, safe file
+  identity and committed offset in a private atomic sidecar at each durable
+  checkpoint. The upload manager can recover only those queue-only transfers
+  when the caller still presents the same owner key; any uncommitted tail is
+  truncated to the last fsynced offset. Portal login/session keys remain
+  in-memory, so browser resume after a full process restart and reauthentication
+  is not yet wired end to end. Play-now uploads are not restored because their
+  progressive cast may still own the partial file. Torn, expired or inconsistent
+  sidecars never authorize a path or offset and are discarded.
 - **Chunk sizing.** The current server limit is fixed at 8 MiB. Adaptive
   negotiation from measured network and device capacity remains open in #568.
 
