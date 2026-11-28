@@ -1094,7 +1094,9 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             subtitle_index += 1
     media.audio_only = selected_video is None and bool(media.audio_streams)
     if not media.vcodec and not media.audio_streams:
-        raise StreamError("No motion-video stream found (file may contain only cover artwork)")
+        raise errors.coded(
+            StreamError("No motion-video stream found (file may contain only cover artwork)"),
+            "media.no_playable_stream")
     media.direct_ok, media.direct_reason = _direct_capable(media)
 
 

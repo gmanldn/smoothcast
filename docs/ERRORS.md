@@ -194,6 +194,15 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
 - Try:
   1. Choose a different file.
 
+<a id="errors-media-no-playable-stream"></a>
+## `media.no_playable_stream`
+
+- Severity: warning; retryable: no
+- Message: SmoothCast could not find playable audio or video in this file.
+- Try:
+  1. Choose a file with an audio or video track.
+  2. Try another file if it keeps happening.
+
 <a id="errors-media-changed"></a>
 ## `media.changed`
 

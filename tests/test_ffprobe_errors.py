@@ -18,6 +18,7 @@ import unittest
 from unittest import mock
 
 import streamer
+import failure_boundary
 
 MEDIA = pathlib.Path("/films/a.mkv")
 
@@ -121,6 +122,10 @@ class FfprobeErrorTests(unittest.TestCase):
         })
         error = self.probe(return_value=completed(payload))
         self.assertIn("No motion-video stream", str(error))
+        failure = failure_boundary.describe(error)
+        self.assertEqual(failure.code, "media.no_playable_stream")
+        self.assertEqual(failure.message, streamer.errors.CATALOGUE[
+            "media.no_playable_stream"].message)
 
 
 if __name__ == "__main__":
