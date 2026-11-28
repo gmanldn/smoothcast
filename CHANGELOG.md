@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 64fa1f47ae046480cbe4d3fe2c7292ef97ce10bb -->
+<!-- sc-changelog-through: c3e3b077d66e9d77ac3d1df462ea23aab486fa6e -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:46:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:53:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:53:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c3e3b077d66e`](https://github.com/gmanldn/smoothcast/commit/c3e3b077d66e9d77ac3d1df462ea23aab486fa6e)
+
+- 🟥 **03:53:21 · Fix** — fix: keep core import-light and re-pin the parallel cast preflight · [`edbfc86000cf`](https://github.com/gmanldn/smoothcast/commit/edbfc86000cf2309c198a754eb0a26c1d110527b)
 
 - ⬜ **03:46:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`64fa1f47ae04`](https://github.com/gmanldn/smoothcast/commit/64fa1f47ae046480cbe4d3fe2c7292ef97ce10bb)
+
+- ⬜ **03:46:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ad6080eb4eae`](https://github.com/gmanldn/smoothcast/commit/ad6080eb4eae93bf08f15d840549b334bfd5911b)
 
 - 🟥 **03:46:11 · Fix** — fix: type host-setting errors, follow #708 in the portal harness, budget cast\_portal growth · [`9c185e36bea5`](https://github.com/gmanldn/smoothcast/commit/9c185e36bea52b67497d06cdca7c3127efde5891)
 
