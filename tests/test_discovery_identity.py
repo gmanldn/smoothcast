@@ -201,6 +201,39 @@ def test_idle_scan_recovers_renamed_device_and_persists_user_selection():
     assert "Reconnected renamed Cast receiver" in w.toasts[0]
 
 
+def test_identical_scans_preserve_dropdown_model_and_refresh_status():
+    w, _ = window()
+    snapshot = [device("Old TV", "uuid-a"), device("Bedroom", "uuid-b")]
+    with mock.patch.object(w.device_dropdown, "set_model",
+                           wraps=w.device_dropdown.set_model) as install:
+        w._scan_done(snapshot)
+        original = w.device_dropdown.get_model()
+        with mock.patch.object(w.device_dropdown, "set_selected",
+                               wraps=w.device_dropdown.set_selected) as select:
+            w._scan_done(snapshot)
+            w._scan_done(snapshot)
+            assert select.call_count == 0
+        assert install.call_count == 1
+        assert w.device_dropdown.get_model() is original
+        assert w.badges.count("FOUND ON LAN") == 3
+        w._scan_done([device("New TV", "uuid-a"), snapshot[1]])
+        assert install.call_count == 2
+        assert w.cfg["device_uuid"] == "uuid-a"
+        assert w.device_dropdown.get_model().get_string(
+            w.device_dropdown.get_selected()) == "New TV"
+
+
+def test_same_names_with_changed_selection_reuses_dropdown_model():
+    w, _ = window()
+    snapshot = [device("Old TV", "uuid-a"), device("Bedroom", "uuid-b")]
+    w._scan_done(snapshot)
+    original = w.device_dropdown.get_model()
+    w.cfg.update(device="Bedroom", device_uuid="uuid-b")
+    w._scan_done(snapshot)
+    assert w.device_dropdown.get_model() is original
+    assert original.get_string(w.device_dropdown.get_selected()) == "Bedroom"
+
+
 def test_reused_name_migrates_only_to_saved_uuid_not_the_impostor():
     w, saves = window(name="Living Room", uuid="uuid-a")
     w._scan_done([

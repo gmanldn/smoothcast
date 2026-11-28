@@ -120,10 +120,18 @@ class DeviceDiscoveryMixin:
             self.cfg.get("device_last_used"),
         )
         selected = cast_targets.select_index(names, self.cfg["device"])
-        self._syncing = True
-        self.device_dropdown.set_model(Gtk.StringList.new(names))
-        self.device_dropdown.set_selected(selected)
-        self._syncing = False
+        model = self.device_dropdown.get_model()
+        same_names = (model is not None and model.get_n_items() == len(names)
+                      and all(model.get_string(i) == name for i, name in enumerate(names)))
+        if not same_names or self.device_dropdown.get_selected() != selected:
+            self._syncing = True
+            try:
+                if not same_names:
+                    self.device_dropdown.set_model(Gtk.StringList.new(names))
+                if self.device_dropdown.get_selected() != selected:
+                    self.device_dropdown.set_selected(selected)
+            finally:
+                self._syncing = False
         selected = next((d for d in cast_devices if d.name == self.cfg["device"]), None)
         # Migrate older configurations when the selected display name itself
         # is unique. Do not adopt a duplicate name or overwrite a saved UUID.
