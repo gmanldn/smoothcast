@@ -10,6 +10,7 @@ produces numbered, replayable events. State is only ever changed by
 """
 from __future__ import annotations
 
+from typing import Protocol
 from dataclasses import dataclass, replace, field
 
 
@@ -61,6 +62,15 @@ def store_for(window) -> "QueueStore":
         store = window._queue_store = QueueStore(window.queue)
     store.sync(window.queue)
     return store
+
+
+class QueuePort(Protocol):
+    """What the portal, mesh and window need from a queue: commands in, state out (#691).
+
+    ``QueueStore`` is the real implementation; tests use a fake with the same surface."""
+    state: QueueState
+
+    def submit(self, command_id: str, kind: str, *args, expected_revision: int | None = None) -> tuple: ...
 
 
 class QueueStore:
