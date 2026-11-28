@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 9d966f8df0159d3703b5c5475f91cd324adc47d2 -->
+<!-- sc-changelog-through: 68136a11aa13abc6258e17f8ebcc8f240263ac73 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:42:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **03:45:00 · Fix** — fix(runtime): fence cancelled tasks and serialize shutdown admission (Refs #696) <!-- sc-changelog-pending -->
 
 - ⬜ **03:42:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9d966f8df015`](https://github.com/gmanldn/smoothcast/commit/9d966f8df0159d3703b5c5475f91cd324adc47d2)
+
+- ⬜ **03:42:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`68136a11aa13`](https://github.com/gmanldn/smoothcast/commit/68136a11aa13abc6258e17f8ebcc8f240263ac73)
 
 - 🟩 **03:41:13 · Feature** — feat: extend host queue and appearance settings (Refs #708) · [`92da50590939`](https://github.com/gmanldn/smoothcast/commit/92da5059093943c51cfe7f3781455fe021052e79)
 

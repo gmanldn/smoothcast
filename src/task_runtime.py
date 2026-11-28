@@ -37,6 +37,10 @@ class Scope:
 
     def wait(self, timeout: float) -> bool:
         """Sleep up to ``timeout`` s, waking at once on cancel. True when cancelled (loop ``while not scope.wait(n)``)."""
+        if self.cancelled:
+            return True
+        if self._deadline is not None:
+            timeout = min(timeout, max(0.0, self._deadline - self._clock()))
         return self._cancel.wait(timeout) or self.cancelled
 
     def check(self) -> None:
@@ -61,15 +65,15 @@ class Runtime:
     def scope(self, deadline: float | None = None) -> Scope:
         scope = Scope(deadline)
         with self._lock:
-            self._scopes.append(scope)
+            if self._closed:
+                scope.cancel()
+            else:
+                self._scopes.append(scope)
         return scope
 
     def submit(self, work_class: str, scope: Scope, fn: Callable[[Scope], object],
                on_done: Callable[[object, BaseException | None], None] | None = None) -> Future | None:
         """Run ``fn(scope)`` off-thread; ``on_done(result, error)`` is delivered via the dispatcher."""
-        if self._closed or scope.cancelled:
-            return None
-
         def run():
             result, error = None, None
             try:
@@ -77,11 +81,18 @@ class Runtime:
                 result = fn(scope)
             except BaseException as exc:  # noqa: BLE001 - delivered to the owner, never lost
                 error = exc
-            if on_done is not None and not (scope.cancelled and isinstance(error, Cancelled)):
-                self._deliver(lambda: on_done(result, error))
+            if on_done is not None and not scope.cancelled and not self._closed:
+                def deliver():
+                    if not scope.cancelled and not self._closed:
+                        on_done(result, error)
+                self._deliver(deliver)
 
-        future = self._pools[work_class].submit(run)
         with self._lock:
+            if self._closed or scope.cancelled:
+                return None
+            if scope not in self._scopes:
+                self._scopes.append(scope)
+            future = self._pools[work_class].submit(run)
             self._futures = [f for f in self._futures if not f.done()] + [future]
         return future
 
@@ -93,11 +104,9 @@ class Runtime:
         must poll ``scope.cancelled`` (or ``scope.check()``); ``shutdown`` cancels it and joins
         within the budget. An uncaught error ends the loop and is recorded on ``errors``.
         """
-        if self._closed or scope.cancelled:
-            return None
-
         def run():
             try:
+                scope.check()
                 fn(scope)
             except Cancelled:
                 pass
@@ -106,8 +115,12 @@ class Runtime:
 
         thread = threading.Thread(target=run, name=thread_name or f"sc-daemon-{name}", daemon=True)
         with self._lock:
+            if self._closed or scope.cancelled:
+                return None
+            if scope not in self._scopes:
+                self._scopes.append(scope)
+            thread.start()
             self._daemons = [t for t in self._daemons if t.is_alive()] + [thread]
-        thread.start()
         return thread
 
     @property
@@ -117,8 +130,8 @@ class Runtime:
 
     def shutdown(self, budget: float = 1.0) -> bool:
         """Cancel everything, then wait up to ``budget`` s. True when all tasks finished."""
-        self._closed = True
         with self._lock:
+            self._closed = True
             scopes, futures, daemons = list(self._scopes), list(self._futures), list(self._daemons)
         for scope in scopes:
             scope.cancel()
