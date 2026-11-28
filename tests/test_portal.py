@@ -135,6 +135,7 @@ const document={activeElement:null,createElement:tag=>new Element(tag),addEventL
 const elements={queue};function $(id){return elements[id]}
 let queueRevision=0;
 const calls=[];function act(...args){calls.push(args)}
+function paintIncoming(){}  // DOM painting lives outside the extracted slice
 """
     scenario = r"""
 const initial=[{id:"a",title:"Alpha",votes:2},{id:"b",title:"Beta",voted:true}];
