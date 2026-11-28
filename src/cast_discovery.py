@@ -63,6 +63,10 @@ class DeviceDiscoveryMixin:
                 return
             if self._scan_again:
                 self.scan_busy = False
+                # Publish the completed snapshot before servicing the queued
+                # refresh, so a discovered receiver is never hidden behind
+                # successive scan requests.
+                self._scan_done(devices)
                 self.scan_devices()
                 return
             self._scan_done(devices)

@@ -19,6 +19,7 @@ from gui_source import main_window_methods
 import castctl
 import cast_targets
 import dlna
+import errors
 
 
 def device(name, uuid, host="192.168.1.40"):
@@ -87,6 +88,7 @@ def window(name="Old TV", uuid="uuid-a"):
         "castctl": castctl,
         "cast_targets": cast_targets,
         "dlna": dlna,
+        "errors": errors,
         "Async": SimpleNamespace(run=capture_work),
         "ThreadPoolExecutor": ThreadPoolExecutor,
         "save_config": lambda cfg: saved.append(dict(cfg)),
@@ -315,3 +317,89 @@ def test_discovered_host_requires_one_current_name_match():
     w._scan_failed("network unavailable")
     assert w.cfg["device"] == "Living Room"
     assert w._device_host("Living Room") == "192.168.1.41"
+
+
+def test_queued_refresh_publishes_scan_a_before_scan_b():
+    """A completed scan's result is published before a queued refresh starts,
+    even when refresh is requested repeatedly while the scan is in flight."""
+    w, _ = window()
+    scan_starts = []
+    events = [Event(), Event()]
+
+    def fake_cast_scan():
+        scan_starts.append(True)
+        idx = len(scan_starts) - 1
+        events[idx].wait(2)
+        return [device("TV A", "uuid-a")] if idx == 0 else [device("TV B", "uuid-b")]
+
+    def fake_dlna_discover():
+        return None
+
+    with mock.patch.object(castctl, "scan", side_effect=fake_cast_scan), \
+            mock.patch.object(dlna, "discover", side_effect=fake_dlna_discover):
+        # Start scan A
+        w.scan_devices()
+        assert w.scan_busy
+        assert not w._scan_again
+
+        # Queue 10 refreshes while scan A is in flight
+        for _ in range(10):
+            w.scan_devices()
+        assert w._scan_again
+
+        # Complete scan A: run the work, then invoke the done callback
+        events[0].set()
+        result_a = w.queued_work["work"]()
+        w.queued_work["done"](result_a)
+
+        # Scan A's results are published before scan B starts
+        assert w.devices[0].name == "TV A"
+        assert w.devices[0].uuid == "uuid-a"
+        assert w.device_dropdown.get_model().names == ["TV A"]
+        assert w.scan_busy  # scan B is now in flight
+        assert not w._scan_again
+        assert len(scan_starts) == 1  # scan A started, scan B's scan not yet called
+
+        # Complete scan B
+        events[1].set()
+        result_b = w.queued_work["work"]()
+        w.queued_work["done"](result_b)
+
+        # Scan B's results are published
+        assert w.devices[0].name == "TV B"
+        assert w.devices[0].uuid == "uuid-b"
+        # select_index inserts the saved device ("TV A") at position 0
+        assert w.device_dropdown.get_model().names == ["TV A", "TV B"]
+        assert not w.scan_busy
+        assert len(scan_starts) == 2  # both scans started
+
+
+def test_late_completion_after_close_does_not_update_ui():
+    """A late scan completion after the window is closing makes zero UI updates."""
+    w, _ = window()
+    event = Event()
+
+    def fake_cast_scan():
+        event.wait(2)
+        return [device("Late TV", "uuid-late")]
+
+    def fake_dlna_discover():
+        return None
+
+    with mock.patch.object(castctl, "scan", side_effect=fake_cast_scan), \
+            mock.patch.object(dlna, "discover", side_effect=fake_dlna_discover):
+        w.scan_devices()
+        assert w.scan_busy
+
+        # Close while scan is in flight
+        w._closing = True
+
+        # Complete scan — should not update UI
+        event.set()
+        result = w.queued_work["work"]()
+        w.queued_work["done"](result)
+
+        assert not w.scan_busy
+        assert w.devices == []
+        assert w.device_dropdown.get_model().names == []
+        assert w.badges == []
