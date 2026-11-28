@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a3b8fe9548adbf441da8836c7459758287cc2e73 -->
+<!-- sc-changelog-through: b94b18f086475557bd2743a176e9b46701e984ae -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:47:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:50:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:50:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b94b18f08647`](https://github.com/gmanldn/smoothcast/commit/b94b18f086475557bd2743a176e9b46701e984ae)
+
+- 🟥 **02:50:26 · Fix** — fix(cast): serialize status mirror connection teardown per receiver (Refs #202) · [`7ba24a007d6a`](https://github.com/gmanldn/smoothcast/commit/7ba24a007d6a1b2759b032784142ac050810d797)
 
 - ⬜ **02:47:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a3b8fe9548ad`](https://github.com/gmanldn/smoothcast/commit/a3b8fe9548adbf441da8836c7459758287cc2e73)
+
+- ⬜ **02:47:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2bc1f8957063`](https://github.com/gmanldn/smoothcast/commit/2bc1f8957063a3b2e7382f98933872815b9e07e1)
 
 - 🟥 **02:46:53 · Fix** — fix(errors): distinct codes for TV status-unavailable and playback-unconfirmed (#207) · [`326d9cb47be5`](https://github.com/gmanldn/smoothcast/commit/326d9cb47be5bc03c029a75aab2c51694c369f9a)
 
