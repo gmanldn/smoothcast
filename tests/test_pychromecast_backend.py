@@ -139,6 +139,51 @@ def discovered_backend(casts):
     return backend, browser
 
 
+@pytest.mark.parametrize("same_uuid", [True, False])
+def test_duplicate_disconnect_does_not_block_another_receivers_status(same_uuid):
+    retained = FakeCast()
+    other = FakeCast(name="Kitchen", host="192.168.1.26")
+    backend, _ = discovered_backend([retained, other])
+    backend.scan(timeout=0)
+    assert backend.info("Kitchen")["player_state"] == "PLAYING"
+    duplicate = FakeCast(identifier=retained.uuid if same_uuid else None)
+    assert backend._register(retained) == str(retained.uuid)
+    assert retained.disconnected == []
+
+    disconnect_entered = threading.Event()
+    allow_disconnect = threading.Event()
+    read_finished = threading.Event()
+    observed = []
+
+    def disconnect(timeout):
+        duplicate.disconnected.append(timeout)
+        disconnect_entered.set()
+        allow_disconnect.wait(5)
+
+    def read_status():
+        observed.append(backend.info("Kitchen"))
+        read_finished.set()
+
+    duplicate.disconnect = disconnect
+    register = threading.Thread(target=backend._discovered, args=(duplicate,))
+    reader = threading.Thread(target=read_status)
+    register.start()
+    try:
+        assert disconnect_entered.wait(2)
+        reader.start()
+        assert read_finished.wait(1), "the registry is locked during disconnect"
+        assert observed[0]["player_state"] == "PLAYING"
+    finally:
+        allow_disconnect.set()
+        register.join(2)
+        if reader.ident is not None:
+            reader.join(2)
+
+    assert duplicate.disconnected == [1]
+    assert retained.disconnected == other.disconnected == []
+    backend.close()
+
+
 def test_scan_keeps_one_browser_and_returns_device_identity():
     cast = FakeCast()
     backend, browser = discovered_backend([cast])

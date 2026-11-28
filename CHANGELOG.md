@@ -8,13 +8,15 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b1ae8090ee99d887d228f3ba2980607e6404688d -->
+<!-- sc-changelog-through: c429d044fc062b4fc3ccc968264319cf66160541 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:14:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **07:14:48 · Fix** — fix(cast): release the registry lock before disconnecting rejected receivers (Refs #722) <!-- sc-changelog-pending -->
 
 - ⬜ **07:14:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b1ae8090ee99`](https://github.com/gmanldn/smoothcast/commit/b1ae8090ee99d887d228f3ba2980607e6404688d)
+
+- ⬜ **07:14:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c429d044fc06`](https://github.com/gmanldn/smoothcast/commit/c429d044fc062b4fc3ccc968264319cf66160541)
 
 - 🟥 **07:12:08 · Fix** — fix(screen): bound automatic transcode recovery budget per play generation (Refs #754) · [`203386f61357`](https://github.com/gmanldn/smoothcast/commit/203386f61357d2d7ddaf4a0655399ddca4c4d99e)
 

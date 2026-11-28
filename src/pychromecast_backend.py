@@ -168,59 +168,54 @@ class PyChromecastBackend:
         cast_info = cast.cast_info
         identifier = str(cast_info.uuid)
         with self._changed:
-            if self._closed:
-                try:
-                    cast.disconnect(timeout=1)
-                except Exception:  # noqa: BLE001 - best-effort disconnect
-                    pass
+            if self._casts.get(identifier) is cast:
                 return identifier
-            if identifier in self._casts:
-                if self._casts[identifier] is not cast:
-                    try:
-                        cast.disconnect(timeout=1)
-                    except Exception:  # noqa: BLE001 - best-effort disconnect
-                        pass
-                return identifier
+            if not self._closed and identifier not in self._casts:
+                endpoint_device = next(
+                    (device for device in self._devices.values()
+                     if device.host == cast_info.host and device.port == cast_info.port),
+                    None,
+                )
+                if endpoint_device is None:
+                    self._admit_locked(cast, cast_info, identifier)
+                    return identifier
+                identifier = endpoint_device.uuid
 
-            endpoint_device = next(
-                (device for device in self._devices.values()
-                 if device.host == cast_info.host and device.port == cast_info.port),
-                None,
-            )
-            if endpoint_device is not None:
-                try:
-                    cast.disconnect(timeout=1)
-                except Exception:  # noqa: BLE001 - best-effort duplicate disconnect
-                    pass
-                return endpoint_device.uuid
-
-            name = cast_info.friendly_name or cast_info.host
-            self._casts[identifier] = cast
-            self._devices[identifier] = Device(
-                name=name,
-                host=cast_info.host,
-                port=cast_info.port,
-                model=cast_info.model_name or "",
-                manufacturer=cast_info.manufacturer or "",
-                uuid=identifier,
-            )
-            media_listener = _MediaStatusListener(self, identifier)
-            cast_status_listener = _CastStatusListener(self, identifier)
-            connection_listener = _ConnectionListener(self, identifier)
-            self._media_listeners[identifier] = media_listener
-            self._cast_status_listeners[identifier] = cast_status_listener
-            self._connection_listeners[identifier] = connection_listener
-            cast.media_controller.register_status_listener(media_listener)
-            cast.register_status_listener(cast_status_listener)
-            cast.register_connection_listener(connection_listener)
-            try:
-                # Request one initial snapshot; subsequent reads use the cache
-                # refreshed by PyChromecast's media and receiver listeners.
-                cast.media_controller.update_status()
-            except Exception:  # noqa: BLE001 - the initial status request is optional
-                pass
-            self._changed.notify_all()
+        # A rejected connection can wait on its socket thread. Keep unrelated
+        # receiver status and commands free to acquire the registry lock.
+        try:
+            cast.disconnect(timeout=1)
+        except Exception:  # noqa: BLE001 - best-effort disconnect of rejected connection
+            pass
         return identifier
+
+    def _admit_locked(self, cast: Any, cast_info: Any, identifier: str) -> None:
+        name = cast_info.friendly_name or cast_info.host
+        self._casts[identifier] = cast
+        self._devices[identifier] = Device(
+            name=name,
+            host=cast_info.host,
+            port=cast_info.port,
+            model=cast_info.model_name or "",
+            manufacturer=cast_info.manufacturer or "",
+            uuid=identifier,
+        )
+        media_listener = _MediaStatusListener(self, identifier)
+        cast_status_listener = _CastStatusListener(self, identifier)
+        connection_listener = _ConnectionListener(self, identifier)
+        self._media_listeners[identifier] = media_listener
+        self._cast_status_listeners[identifier] = cast_status_listener
+        self._connection_listeners[identifier] = connection_listener
+        cast.media_controller.register_status_listener(media_listener)
+        cast.register_status_listener(cast_status_listener)
+        cast.register_connection_listener(connection_listener)
+        try:
+            # Request one initial snapshot; subsequent reads use the cache
+            # refreshed by PyChromecast's media and receiver listeners.
+            cast.media_controller.update_status()
+        except Exception:  # noqa: BLE001 - the initial status request is optional
+            pass
+        self._changed.notify_all()
 
     def connect_manual(self, address: str, *, port: int = 8009) -> Device:
         """Connect directly to a user-selected private IPv4 Cast target."""
