@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f7743b1304beedbbc21c4290a3eb5d7a807332bc -->
+<!-- sc-changelog-through: 170874bc5d9391bec4fea163ce830e879ea2936e -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **08:58:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:00:56 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:00:56 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`170874bc5d93`](https://github.com/gmanldn/smoothcast/commit/170874bc5d9391bec4fea163ce830e879ea2936e)
+
+- 🟦 **09:00:43 · Refactor** — refactor(audio-sync): AudioSyncMixin becomes composed AudioSyncController; bases 16-&gt;15 (Refs #691) · [`16be823a3966`](https://github.com/gmanldn/smoothcast/commit/16be823a39666b1814e9d9dff01ef891777acd6c)
 
 - ⬜ **08:58:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f7743b1304be`](https://github.com/gmanldn/smoothcast/commit/f7743b1304beedbbc21c4290a3eb5d7a807332bc)
+
+- ⬜ **08:58:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b30b9137602a`](https://github.com/gmanldn/smoothcast/commit/b30b9137602a9e0690efcd347ac3cf79e94be53b)
 
 - 🟦 **08:58:08 · Refactor** — refactor(retry): RetryMixin becomes composed RetryController; MainWindow bases 17-&gt;16 (Refs #691) · [`15b521cd711f`](https://github.com/gmanldn/smoothcast/commit/15b521cd711ffb6a71a55597ff33b3218c7386e2)
 
