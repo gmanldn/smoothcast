@@ -102,6 +102,39 @@ def test_finalize_syncs_trailing_bytes(upload, monkeypatch):
     assert final.read_bytes() == b"abc"
 
 
+def test_incomplete_finalize_does_not_flush_pending_bytes(upload, monkeypatch):
+    manager, _ = upload
+    upload_id = manager.create("owner", "film.mkv", 10)["id"]
+    receipt = manager.append("owner", upload_id, "bytes 0-3/10", 4, BytesIO(b"abcd"))
+    assert (receipt["received"], receipt["committed"]) == (4, 0)
+
+    real_sync = os.fsync
+    synced_sizes = []
+
+    def sync(fd):
+        synced_sizes.append(os.fstat(fd).st_size)
+        return real_sync(fd)
+
+    monkeypatch.setattr(os, "fsync", sync)
+    for _ in range(2):
+        with pytest.raises(portal_uploads.UploadError) as incomplete:
+            manager.finalize("owner", upload_id)
+        assert incomplete.value.status == 409
+    status = manager.status("owner", upload_id)
+    assert (status["received"], status["committed"]) == (4, 0)
+    assert synced_sizes == []
+
+    monkeypatch.setattr(portal_uploads, "CHECKPOINT_BYTES", 100)
+    receipt = manager.append("owner", upload_id, "bytes 4-9/10", 6, BytesIO(b"efghij"))
+    assert (receipt["received"], receipt["committed"]) == (10, 0)
+    final, _, should_dispatch = manager.finalize("owner", upload_id)
+    assert should_dispatch is True
+    assert synced_sizes[0] == 10  # the complete file is durable before dispatch is accepted
+    assert final.read_bytes() == b"abcdefghij"
+    manager.finish_dispatch("owner", upload_id, accepted=True)
+    assert manager.status("owner", upload_id)["complete"] is True
+
+
 def test_restart_recovers_queue_upload_only_to_the_durable_offset(tmp_path, monkeypatch):
     now = [1.0]
     first = portal_uploads.UploadManager(tmp_path, clock=lambda: now[0])

@@ -843,6 +843,8 @@ class UploadManager:
                 raise UploadError(409, "The host is still processing this upload. Retry shortly.")
             if upload.cast_submitted and upload.dispatch_queue_only != intent:
                 raise UploadError(409, "This upload already has a different accepted room action.")
+            if upload.complete_path is None and upload.received != upload.size:
+                raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
             if upload.complete_path is None:
                 # Ensure all received bytes are durable before completion.
                 if upload.received > upload.committed:
@@ -855,8 +857,6 @@ class UploadManager:
                         self._write_metadata(upload)
                     finally:
                         os.close(fd)
-                if upload.received != upload.size:
-                    raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
                 flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
                 fd = os.open(upload.partial_path, flags)
                 try:
