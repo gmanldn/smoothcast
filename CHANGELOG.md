@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cfe8df78f12504a6b43afdab540f899ae13ca2ab -->
+<!-- sc-changelog-through: ae725d3f918decd0457a10317a0a1b0257798999 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:07:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:09:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:09:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ae725d3f918d`](https://github.com/gmanldn/smoothcast/commit/ae725d3f918decd0457a10317a0a1b0257798999)
+
+- 🟦 **09:09:21 · Refactor** — refactor(find): FindMixin becomes composed FindController; bases 13-&gt;12 (Refs #691) · [`7a369f543768`](https://github.com/gmanldn/smoothcast/commit/7a369f543768fe08fb1fe0c832a306a3522afe8c)
 
 - ⬜ **09:07:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cfe8df78f125`](https://github.com/gmanldn/smoothcast/commit/cfe8df78f12504a6b43afdab540f899ae13ca2ab)
+
+- ⬜ **09:07:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7ee37e6398f7`](https://github.com/gmanldn/smoothcast/commit/7ee37e6398f74f9b97984d7fb39a892b124a2f22)
 
 - 🟦 **09:07:15 · Refactor** — refactor(room): RoomCheckpointUiMixin becomes composed RoomCheckpointController; bases 14-&gt;13 (Refs #691) · [`8ecc6c91daa3`](https://github.com/gmanldn/smoothcast/commit/8ecc6c91daa3b8abc05eb1c950c577ab74069fec)
 
