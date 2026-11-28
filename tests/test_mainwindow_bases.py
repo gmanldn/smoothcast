@@ -8,7 +8,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-MAX_BASES = 14
+MAX_BASES = 13
 SRC = Path(__file__).resolve().parents[1] / "src" / "cast_control.py"
 
 

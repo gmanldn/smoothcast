@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from gui_source import main_window_methods
 import room_checkpoint
+import room_checkpoint_ui
 
 
 class FakeDialog:
@@ -44,18 +45,13 @@ class FakeDialog:
 
 def recovery_type():
     methods = main_window_methods()
-    names = ("_offer_room_recovery", "_recover_room_checkpoint",
-             "_discard_room_checkpoint", "_save_room_checkpoint")
+    names = ("_save_room_checkpoint",)
     source = "class Recovery:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(methods[name]), "    ") for name in names
     )
     namespace = {
         "room_checkpoint": room_checkpoint,
         "ROOM_CHECKPOINT_FILE": None,
-        "Adw": SimpleNamespace(
-            AlertDialog=FakeDialog,
-            ResponseAppearance=SimpleNamespace(SUGGESTED=1),
-        ),
     }
     exec(compile(source, "<room-recovery-test>", "exec"), namespace)
     return namespace["Recovery"]
@@ -79,6 +75,13 @@ def window(checkpoint, *, selftest=False, live_room=True):
             self.rebuilds = 0
             self.toasts = []
             self.logs = []
+            ctl = room_checkpoint_ui.RoomCheckpointController(self, adw=SimpleNamespace(
+                AlertDialog=FakeDialog,
+                ResponseAppearance=SimpleNamespace(SUGGESTED=1),
+            ))
+            self._offer_room_recovery = ctl.offer_recovery
+            self._recover_room_checkpoint = ctl.recover
+            self._discard_room_checkpoint = ctl.discard
 
         def _portal_observe_queue(self):
             items = tuple(self.queue)
