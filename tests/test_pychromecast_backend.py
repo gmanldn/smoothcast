@@ -99,6 +99,9 @@ class FakeCast:
         self.connection_listener = None
         self.disconnected = []
         self.volume_calls = []
+        self.receiver_calls = []
+        self.socket_client = SimpleNamespace(receiver_controller=SimpleNamespace(
+            update_status=lambda: self.receiver_calls.append("update_status")))
 
     def register_connection_listener(self, listener):
         self.connection_listener = listener
@@ -153,7 +156,10 @@ def test_scan_keeps_one_browser_and_returns_device_identity():
 
 
 def test_warm_scan_returns_snapshot_without_waiting_and_sees_later_advertisements():
-    first, second, third = FakeCast(name="Den"), FakeCast(name="Lounge"), FakeCast(name="Bedroom")
+    # One host:port is one device, so each fake TV needs its own address.
+    first = FakeCast(name="Den", host="192.168.1.31")
+    second = FakeCast(name="Lounge", host="192.168.1.32")
+    third = FakeCast(name="Bedroom", host="192.168.1.33")
     browser = FakeBrowser()
     callbacks = []
     discover_calls = []
@@ -183,7 +189,8 @@ def test_warm_scan_returns_snapshot_without_waiting_and_sees_later_advertisement
 
 
 def test_cold_scan_still_collects_late_advertisements_and_closed_scan_fails():
-    first, second = FakeCast(name="Den"), FakeCast(name="Lounge")
+    first = FakeCast(name="Den", host="192.168.1.31")
+    second = FakeCast(name="Lounge", host="192.168.1.32")
     browser = FakeBrowser()
     callbacks = []
 
@@ -637,9 +644,17 @@ def test_disconnect_invalidates_status_and_reconnect_requires_fresh_observation(
     # Media events arriving while disconnected are not current evidence.
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room") is None
+    cast.receiver_calls.clear()
+    cast.media_controller.calls.clear()   # only requests made by the reconnect count
     cast.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
-    # A reconnect re-observes the current playback status so the receiver keeps
-    # reporting instead of appearing silent.
+    # The receiver is asked for fresh status; the object cached before the
+    # disconnect is never republished as if it were current.
+    assert backend.info("Living Room") is None
+    assert updates[-1] == {}
+    assert cast.receiver_calls == ["update_status"]
+    assert cast.media_controller.calls == [("update_status",)]
+    # The receiver's fresh reply is what makes it report again.
+    cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room")["player_state"] == "PLAYING"
     cast.media_controller.status.player_state = "PAUSED"
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
@@ -648,6 +663,75 @@ def test_disconnect_invalidates_status_and_reconnect_requires_fresh_observation(
     backend.close()
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room") is None
+
+
+def reconnect(cast):
+    cast.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+    cast.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
+
+
+def test_stale_playing_snapshot_is_never_reported_after_the_media_ended_during_the_outage():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    seen = []
+    backend.subscribe("Living Room", seen.append)
+    assert backend.info("Living Room")["player_state"] == "PLAYING"
+    # The TV finished the film while SmoothCast was disconnected, but the
+    # controller object still holds the old PLAYING status.
+    reconnect(cast)
+    assert cast.media_controller.status.player_state == "PLAYING"  # stale cache
+    assert backend.info("Living Room") is None
+    assert not any(item.get("player_state") == "PLAYING" for item in seen[1:])
+    # The fresh receiver reply says it is idle.
+    cast.media_controller.status.player_state = "IDLE"
+    cast.media_controller.status.idle_reason = "FINISHED"
+    cast.media_controller.listener.new_media_status(cast.media_controller.status)
+    assert backend.info("Living Room")["player_state"] == "IDLE"
+    assert [item.get("player_state") for item in seen[1:] if item] == ["IDLE"]
+    backend.close()
+
+
+def test_failed_refresh_request_neither_raises_nor_invents_a_status():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    assert backend.info("Living Room")["player_state"] == "PLAYING"
+
+    def broken(*_args, **_kwargs):
+        raise OSError("socket closed")
+
+    cast.media_controller.update_status = broken
+    cast.socket_client.receiver_controller.update_status = broken
+    reconnect(cast)                      # must not raise
+    assert backend.info("Living Room") is None
+    cast.media_controller.listener.new_media_status(cast.media_controller.status)
+    assert backend.info("Living Room")["player_state"] == "PLAYING"
+    backend.close()
+
+
+def test_status_is_requested_once_per_reconnect_not_on_every_connected_event():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    cast.receiver_calls.clear()
+    cast.media_controller.calls.clear()   # drop the request made at registration
+    connected = SimpleNamespace(status="CONNECTED")
+    cast.connection_listener.new_connection_status(connected)   # first sight
+    assert cast.receiver_calls == ["update_status"]
+    cast.connection_listener.new_connection_status(connected)   # already connected
+    cast.connection_listener.new_connection_status(connected)
+    assert cast.receiver_calls == ["update_status"]
+    assert cast.media_controller.calls == [("update_status",)]
+    reconnect(cast)
+    reconnect(cast)
+    assert cast.receiver_calls == ["update_status"] * 3
+    assert cast.media_controller.calls == [("update_status",)] * 3
+    backend.close()
+    cast.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+    cast.connection_listener.new_connection_status(connected)
+    assert len(cast.receiver_calls) == 3  # a closed backend asks for nothing
+
 
 def test_status_subscription_never_connects_a_manual_target_on_ui_context():
     factory = mock.Mock(
