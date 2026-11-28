@@ -727,8 +727,13 @@ def test_failed_push_and_failed_fetch_retries_unpublished_code(monkeypatch, tmp_
     assert handovers == []
     assert agent.cmd_ship(args) == 0
     assert len(pushes) == 2
-    assert [args[1] for args in handovers] == [sha]
-    assert run(worker, "rev-parse", "origin/develop") == sha
+    # Generated PATCH/changelog commits are rebuilt on retry and carry a
+    # timestamp, so the retried tip may differ from the first attempt's SHA.
+    # The invariant: the handover names exactly the SHA the remote contains.
+    published = run(worker, "rev-parse", "origin/develop")
+    assert [args[1] for args in handovers] == [published]
+    assert run(worker, "rev-parse", "HEAD") == published
+    assert run(worker, "show", "origin/develop:retry.txt") == "needs a real push"
     assert "pending_push" not in task
 
 

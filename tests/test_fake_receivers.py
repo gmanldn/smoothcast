@@ -359,7 +359,10 @@ class FakeCastTests(unittest.TestCase):
     def test_scan_lists_online_devices_with_identity(self):
         self.cast.add_device("Kitchen", host="192.168.1.60", uuid="k-1")
         self.cast.add_device("Dead", online=False)
-        names = [(d.name, d.host, d.uuid) for d in castctl.scan()]
+        # Force the catt compatibility path this fake serves; a real mDNS scan
+        # (when zeroconf is installed) would see the host LAN, not the fake.
+        with mock.patch.object(castctl, "_passive_cast_scan", side_effect=RuntimeError("mDNS off")):
+            names = [(d.name, d.host, d.uuid) for d in castctl.scan()]
         expected = [("Kitchen", "192.168.1.60", "k-1"),
                     ("Living Room", "192.168.1.50", "uuid-Living Room")]
         if any(name not in {item[0] for item in expected} for name, _host, _uuid in names):
