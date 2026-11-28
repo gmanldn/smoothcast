@@ -2261,6 +2261,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #advancedPanel .settings-scope-list li{line-height:1.45}
 .preference-map{margin:10px 0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--sc-radius-md);background:var(--card)}
 .preference-map h4{margin:0 0 8px;font-size:1rem}
+.preference-map h5{margin:10px 0 6px;font-size:.95rem}
 .preference-map ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .preference-map li{display:grid;gap:2px;line-height:1.4}
 .preference-map li span{color:var(--muted);font-size:.92em}
@@ -3292,9 +3293,9 @@ async function loadHostSettings(){
     const response=await fetch("/api/settings",{credentials:"same-origin",cache:"no-store",headers:clientHeaders});
     const data=await response.json();
     if(!response.ok)throw Error(data.error||"Host settings are unavailable");
-    renderHostSettings(data.settings);$("hostAppearanceControls").hidden=false;
+    renderHostSettings(data.settings);$("hostSettingsControls").hidden=false;
     $("hostSettingsStatus").textContent="Saved on this computer. Changes apply to its interface immediately.";
-  }catch(_){$("hostAppearanceControls").hidden=true}
+  }catch(_){$("hostSettingsControls").hidden=true}
   finally{hostSettingsLoaded=true;hostSettingsLoading=false}
 }
 async function saveHostSetting(key,input){
@@ -3309,7 +3310,7 @@ async function saveHostSetting(key,input){
 }
 function renderRoomIdentity(room){
   const canRename=room?.can_rename===true;
-  const hostControls=$("hostAppearanceControls");
+  const hostControls=$("hostSettingsControls");
   if(!canRename&&hostControls)hostControls.hidden=true;
   if(canRename)void loadHostSettings();
   const renameLink=$("roomRenameLink"),renameForm=$("roomNameForm"),renameInput=$("roomNameInput");

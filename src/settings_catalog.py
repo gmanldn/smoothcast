@@ -13,48 +13,75 @@ import preference_choices
 
 
 class HostControl(TypedDict):
+    group: str
     title: str
     description: str
     kind: Literal["choice", "boolean"]
     default: str | bool
+    apply_timing: str
 
 PREFERENCES = (
     ("Playback", (
-        ("Picture and delivery", "Choose video quality, rotation, aspect ratio, direct play, and picture adjustments."),
-        ("Queue behaviour", "Choose whether playback advances, repeats the current film, repeats the queue, or closes after the final film."),
-        ("Shared room", "Set the room name, browser-screen access, guest link permissions, House PIN, and room port."),
-        ("Playback alerts", "Choose which playback and receiver notices appear in the app."),
-        ("Artwork", "Choose whether embedded cover art appears in the player."),
+        ("Picture and delivery", "Changes to encoding take effect on the next cast or transcode restart."),
+        ("Queue behaviour", "These options control what happens when the current film finishes."),
+        ("Shared room", "Give this hosted room a recognisable name. Joining links and playback stay unchanged."),
+        ("Playback alerts", "Alerts stay inside SmoothCast and never add a counter to the OS dock."),
+        ("Artwork", "Shown in the preview above the scrubber."),
     )),
     ("Sound & subtitles", (
-        ("Audio", "Choose a sound profile, music normalisation, dialogue level, and the selected film's audio track."),
-        ("Captions", "Choose subtitle source and appearance, select a subtitle file or track, and set extra search folders."),
+        ("Audio", "Profiles and gain are applied at the next cast or encoder restart."),
+        ("Captions", "Text tracks can be sent to a Cast receiver or burned into the picture."),
     )),
     ("Appearance", (
-        ("Theme", "Choose colour scheme, automatic day and night switching, accent colour, and interface density."),
-        ("Updates", "Choose the update channel and read-only release-check preferences."),
+        ("Theme", "Choose the appearance that makes the player most comfortable to read."),
+        ("Updates", "Nothing is downloaded or installed automatically. These options apply on the next app launch, not during playback."),
     )),
     ("Library", (
-        ("Library folders", "Choose which folders SmoothCast indexes and shares with this room."),
+        ("Library folders", "Folders SmoothCast indexes on this computer. Shared folders can be searched and played from every device in the house."),
     )),
 )
 
 HOST_CONTROLS: dict[str, HostControl] = {
     "color_scheme": {
-        "title": "Colour scheme", "description": "Choose the host app's light or dark appearance.",
-        "kind": "choice", "default": "prefer-dark",
+        "group": "Theme",
+        "title": "Colour scheme", "description": "A manual choice turns off automatic day/night switching.",
+        "kind": "choice", "default": "prefer-dark", "apply_timing": "Applies immediately.",
     },
     "auto_theme": {
-        "title": "Switch theme by time of day", "description": "Use light during the day and dark at night.",
-        "kind": "boolean", "default": False,
+        "group": "Theme",
+        "title": "Switch theme by time of day", "description": "Use a light theme during the day and a dark theme at night.",
+        "kind": "boolean", "default": False, "apply_timing": "Applies immediately.",
     },
     "accent": {
-        "title": "Accent colour", "description": "Change the highlight colour across the host app.",
-        "kind": "choice", "default": "default",
+        "group": "Theme",
+        "title": "Accent colour", "description": "Highlights buttons, sliders and switches. Every option keeps text readable; Default restores the original blue.",
+        "kind": "choice", "default": "default", "apply_timing": "Applies immediately.",
     },
     "density": {
-        "title": "Interface density", "description": "Change spacing and control sizes across the host app.",
-        "kind": "choice", "default": "comfortable",
+        "group": "Theme",
+        "title": "Interface density", "description": "Scales spacing and control sizes. Long text wraps in narrow windows and under large fonts instead of being clipped.",
+        "kind": "choice", "default": "comfortable", "apply_timing": "Applies immediately.",
+    },
+    "autonext": {
+        "group": "Queue behaviour",
+        "title": "Play next film automatically",
+        "description": "Advance to the next item without another click.",
+        "kind": "boolean", "default": False,
+        "apply_timing": "Applies when the current item finishes.",
+    },
+    "loop": {
+        "group": "Queue behaviour",
+        "title": "Repeat current film",
+        "description": "Repeat this film instead of advancing the queue.",
+        "kind": "boolean", "default": False,
+        "apply_timing": "Applies when the current item finishes.",
+    },
+    "loop_all": {
+        "group": "Queue behaviour",
+        "title": "Repeat the whole queue",
+        "description": "After the final item, return to the first.",
+        "kind": "boolean", "default": False,
+        "apply_timing": "Applies when the last queue item finishes.",
     },
 }
 
@@ -90,7 +117,7 @@ def host_setting_values(config: object) -> dict[str, object]:
 
 def host_controls_html() -> str:
     """Host-only controls; values arrive only after host authorization."""
-    fields = []
+    groups: dict[str, list[str]] = {}
     for key, descriptor in HOST_CONTROLS.items():
         ident = "hostSetting-" + key
         help_id = ident + "-help"
@@ -102,15 +129,33 @@ def host_controls_html() -> str:
                 for label, value in preference_choices.OPTIONS[key]
             )
             control = f'<select id="{ident}" aria-describedby="{help_id}">{options}</select>'
-        fields.append(
+        if descriptor["kind"] == "boolean":
+            default_text = "On by default" if descriptor["default"] else "Off by default"
+        else:
+            default_label = next(
+                label for label, value in preference_choices.OPTIONS[key]
+                if type(value) is type(descriptor["default"])
+                and value == descriptor["default"]
+            )
+            default_text = "Default: " + default_label
+        field_html = (
             f'<label class="host-setting" for="{ident}"><strong>{escape(descriptor["title"])}</strong>'
-            f'{control}<span id="{help_id}" class="field-hint">{escape(descriptor["description"])}</span></label>'
+            f'{control}<span id="{help_id}" class="field-hint">{escape(descriptor["description"])} '
+            f'{escape(default_text)} · {escape(descriptor["apply_timing"])}</span></label>'
         )
-    return ('<section id="hostAppearanceControls" class="preference-map" hidden '
-            'aria-labelledby="hostAppearanceHeading"><h4 id="hostAppearanceHeading">Host appearance</h4>'
-            '<p>Changes save to the SmoothCast computer and apply to its interface immediately.</p>'
-            '<div class="host-setting-grid">' + "".join(fields) + '</div>'
-            '<p id="hostSettingsStatus" class="field-hint" role="status" aria-live="polite"></p></section>')
+        groups.setdefault(descriptor["group"], []).append(field_html)
+    sections = []
+    for group, items in groups.items():
+        field_html = "".join(items)
+        sections.append(
+            f'<section aria-label="{escape(group)} settings"><h5>{escape(group)}</h5>'
+            f'<div class="host-setting-grid">{field_html}</div></section>'
+        )
+    return ('<section id="hostSettingsControls" class="preference-map" hidden '
+            'aria-labelledby="hostSettingsHeading"><h4 id="hostSettingsHeading">Host playback and appearance</h4>'
+            '<p>Changes save to the SmoothCast computer. Each setting explains when it takes effect.</p>'
+            + "".join(sections)
+            + '<p id="hostSettingsStatus" class="field-hint" role="status" aria-live="polite"></p></section>')
 
 
 def web_overview_html() -> str:

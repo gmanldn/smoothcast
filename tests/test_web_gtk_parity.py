@@ -39,3 +39,11 @@ def test_web_settings_map_tracks_desktop_preferences_pages_and_groups():
             assert escape(summary) in web
     assert "__SC_SETTINGS_CATALOG__" not in web
     assert "managed on the computer running SmoothCast" in web
+
+
+def test_host_settings_controls_stay_hidden_until_authorized_values_load():
+    web = portal._page().decode("utf-8")
+    assert '<section id="hostSettingsControls" class="preference-map" hidden' in web
+    assert 'fetch("/api/settings"' in web
+    assert 'if(!canRename&&hostControls)hostControls.hidden=true' in web
+    assert 'renderHostSettings(data.settings);$("hostSettingsControls").hidden=false' in web

@@ -7,8 +7,9 @@ Served at ``GET /api/openapi.json`` and mirrored in ``docs/api/openapi.json``.
 from __future__ import annotations
 
 import json
+import settings_catalog
 
-API_VERSION = "1.3"  # bumped only when the HTTP contract changes
+API_VERSION = "1.4"  # bumped only when the HTTP contract changes
 
 JSON = "application/json"
 ERR = {"description": "Error", "content": {JSON: {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -218,7 +219,7 @@ SCHEMAS = {
     "RoomName": {"type": "object", "required": ["name"], "properties": {
         "name": {"type": "string", "maxLength": 40}}},
     "HostSetting": {"type": "object", "required": ["key", "value"], "properties": {
-        "key": {"type": "string", "enum": ["color_scheme", "auto_theme", "accent", "density"]},
+        "key": {"type": "string", "enum": sorted(settings_catalog.HOST_CONTROLS)},
         "value": {}}},
     "Action": {"type": "object", "required": ["action"], "properties": {
         "action": {"type": "string"}, "value": {}, "id": {"type": "string"},

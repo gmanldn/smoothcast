@@ -249,6 +249,8 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             elif key == "density":
                 owner.app.apply_density(value)
                 owner._refresh_responsive_layout()
+            elif key == "autonext":
+                owner.autonext_switch.set_active(value)
             save_config(owner.cfg)
             preferences = getattr(self, "_preferences_window", None)
             if preferences is not None:

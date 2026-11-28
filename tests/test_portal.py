@@ -770,6 +770,10 @@ def test_host_settings_are_private_allowlisted_csrf_protected_and_validated(rig)
     assert status == 200
     assert decode(body)["settings"]["color_scheme"] == "force-light"
     assert decode(body)["settings"]["auto_theme"] is False
+    status, body, _ = rig.request(
+        "POST", "/api/settings", {"key": "autonext", "value": True},
+        cookie=host_cookie, csrf=host_csrf, origin=origin)
+    assert status == 200 and decode(body)["settings"]["autonext"] is True
 
 
 def test_queue_votes_are_per_person_and_require_a_live_item():
