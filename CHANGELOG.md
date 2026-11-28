@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3063866a099d413a7048f1f32a175c7f360601fd -->
+<!-- sc-changelog-through: 1481395504bf59f5f59967dbae2bfc98b2c85323 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:31:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:32:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:32:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1481395504bf`](https://github.com/gmanldn/smoothcast/commit/1481395504bf59f5f59967dbae2bfc98b2c85323)
+
+- 🟩 **03:32:04 · Feature** — feat: add host-only appearance settings to web remote (Refs #708) · [`93b9953d5b15`](https://github.com/gmanldn/smoothcast/commit/93b9953d5b15aea97c402783101203d4e32a225c)
 
 - ⬜ **03:31:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3063866a099d`](https://github.com/gmanldn/smoothcast/commit/3063866a099d413a7048f1f32a175c7f360601fd)
+
+- ⬜ **03:31:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`98f8be2cc989`](https://github.com/gmanldn/smoothcast/commit/98f8be2cc989726841611fb3b48ffebd0929421a)
 
 - 🟥 **03:31:31 · Fix** — fix(tests): follow the #708 settings copy and the #568 upload checkpoint writer · [`7e66cc4ea486`](https://github.com/gmanldn/smoothcast/commit/7e66cc4ea4862b5214ad2efbc6fbb108d8baf789)
 
