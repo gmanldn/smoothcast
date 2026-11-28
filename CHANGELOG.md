@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 760c9b2714f59a89e4385068b723d23b6c5c1c99 -->
+<!-- sc-changelog-through: 002bcaa3fc58414c7dd3c03e8ef91835daa5b0a3 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:02:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:07:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:07:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`002bcaa3fc58`](https://github.com/gmanldn/smoothcast/commit/002bcaa3fc58414c7dd3c03e8ef91835daa5b0a3)
+
+- 🟥 **07:07:01 · Fix** — fix(tests): fix the three #708 shared-model reds instead of quarantining them · [`f8c509319277`](https://github.com/gmanldn/smoothcast/commit/f8c5093192776a6084c6fdec3d100e8a4afa766b)
 
 - ⬜ **07:02:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`760c9b2714f5`](https://github.com/gmanldn/smoothcast/commit/760c9b2714f59a89e4385068b723d23b6c5c1c99)
+
+- ⬜ **07:02:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`03e3b0fcca64`](https://github.com/gmanldn/smoothcast/commit/03e3b0fcca64dbaf045b52eb62fd8e7fda34217c)
 
 - 🟪 **07:02:39 · Tests** — test: update DLNA scan contracts for #718/#720; quarantine the #708 shared-model reds with owner and expiry (Refs #700) · [`3ccd433d1eea`](https://github.com/gmanldn/smoothcast/commit/3ccd433d1eeadb10d8653affe430ec7179351d0d)
 
