@@ -14,7 +14,12 @@ import playlist_control
 from cast_widgets import Async
 
 
-class PlaylistMixin:
+class PlaylistController:
+    """Composition replacement for PlaylistMixin (#691); all state stays on the window."""
+
+    def __init__(self, window) -> None:
+        self.w = window
+
     @staticmethod
     def _playlist_filters():
         store = Gio.ListStore.new(Gtk.FileFilter)
@@ -26,14 +31,16 @@ class PlaylistMixin:
         return store, playlists
 
     def _load_playlist(self) -> None:
+        w = self.w
         # Chooser picks any named playlist; the parse runs off the GTK thread.
         dialog = Gtk.FileDialog(title="Load a playlist")
-        store, playlists = self._playlist_filters()
+        store, playlists = w._playlist_filters()
         dialog.set_filters(store)
         dialog.set_default_filter(playlists)
-        dialog.open(self, None, self._playlist_open_chosen)
+        dialog.open(w, None, w._playlist_open_chosen)
 
     def _playlist_open_chosen(self, dialog, result) -> None:
+        w = self.w
         try:
             gfile = dialog.open_finish(result)
         except GLib.Error:
@@ -42,39 +49,41 @@ class PlaylistMixin:
         if not path:
             return
         playlist = pathlib.Path(path)
-        items_before = list(self.queue)
+        items_before = list(w.queue)
 
         def work():
             return playlist_control.load_playlist(playlist)
 
         def done(result):
             loaded, skipped = result
-            additions = [item for item in loaded if item not in self.queue]
+            additions = [item for item in loaded if item not in w.queue]
             if additions:
-                self._enqueue(additions)
-            self.toast(
+                w._enqueue(additions)
+            w.toast(
                 f"Playlist: {len(additions)} added"
                 + (f", {skipped} missing or invalid" if skipped else "")
             )
 
         def failed(message):
-            self.queue[:] = items_before
-            self.toast(message, error=True)
+            w.queue[:] = items_before
+            w.toast(message, error=True)
 
         Async.run(work, done=done, failed=failed)
 
     def _save_playlist(self) -> None:
-        if not self.queue:
-            self.toast("Queue is empty", error=True)
+        w = self.w
+        if not w.queue:
+            w.toast("Queue is empty", error=True)
             return
         dialog = Gtk.FileDialog(title="Save the queue as a playlist")
         dialog.set_initial_name("smoothcast_playlist.m3u")
-        store, playlists = self._playlist_filters()
+        store, playlists = w._playlist_filters()
         dialog.set_filters(store)
         dialog.set_default_filter(playlists)
-        dialog.save(self, None, self._playlist_save_chosen)
+        dialog.save(w, None, w._playlist_save_chosen)
 
     def _playlist_save_chosen(self, dialog, result) -> None:
+        w = self.w
         try:
             gfile = dialog.save_finish(result)
         except GLib.Error:
@@ -83,7 +92,7 @@ class PlaylistMixin:
         if not path:
             return
         destination = pathlib.Path(path)
-        items = list(self.queue)
+        items = list(w.queue)
 
         def work():
             playlist_control.save_playlist(destination, items)
@@ -91,6 +100,17 @@ class PlaylistMixin:
 
         Async.run(
             work,
-            done=lambda name: self.toast(f"Playlist saved: {name} ({len(items)} videos)"),
-            failed=lambda message: self.toast(message, error=True),
+            done=lambda name: w.toast(f"Playlist saved: {name} ({len(items)} videos)"),
+            failed=lambda message: w.toast(message, error=True),
         )
+
+    @classmethod
+    def install(cls, window) -> "PlaylistController":
+        """Bind every method onto ``window`` and return the controller."""
+        controller = cls(window)
+        for name in PLAYLIST_CONTROLLER_METHODS:
+            setattr(window, name, getattr(controller, name))
+        return controller
+
+
+PLAYLIST_CONTROLLER_METHODS = ('_playlist_filters', '_load_playlist', '_playlist_open_chosen', '_save_playlist', '_playlist_save_chosen')

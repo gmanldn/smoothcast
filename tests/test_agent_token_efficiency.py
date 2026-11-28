@@ -158,8 +158,8 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         self.assertEqual(own, ["__init__"], "MainWindow should only define __init__")
         bases = [b.id for b in window.bases if isinstance(b, ast.Name)]
         self.assertEqual(
-            bases[:4],
-            ["UiMixin", "QueueMixin", "SessionMixin", "AvMixin"],
+            bases[:3],
+            ["UiMixin", "SessionMixin", "AvMixin"],
         )
 
     def test_gui_source_helper_still_sees_every_main_window_method(self):

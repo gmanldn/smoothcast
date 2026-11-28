@@ -49,7 +49,12 @@ import startup_cleanup
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_settings import SettingsCardController
-from cast_queue import QueueMixin
+from cast_discovery import DeviceDiscoveryController
+from cast_queue import QueueController
+from music_import_ui import MusicImportController
+from playlist_ui import PlaylistController
+from queue_prewarm_ui import QueuePrewarmController
+from queue_row_ui import QueueRowController
 from cast_retry_ui import RetryController
 from cast_session import SessionMixin
 from cast_av import AvMixin
@@ -62,12 +67,18 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SessionMixin, AvMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
         self._portal_queue = PortalQueueController.install(self)
         self._lifecycle = LifecycleController.install(self)
+        self._queue_ctl = QueueController.install(self)
+        self._playlist_ctl = PlaylistController.install(self)
+        self._queue_rows = QueueRowController.install(self)
+        self._queue_prewarm = QueuePrewarmController.install(self)
+        self._music_import = MusicImportController.install(self)
+        self._discovery = DeviceDiscoveryController.install(self)
         self._ui_timers = UiTimerController(self)
         self._start_window_timers = self._ui_timers._start_window_timers
         self._publish_core_status = self._ui_timers._publish_core_status
