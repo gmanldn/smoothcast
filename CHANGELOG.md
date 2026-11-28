@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 04c71342c24a615ea4d9e87bae14dd68232a5b87 -->
+<!-- sc-changelog-through: 5ac1ecc606cf1f2a8cad7edda43276ea9e58eb78 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **11:29:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **11:32:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **11:32:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5ac1ecc606cf`](https://github.com/gmanldn/smoothcast/commit/5ac1ecc606cf1f2a8cad7edda43276ea9e58eb78)
+
+- 🟩 **11:32:02 · Feature** — feat(queue): QueuePort protocol with a store/fake contract test (Refs #691) · [`5e11051a0a1a`](https://github.com/gmanldn/smoothcast/commit/5e11051a0a1a5332dd479b619e0747718f6d4f2c)
 
 - ⬜ **11:29:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`04c71342c24a`](https://github.com/gmanldn/smoothcast/commit/04c71342c24a615ea4d9e87bae14dd68232a5b87)
+
+- ⬜ **11:29:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f295ca7b4a17`](https://github.com/gmanldn/smoothcast/commit/f295ca7b4a1719e976119a194b669d1008f2c9d4)
 
 - 🟪 **11:29:41 · Tests** — test(gui): keyboard-driven demo journey (Return/Space/Right via xdotool) with receiver wire-order check (Refs #449) · [`e70441971694`](https://github.com/gmanldn/smoothcast/commit/e704419716946aded8971c2a33e5f413d7c3488f)
 
