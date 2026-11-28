@@ -57,18 +57,11 @@ class Fence:
         return True, ""
 
     def release(self, node: str, session: str, epoch: int) -> bool:
-        """Free ``node`` only if the exact (session, epoch) claim still holds it.
-
-        A delayed cleanup from an earlier claim by the same session carries an
-        old epoch and must not drop the session's newer claim.
-        """
-        if self._owner.get(node) != (session, epoch):
-            return False
-        del self._owner[node]
-        return True
+        """Free the node only for the exact claim; a stale epoch is a no-op."""
+        return self._owner.get(node) == (session, epoch) and bool(self._owner.pop(node))
 
     def revoke(self, node: str) -> bool:
-        """Administrative teardown (node removed/unpaired): drop any claim."""
+        """Administrative teardown: drop any claim."""
         return self._owner.pop(node, None) is not None
 
     def owners(self) -> dict[str, str]:

@@ -217,7 +217,7 @@
   "node_copy_plan.py": 80,
   "node_media_ids.py": 53,
   "node_profile.py": 114,
-  "node_targets.py": 65,
+  "node_targets.py": 68,
   "node_trust.py": 102,
   "notifications.py": 37,
   "offline_rules.py": 77,
