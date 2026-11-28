@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -120,3 +121,18 @@ def test_free_space_check_needs_two_generations(tmp_path, monkeypatch):
         managed_source.require_free_space(tmp_path / "new", entries)
     monkeypatch.setattr(shutil, "disk_usage", lambda p: type("U", (), {"free": 300})())
     managed_source.require_free_space(tmp_path / "new", entries)
+
+
+def test_commit_display_date_matches_the_commit_in_its_own_timezone(checkout):
+    sha = managed_source.pin_channel_commit(checkout, "develop")
+    value = managed_source.commit_display_date(checkout, sha)
+    assert value is not None and re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{4}", value)
+    assert managed_source.commit_display_date(checkout, "0" * 40) is None
+
+
+def test_staged_candidate_marker_carries_the_commit_time(tmp_path, checkout):
+    sha = managed_source.pin_channel_commit(checkout, "develop")
+    staged = managed_source.stage_trusted_candidate(tmp_path / "inst", checkout, channel="develop",
+                                                    verify=lambda *a: True)
+    lines = (staged / "src" / ".smoothcast-build").read_text().splitlines()
+    assert lines == [sha, managed_source.commit_display_date(checkout, sha)]

@@ -260,3 +260,26 @@ def test_manifest_cannot_replace_build_marker_parent(tmp_path, monkeypatch):
     for name in ("src", "SRC/entry.py"):
         with pytest.raises(mg.StageError, match="reserved build marker"):
             mg.stage_local_snapshot(root, source, COMMIT, {name: metadata})
+
+
+def test_marker_records_the_commit_time_so_the_installed_app_can_show_it(tmp_path):
+    source, root, files = sample(tmp_path)
+    released = mg.stage_local_snapshot(root, source, COMMIT, files, commit_date="2026-11-28 0157")
+    marker = (released / "src" / ".smoothcast-build").read_text()
+    assert marker == COMMIT + "\n2026-11-28 0157\n"
+    saved = json.loads((released / "stage-manifest.json").read_text())
+    body = marker.encode()
+    assert saved["files"]["src/.smoothcast-build"] == {
+        "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    import commit_identity
+    assert commit_identity.read_checkout_commit_date(released, COMMIT) == "2026-11-28 0157"
+    label = commit_identity.display_label("v2.3.1", COMMIT, "2026-11-28 0157")
+    assert label == f"v2.3.1 - 2026-11-28 0157 - {commit_identity.codename(COMMIT)}"
+
+
+@pytest.mark.parametrize("bad", ["2026-11-28", "yesterday", "2026-11-28 01:57", "2026-11-28 0157\nx", 5])
+def test_malformed_commit_date_is_dropped_never_invented(tmp_path, bad):
+    source, root, files = sample(tmp_path)
+    released = mg.stage_local_snapshot(root, source, COMMIT, files, commit_date=bad)
+    assert (released / "src" / ".smoothcast-build").read_text() == COMMIT + "\n"
