@@ -50,6 +50,7 @@ def window(*names):
 
     class Window(Methods):
         def __init__(self):
+            self.w = self
             self.cfg = {"device": "TV", "sleep_timer_deadline": 0.0,
                         "sleep_timer_minutes": 0}
             self.session = None

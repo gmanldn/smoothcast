@@ -60,10 +60,10 @@ def test_no_unconditional_visual_timers_and_close_cleans_sources():
     control = (src / "cast_control.py").read_text()
     timers = (src / "cast_ui_timers.py").read_text()
     methods = {method.name for node in ast.parse(timers).body if isinstance(node, ast.ClassDef)
-               and node.name == "UiTimerMixin" for method in node.body
+               and node.name == "UiTimerController" for method in node.body
                if isinstance(method, ast.FunctionDef)}
     assert {"_sync_ui_timers", "_stop_ui_timers", "_bind_surface_resize"} <= methods
-    assert "UiTimerMixin" in control
+    assert "UiTimerController" in control
     assert "GLib.timeout_add_seconds(1, self._mpris_tick)" not in control
     for text in (control, timers):
         assert "GLib.timeout_add(100, self._meter_tick)" not in text
@@ -134,6 +134,7 @@ def test_real_window_timer_callbacks_under_fake_glib_clock():
                  "stream_watchdog": __import__("stream_watchdog")}
     exec(compile(code, "<headless-timers>", "exec"), namespace)  # noqa: S102
     window = namespace["Window"]()
+    window.w = window
     import cast_portal_room
     window._sync_portal_activity_timer = cast_portal_room.PortalRoomController(
         window, glib=clock)._sync_portal_activity_timer

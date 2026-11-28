@@ -26,8 +26,8 @@ class ResponsiveGtkWiringTests(unittest.TestCase):
         self.assertIn("height = self.get_height() or self._startup_height", self.source)
         self.assertIn('width, height, self.cfg.get("density"),', self.source)
         self.assertIn("responsive_layout.layout_for_size(", self.source)
-        self.assertIn('surface.connect("notify::width", self._queue_reflow)', self.source)
-        self.assertIn('surface.connect("notify::height", self._queue_reflow)', self.source)
+        self.assertIn('surface.connect("notify::width", w._queue_reflow)', self.source)
+        self.assertIn('surface.connect("notify::height", w._queue_reflow)', self.source)
         self.assertNotIn("GLib.timeout_add(200, self._refresh_responsive_layout)", self.source)
 
     def test_transport_and_actions_reflow_in_grids(self):

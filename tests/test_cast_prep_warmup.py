@@ -21,6 +21,6 @@ def test_window_timers_warm_the_ffmpeg_version_check_off_thread(monkeypatch):
 
     window = Window()
 
-    cast_ui_timers.UiTimerMixin._start_window_timers(window)
+    cast_ui_timers.UiTimerController(window)._start_window_timers()
 
     assert streamer.require_compatible_ffmpeg in queued

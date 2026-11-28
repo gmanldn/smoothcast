@@ -1054,7 +1054,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "portal_peers_box" in card
     assert "local network" in card
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
-    assert "self._refresh_portal()" in methods["_start_window_timers"]
+    assert "w._refresh_portal()" in methods["_start_window_timers"]
     assert "self._refresh_portal()" not in methods["__init__"]
     assert 'plan.run("portal", self._stop_portal)' in methods["_on_close"]
     assert "_sync_portal_activity_timer" in methods["_refresh_portal"]

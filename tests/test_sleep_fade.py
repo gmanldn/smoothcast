@@ -184,6 +184,6 @@ def test_window_wiring_uses_the_fader_and_a_timer():
     text = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
     assert "sleep_fade.make_fader(Async.run)" in text
     timers = (ROOT / "src" / "cast_ui_timers.py").read_text(encoding="utf-8")
-    assert 'self._set_ui_timer("fade", schedule.fade_ms, self._scheduled_fade_tick)' in timers
+    assert 'w._set_ui_timer("fade", schedule.fade_ms, w._scheduled_fade_tick)' in timers
     assert "def _sleep_fade_tick" in (ROOT / "src" / "cast_settings.py").read_text(encoding="utf-8")
     assert '"sleep_fade_seconds": 30' in (ROOT / "src" / "cast_widgets.py").read_text(encoding="utf-8")
