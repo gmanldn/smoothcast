@@ -99,6 +99,8 @@ def _launch_installed(root: Path, args: list[str], *, updated: bool = False) -> 
     try:
         # Mark the hand-off so two launchers can never bounce between each other.
         env = {**os.environ, "SMOOTHCAST_HANDOFF": "1"}
+        if (ROOT / ".git").exists():
+            env["SMOOTHCAST_LAUNCH_SOURCE"] = str(ROOT.resolve())
         if updated:
             env["SMOOTHCAST_UPDATE_APPLIED"] = "1"
         return subprocess.call([sys.executable, str(script), *args], env=env)
@@ -120,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def _main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    latest_tip_env = "SMOOTHCAST_LATEST_DEVELOP_TIP"
+    confirmed_tip = (os.environ.get(latest_tip_env)
+                     if os.environ.get("SMOOTHCAST_UPDATE_APPLIED") else None)
+    if not os.environ.get("SMOOTHCAST_UPDATE_APPLIED"):
+        os.environ.pop(latest_tip_env, None)
     if sys.version_info < (3, 10):
         print("SmoothCast needs Python 3.10+; run the platform setup script first.",
               file=sys.stderr)
@@ -202,6 +209,8 @@ def _main(argv: list[str] | None = None) -> int:
         code = installed_update.refresh(ROOT, target, lambda: launch.gui_instances(all_installations=True))
         if code:
             return code
+        confirmed_tip = os.environ.get(latest_tip_env)
+        os.environ.pop("SMOOTHCAST_LAUNCH_SOURCE", None)
         if checkout_refresh.installed_revision(ROOT) != before:
             return _launch_installed(ROOT, args, updated=True)
     if not launch.runtime_ready():
@@ -234,8 +243,13 @@ def _main(argv: list[str] | None = None) -> int:
 
     version = checkout_refresh.read_version(ROOT)
     if version is not None:
+        if installed == ROOT.resolve() and not portable:
+            confirmed_tip = os.environ.pop(latest_tip_env, None) or confirmed_tip
+        revision = checkout_refresh.installed_revision(ROOT)
         checkout_refresh.announce(
-            version, checkout_refresh.installed_revision(ROOT), "Loading selected runtime version",
+            version, revision,
+            "Starting latest develop version" if confirmed_tip else "Loading selected runtime version",
+            latest_develop=(confirmed_tip is not None and confirmed_tip == revision),
         )
     return launch.main(args, prechecked=True)
 

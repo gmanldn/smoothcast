@@ -250,6 +250,25 @@ def test_relaunched_build_does_not_repeat_remote_check(entry, monkeypatch):
     sys.modules["installed_update"].refresh.assert_not_called()
     runtime.main.assert_called_once_with([], prechecked=True)
 
+
+def test_clean_start_names_latest_confirmed_develop_build(entry):
+    import os
+
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    revision = "a" * 40
+    sys.modules["checkout_refresh"].installed_revision.return_value = revision
+
+    def refresh(*_args):
+        os.environ["SMOOTHCAST_LATEST_DEVELOP_TIP"] = revision
+        return 0
+
+    sys.modules["installed_update"].refresh.side_effect = refresh
+    assert module.main([]) == 0
+    sys.modules["checkout_refresh"].announce.assert_called_once_with(
+        (2, 0, 5), revision, "Starting latest develop version", latest_develop=True)
+    runtime.main.assert_called_once_with([], prechecked=True)
+
 def _real_sc():
     loader = importlib.machinery.SourceFileLoader("sc_real_launcher", str(ROOT / "sc.py"))
     module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
@@ -306,3 +325,4 @@ def test_handoff_child_receives_marker_and_arguments(monkeypatch, tmp_path):
     assert module._launch_installed(tmp_path, ["a b.mkv"]) == 0
     cmd, kw = calls[0]
     assert cmd[-1] == "a b.mkv" and kw["env"]["SMOOTHCAST_HANDOFF"] == "1"
+    assert kw["env"]["SMOOTHCAST_LAUNCH_SOURCE"] == str(module.ROOT.resolve())

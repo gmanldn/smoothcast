@@ -112,7 +112,7 @@ def test_current_build_announces_exact_version_and_local_scope(roots, monkeypatc
     message = capsys.readouterr().err
     assert "Loading latest checked-out version v2.0.3" in message
     assert SHA[:12] in message
-    assert "remote freshness not checked" in message
+    assert "develop freshness not checked" in message
 
 
 def test_refresh_announces_latest_only_after_copy_verification(roots, monkeypatch, capsys):

@@ -15,6 +15,53 @@ import managed_startup
 ORIGIN = "https://github.com/gmanldn/smoothcast.git"
 BRANCH = "refs/heads/develop"
 COMMIT = re.compile(r"[0-9a-f]{40}")
+LATEST_TIP_ENV = "SMOOTHCAST_LATEST_DEVELOP_TIP"
+
+
+def _source_at_tip(source: Path, installed: Path, tip: str) -> Path | None:
+    """Only use a clean official develop checkout when it matches the pinned tip."""
+    try:
+        if not source.is_absolute():
+            return None
+        source = source.resolve(strict=True)
+        destination = installed.resolve()
+        if (source == destination or source in destination.parents or destination in source.parents
+                or not (source / ".git").exists()
+                or not (source / "setup" / "bootstrap.py").is_file()
+                or 'name = "smoothcast"' not in
+                (source / "pyproject.toml").read_text(encoding="utf-8")):
+            return None
+        head = _git(source, "rev-parse", "--verify", "HEAD", timeout=5)
+        branch = _git(source, "symbolic-ref", "--short", "HEAD", timeout=5)
+        origin = _git(source, "remote", "get-url", "origin", timeout=5).rstrip("/")
+        clean = checkout_refresh.install_location._clean_source_revision(source)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    official = {
+        ORIGIN.removesuffix(".git"),
+        "git@github.com:gmanldn/smoothcast",
+        "ssh://git@github.com/gmanldn/smoothcast",
+    }
+    if (head != tip or clean != tip or branch != "develop"
+            or origin.removesuffix(".git") not in official):
+        return None
+    return source
+
+
+def _local_source_at_tip(installed: Path, tip: str) -> Path | None:
+    """Resolve the invoking checkout or install-recorded checkout, independent of cwd."""
+    requested = os.environ.pop("SMOOTHCAST_LAUNCH_SOURCE", None)
+    candidates = []
+    if isinstance(requested, str) and requested:
+        candidates.append(Path(requested))
+    registered = checkout_refresh.installed_source(installed)
+    if registered is not None:
+        candidates.append(registered)
+    for source in candidates:
+        accepted = _source_at_tip(source, installed, tip)
+        if accepted is not None:
+            return accepted
+    return None
 
 
 def _git(repo: Path, *args: str, timeout: int = 30) -> str:
@@ -40,6 +87,7 @@ def refresh(installed: Path, target: str, running) -> int:
             if not sep or ref != BRANCH or not COMMIT.fullmatch(tip):
                 raise managed_source.SourceError("develop did not resolve to a commit")
             if tip == previous:
+                os.environ[LATEST_TIP_ENV] = tip
                 return 0
 
             print("SmoothCast: checking the newer develop build…", file=sys.stderr, flush=True)
@@ -60,9 +108,25 @@ def refresh(installed: Path, target: str, running) -> int:
                     except subprocess.CalledProcessError:
                         continue
                 else:
-                    raise managed_source.SourceError("develop build has no trusted signature") from None
+                    # Agent commits can be unsigned. Preserve signature policy for
+                    # downloaded candidates; an explicitly registered, clean local
+                    # develop checkout may supply the exact pinned tip instead.
+                    local_source = _local_source_at_tip(installed, tip)
+                    if local_source is None:
+                        raise managed_source.SourceError("develop build has no trusted signature") from None
+                    print("SmoothCast: using the clean local develop checkout for the "
+                          f"pinned build {tip[:12]}.", file=sys.stderr, flush=True)
+                    code = checkout_refresh.refresh(
+                        local_source, installed, target, running, verified_tip=tip)
+                    if code == 0 and checkout_refresh.installed_revision(installed) == tip:
+                        os.environ[LATEST_TIP_ENV] = tip
+                    return code
             _git(source, "-c", "core.hooksPath=/dev/null", "reset", "--hard", tip)
-            return checkout_refresh.refresh(source, installed, target, running)
+            code = checkout_refresh.refresh(source, installed, target, running,
+                                            verified_tip=tip)
+            if code == 0 and checkout_refresh.installed_revision(installed) == tip:
+                os.environ[LATEST_TIP_ENV] = tip
+            return code
     except (OSError, subprocess.SubprocessError, managed_source.SourceError) as exc:
         reason = str(exc) if isinstance(exc, managed_source.SourceError) else type(exc).__name__
         print(f"SmoothCast: develop update unavailable ({reason}); loading installed build.",

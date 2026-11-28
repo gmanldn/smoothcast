@@ -91,14 +91,17 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
         return None
 
 
-def announce(version: tuple[int, int, int], revision: str | None, reason: str) -> None:
+def announce(version: tuple[int, int, int], revision: str | None, reason: str,
+             *, latest_develop: bool = False) -> None:
     label = "v" + ".".join(map(str, version))
     build = f" (build {revision[:12]})" if revision else " (build unknown)"
-    print(f"SmoothCast: {reason} {label}{build}; remote freshness not checked.",
+    freshness = "latest develop confirmed." if latest_develop else "develop freshness not checked."
+    print(f"SmoothCast: {reason} {label}{build}; {freshness}",
           file=sys.stderr, flush=True)
 
 
-def refresh(root: Path, installed: Path, target: str, running) -> int:
+def refresh(root: Path, installed: Path, target: str, running,
+            *, verified_tip: str | None = None) -> int:
     """Return zero when handoff can proceed; a skipped refresh loads the installed build."""
     source_version = read_version(root)
     installed_version = read_version(installed)
@@ -129,7 +132,8 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
     # behind it is still usable, so never refuse to start over it; only skip
     # the automatic refresh and load the installed build.
     if source_version == installed_version and previous and previous == revision:
-        announce(installed_version, previous, "Loading latest checked-out version")
+        announce(installed_version, previous, "Loading latest checked-out version",
+                 latest_develop=(revision == verified_tip))
         return 0
     # If the installed revision is newer on the same lineage, retain it.
     if source_version == installed_version and previous and revision:
@@ -193,5 +197,6 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         print("SmoothCast: installed refresh did not verify the requested build; "
               "refusing stale startup.", file=sys.stderr)
         return 1
-    announce(source_version, clean, "Loading latest local develop version")
+    announce(source_version, clean, "Loading latest local develop version",
+             latest_develop=(clean == verified_tip))
     return 0
