@@ -44,7 +44,7 @@ def test_desktop_rename_uses_existing_config_and_status(monkeypatch):
     source = Path(__file__).resolve().parents[1] / "src" / "cast_portal_room.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef)
-               and n.name == "PortalRoomMixin")
+               and n.name == "PortalRoomController")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
                   and n.name == "_rename_portal_room")
     calls = []
@@ -54,10 +54,10 @@ def test_desktop_rename_uses_existing_config_and_status(monkeypatch):
                             _publish_portal_status=lambda: calls.append("publish"),
                             toast=lambda message: calls.append(message))
     rename = namespace["_rename_portal_room"]
-    rename(owner, "  Cinema  ")
+    rename(SimpleNamespace(w=owner, save=lambda cfg: calls.append(("save", dict(cfg)))), "  Cinema  ")
     assert owner.cfg["room_name"] == "Cinema"
     assert calls == [("save", {"room_name": "Cinema"}), "publish", "Room name updated"]
-    rename(owner, "Cinema")
+    rename(SimpleNamespace(w=owner, save=lambda cfg: calls.append(("save", dict(cfg)))), "Cinema")
     assert len(calls) == 3
 
 

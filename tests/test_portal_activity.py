@@ -67,8 +67,7 @@ def _build_window(tmp_path, *, idle_add=None):
     code = "\n".join(textwrap.indent(methods[name], "    ") for name in (
         "_portal_upload_path", "_portal_queue_action", "_portal_handle",
         "_portal_note_display_name",
-        "_portal_dispatch", "_publish_portal_status",
-        "_portal_apply_music_autogain"))
+        "_portal_dispatch"))
     idle: list = []
     namespace = {
         "portal": SimpleNamespace(PortalRequestError=_PortalRequestError),
@@ -87,6 +86,10 @@ def _build_window(tmp_path, *, idle_add=None):
     window = namespace["Window"]()
     import portal_upload_recovery
     recovery = portal_upload_recovery.PortalUploadRecoveryController(window, glib=namespace["GLib"])
+    import cast_portal_room
+    room = cast_portal_room.PortalRoomController(window, save=namespace["save_config"])
+    window._publish_portal_status = room._publish_portal_status
+    window._portal_apply_music_autogain = room._portal_apply_music_autogain
     window._reconcile_portal_casts = recovery.reconcile
     window._retry_portal_cast = recovery.retry
     saved = []

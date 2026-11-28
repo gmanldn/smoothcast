@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import ast
 import sys
-import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,11 +20,13 @@ sys.path.insert(0, str(ROOT / "setup"))  # setup/launch.py is GTK-free by design
 
 def _reload_window():
     """A bare ``Window`` carrying the real ``reload_house_services`` method."""
-    source = main_window_methods()["reload_house_services"]
-    code = "class Window:\n" + textwrap.indent(textwrap.dedent(source), "    ") + "\n"
-    namespace: dict = {}
-    exec(compile(code, "<service-reload>", "exec"), namespace)  # noqa: S102
-    return namespace["Window"]()
+    import cast_portal_room
+
+    class Window:
+        def __init__(self):
+            self.reload_house_services = cast_portal_room.PortalRoomController(self).reload_house_services
+
+    return Window()
 
 
 def test_reload_stops_then_rebuilds_room_mesh_indexer_and_heartbeat():

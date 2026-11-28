@@ -123,8 +123,7 @@ def test_real_window_timer_callbacks_under_fake_glib_clock():
 
     names = ("_set_ui_timer", "_sync_ui_timers", "_ui_playing",
              "_scheduled_sleep_tick", "_scheduled_fade_tick", "_stop_ui_timers",
-             "_hidden_watchdog_tick", "_resume_seek_tick", "_cancel_seek_resume",
-             "_sync_portal_activity_timer")
+             "_hidden_watchdog_tick", "_resume_seek_tick", "_cancel_seek_resume")
     sources = main_window_methods()
     code = "class Window:\n" + "\n".join(
         textwrap.indent(textwrap.dedent(sources[name]), "    ") + "\n"
@@ -135,6 +134,9 @@ def test_real_window_timer_callbacks_under_fake_glib_clock():
                  "stream_watchdog": __import__("stream_watchdog")}
     exec(compile(code, "<headless-timers>", "exec"), namespace)  # noqa: S102
     window = namespace["Window"]()
+    import cast_portal_room
+    window._sync_portal_activity_timer = cast_portal_room.PortalRoomController(
+        window, glib=clock)._sync_portal_activity_timer
     window._timers_enabled = True
     window._closing = False
     window._timer_ids = {}
