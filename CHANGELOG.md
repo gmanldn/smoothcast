@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d069557f4c31e581a31ab3b4bab72df8d1567328 -->
+<!-- sc-changelog-through: aa1305cf84266b715fc76d7efdc5532efc8ea4ae -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **07:25:40 · Fix** — fix(encoder): bound FFmpeg diagnostics before retry (Refs #733) <!-- sc-changelog-pending -->
+- 🟪 **07:26:27 · Tests** — test: repair stale headless and UI parity checks (Refs #699) <!-- sc-changelog-pending -->
+
+- 🟥 **07:25:48 · Fix** — fix(encoder): bound FFmpeg diagnostics before retry (Refs #733) · [`aa1305cf8426`](https://github.com/gmanldn/smoothcast/commit/aa1305cf84266b715fc76d7efdc5532efc8ea4ae)
 
 - ⬜ **07:25:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d069557f4c31`](https://github.com/gmanldn/smoothcast/commit/d069557f4c31e581a31ab3b4bab72df8d1567328)
 

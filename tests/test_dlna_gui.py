@@ -11,8 +11,8 @@ METHODS = main_window_methods()
 class DlnaGuiContracts(unittest.TestCase):
     def test_both_discovery_protocols_are_present_and_async(self):
         scan = METHODS["scan_devices"]
-        self.assertIn("castctl.scan", scan)
-        self.assertIn("dlna.discover", scan)
+        self.assertRegex(scan, r"castctl\.scan\b")
+        self.assertRegex(scan, r"dlna\.discover\b")
         self.assertIn("Async.run(work", scan)
         done = METHODS["_scan_done"]
         self.assertIn("self._dlna_by_key", done)

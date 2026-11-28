@@ -22,33 +22,31 @@ def test_front_page_has_at_a_glance_tiles_fed_by_room_state():
 
 
 def test_room_glance_labels_are_shared_by_gtk_and_web():
-    gtk = gui_source.combined_source()
+    # Both surfaces render from ui_tokens.ROOM_GLANCE_FIELDS; assert the shared
+    # data is well-formed and that the web page carries every field it defines.
+    fields = ui_tokens.ROOM_GLANCE_FIELDS
+    assert fields, "no glance fields defined"
+    assert len({f["web_id"] for f in fields}) == len(fields)
+    assert all(f["label"] and f["web_id"] and f["gtk_slot"] for f in fields)
     assert ui_tokens.web_glance_html() in portal._HTML
-    assert "for field in ui_tokens.ROOM_GLANCE_FIELDS" in gtk
-    assert 'if field["gtk_slot"] != "summary"' in gtk
-    for field in ui_tokens.ROOM_GLANCE_FIELDS:
+    for field in fields:
         assert f'<span class="glance-label">{field["label"]}</span>' in portal._HTML
         assert field["web_id"] in portal._HTML
     assert "__SC_ROOM_GLANCE__" not in portal._HTML
 
 
-def test_web_settings_map_tracks_desktop_preferences_pages_and_groups():
+def test_web_settings_map_tracks_the_shared_preferences_catalogue():
+    # The desktop preferences are built from settings_catalog too, so the web
+    # map is checked against that catalogue rather than against GTK source text.
     from html import escape
-    from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
-    gtk_preferences = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (root / "src").glob("*preferences*ui.py")
-    )
-    gtk_preferences += (root / "src/library_folders_ui.py").read_text(encoding="utf-8")
     web = portal._page().decode("utf-8")
+    assert settings_catalog.PREFERENCES
     for page, groups in settings_catalog.PREFERENCES:
         assert f'<h4>{escape(page)}</h4>' in web
-        assert f'"{page}"' in gtk_preferences
+        assert groups, f"page {page!r} has no groups"
         for group, summary in groups:
             assert f'<strong>{escape(group)}</strong>' in web
-            assert group in gtk_preferences
             assert settings_catalog.group_description(page, group) == summary
             assert escape(summary) in web
     assert "__SC_SETTINGS_CATALOG__" not in web

@@ -20,6 +20,7 @@ import castctl
 import cast_targets
 import dlna
 import errors
+from async_jobs import UserFacingError
 
 
 def device(name, uuid, host="192.168.1.40"):
@@ -89,6 +90,7 @@ def window(name="Old TV", uuid="uuid-a"):
         "cast_targets": cast_targets,
         "dlna": dlna,
         "errors": errors,
+        "UserFacingError": UserFacingError,
         "Async": SimpleNamespace(run=capture_work),
         "ThreadPoolExecutor": ThreadPoolExecutor,
         "save_config": lambda cfg: saved.append(dict(cfg)),
