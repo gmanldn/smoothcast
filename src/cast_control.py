@@ -59,13 +59,10 @@ from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
 class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
-    def _retry_action(self):
-        """(label, callback) for the recovery plan's first option, or None (#13, #691)."""
-        return self._retry.action()
-
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._retry_action = self._retry.action  # (label, callback) | None (#13, #691)
         self.app = app
         self.cfg = load_config()
         self.connect("notify::is-active", self._refresh_config_on_focus)

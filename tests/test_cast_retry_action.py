@@ -18,7 +18,7 @@ import cast_retry_ui
 import retry_component
 from gui_source import main_window_methods
 
-NAMES = ("_cast_failed", "_retry_action")
+NAMES = ("_cast_failed",)
 
 
 def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
@@ -36,6 +36,7 @@ def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
     class Window(ns["H"]):
         def __init__(self):
             self._retry = cast_retry_ui.RetryController(self)
+            self._retry_action = self._retry.action
             self.session, self.busy, self._closing = session, busy, closing
             self._dlna_cancel = None
             self._finished_handled = False
