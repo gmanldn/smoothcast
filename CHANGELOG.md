@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 8b8f3790b4b2bccb09de22ee4a2baf033eb39b4e -->
+<!-- sc-changelog-through: 24179eafd1db5d01b7c12987fcea0f9498a16b58 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:58:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:59:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:59:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`24179eafd1db`](https://github.com/gmanldn/smoothcast/commit/24179eafd1db5d01b7c12987fcea0f9498a16b58)
+
+- 🟥 **05:59:06 · Fix** — fix(screens): reject a reused command ID that carries a different intent · [`695596ad7f19`](https://github.com/gmanldn/smoothcast/commit/695596ad7f19cd1424e3777ff6e535ab820a45a5)
 
 - ⬜ **05:58:38 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8b8f3790b4b2`](https://github.com/gmanldn/smoothcast/commit/8b8f3790b4b2bccb09de22ee4a2baf033eb39b4e)
 
 - 🟥 **05:58:38 · Fix** — fix: show why Update is unavailable (dirty checkout or wrong branch) instead of hiding the button (Refs #711) · [`4e055922921f`](https://github.com/gmanldn/smoothcast/commit/4e055922921f15a7ef5425d0017986af428d0479)
+
+- ⬜ **05:58:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ce35889e1daf`](https://github.com/gmanldn/smoothcast/commit/ce35889e1daf61b5e4b46ed94b4aadb716d14e32)
 
 - ⬜ **05:58:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2183c0d0b10d`](https://github.com/gmanldn/smoothcast/commit/2183c0d0b10dc1e277c28c7414324513804a8e7c)
 
