@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 002bcaa3fc58414c7dd3c03e8ef91835daa5b0a3 -->
+<!-- sc-changelog-through: 3453a14d606fae591ffeba25469008cb7d2660af -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:07:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:08:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:08:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3453a14d606f`](https://github.com/gmanldn/smoothcast/commit/3453a14d606fae591ffeba25469008cb7d2660af)
+
+- 🟩 **07:08:08 · Feature** — feat: Stripe Payment Link donate entry in About dialog (Refs #763) · [`71b88a2396fd`](https://github.com/gmanldn/smoothcast/commit/71b88a2396fd326e67798d73b4592701a6745656)
 
 - ⬜ **07:07:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`002bcaa3fc58`](https://github.com/gmanldn/smoothcast/commit/002bcaa3fc58414c7dd3c03e8ef91835daa5b0a3)
+
+- ⬜ **07:07:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`188c74d6b268`](https://github.com/gmanldn/smoothcast/commit/188c74d6b268810b25ad314571905a13f31ed8c0)
 
 - 🟥 **07:07:01 · Fix** — fix(tests): fix the three #708 shared-model reds instead of quarantining them · [`f8c509319277`](https://github.com/gmanldn/smoothcast/commit/f8c5093192776a6084c6fdec3d100e8a4afa766b)
 
