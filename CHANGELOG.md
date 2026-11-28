@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f8aed8863487655292326c30183e081e08f6218a -->
+<!-- sc-changelog-through: 53162a1a3197961d172f13179521d2018e55ce6a -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:00:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:00:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:00:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`53162a1a3197`](https://github.com/gmanldn/smoothcast/commit/53162a1a3197961d172f13179521d2018e55ce6a)
+
+- 🟥 **05:00:35 · Fix** — fix: preserve options in Cast media timeout adapter (Refs #202) · [`7e4b4be1fee4`](https://github.com/gmanldn/smoothcast/commit/7e4b4be1fee4815079818f1f14fa52f51c563379)
 
 - ⬜ **05:00:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f8aed8863487`](https://github.com/gmanldn/smoothcast/commit/f8aed8863487655292326c30183e081e08f6218a)
+
+- ⬜ **05:00:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a6786a2abc32`](https://github.com/gmanldn/smoothcast/commit/a6786a2abc32f84c99bff9eb6ba0dd00b6964b08)
 
 - 🟩 **04:59:39 · Feature** — feat(room): name online people in Home glance (Refs #709) · [`2a366b25b95a`](https://github.com/gmanldn/smoothcast/commit/2a366b25b95a7e694baf75c37dd113ca99e20319)
 
