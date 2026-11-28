@@ -182,9 +182,45 @@ def test_a_late_report_cannot_overwrite_a_newer_play(registry):
     screen = make(registry)
     play(registry, screen, item="one")
     play(registry, screen, item="two")
-    registry.report(screen.id, "k1", {"state": "ended", "play_seq": 1})
-    assert registry.snapshot()[0]["state"] == "loading"
-    assert registry.snapshot()[0]["item"] == "two"
+    before = registry.snapshot()[0]
+    registry.report(screen.id, "k1", {
+        "state": "error", "play_seq": 1, "position": 51,
+        "duration": 999, "volume": 7, "error": "old film failed",
+    })
+    after = registry.snapshot()[0]
+    for field in ("state", "position", "duration", "volume", "error", "item"):
+        assert after[field] == before[field]
+
+
+def test_missing_or_invalid_generation_is_ignored_after_play_and_stop(registry, clock):
+    screen = make(registry)
+    play(registry, screen, item="one")
+    play(registry, screen, item="two")
+    before = registry.snapshot()[0]
+    last_seen = screen.last_seen
+    last_seen = screen.last_seen
+    clock.now += 5
+    registry.report(screen.id, "k1", {
+        "state": "error", "position": 41, "duration": 500,
+        "volume": 2, "error": "ambiguous report",
+    })
+    after = registry.snapshot()[0]
+    for field in ("state", "position", "duration", "volume", "error", "item"):
+        assert after[field] == before[field]
+    assert screen.last_seen > last_seen
+
+    registry.command(screen.id, "stop")
+    stopped = registry.snapshot()[0]
+    registry.report(screen.id, "k1", {
+        "state": "error", "play_seq": 2, "position": 8,
+        "duration": 100, "volume": 3, "error": "before stop",
+    })
+    assert registry.snapshot()[0]["state"] == stopped["state"]
+    registry.report(screen.id, "k1", {
+        "state": "error", "play_seq": 3, "position": 8,
+        "duration": 100, "volume": 3, "error": "after stop",
+    })
+    assert registry.snapshot()[0]["state"] == "error"
 
 
 def test_report_validation(registry):

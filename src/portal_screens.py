@@ -364,24 +364,28 @@ class ScreenRegistry:
             if (isinstance(ack, int) and not isinstance(ack, bool)
                     and 0 <= ack <= screen.seq):
                 screen.ack = max(screen.ack, ack)
-            screen.position = _number(report.get("position")) or 0.0
-            duration = _number(report.get("duration"))
-            if duration is not None and duration > 0:
-                screen.duration = duration
-            volume = report.get("volume")
-            if (isinstance(volume, int) and not isinstance(volume, bool)
-                    and 0 <= volume <= 100):
-                screen.volume = volume
-            error = report.get("error")
-            screen.error = clean_text(error, 120) if state == "error" else ""
             previous = screen.state
-            # Only trust a report about the order currently in force; a late
-            # report from an older play must not overwrite newer state.
+            # Legacy clients omit play_seq. Accept them only before any play or
+            # stop generation exists; otherwise their playback evidence is
+            # ambiguous and may describe an item that has already been replaced.
             about = report.get("play_seq")
-            current = (not isinstance(about, int) or isinstance(about, bool)
-                       or about == screen.play_seq)
+            current = (
+                (isinstance(about, int) and not isinstance(about, bool)
+                 and about == screen.play_seq)
+                or ("play_seq" not in report and screen.play_seq == 0)
+            )
             advance = ""
             if current:
+                screen.position = _number(report.get("position")) or 0.0
+                duration = _number(report.get("duration"))
+                if duration is not None and duration > 0:
+                    screen.duration = duration
+                volume = report.get("volume")
+                if (isinstance(volume, int) and not isinstance(volume, bool)
+                        and 0 <= volume <= 100):
+                    screen.volume = volume
+                error = report.get("error")
+                screen.error = clean_text(error, 120) if state == "error" else ""
                 screen.state = state
                 if state == "ended" and previous != "ended" and screen.follow \
                         and screen.item:
