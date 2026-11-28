@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import cast_portal
+import cast_portal_host
 import cast_widgets
 import portal
 import preference_choices
@@ -29,6 +30,8 @@ def _window(is_host=True):
     window = object.__new__(cast_portal.PortalMixin)
     window._closing = False
     window._syncing = False
+    window._sync_host_setting_widgets = cast_portal_host.PortalHostController(
+        window)._sync_host_setting_widgets
     window._portal = SimpleNamespace(server=_HostServer(is_host))
     window.cfg = {
         "color_scheme": "prefer-dark", "auto_theme": True,
