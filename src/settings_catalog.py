@@ -9,8 +9,6 @@ from __future__ import annotations
 from html import escape
 from typing import Literal, TypedDict
 
-import preference_choices
-
 
 class HostControl(TypedDict):
     group: str
@@ -96,6 +94,7 @@ class HostSettingError(ValueError):
 
 def validate_host_setting(key: object, value: object) -> tuple[str, object]:
     """Validate a deliberately small host-only allowlist and exact value types."""
+    import preference_choices  # deferred: it pulls loudness (subprocess) into core importers
     if not isinstance(key, str) or key not in HOST_CONTROLS:
         raise HostSettingError("That host setting cannot be changed from the web room")
     descriptor = HOST_CONTROLS[key]
@@ -125,6 +124,7 @@ def host_setting_values(config: object) -> dict[str, object]:
 
 def host_controls_html() -> str:
     """Host-only controls; values arrive only after host authorization."""
+    import preference_choices  # deferred: it pulls loudness (subprocess) into core importers
     groups: dict[str, list[str]] = {}
     for key, descriptor in HOST_CONTROLS.items():
         ident = "hostSetting-" + key

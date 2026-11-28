@@ -116,8 +116,10 @@ def test_ui_checks_runtime_before_stopping_existing_cast_for_new_or_restart():
     actions = main_window_methods()
     cast = actions["_cast_path"].split("def work():", 1)[1]
     restart = actions["_restart_at"].split("def work():", 1)[1]
-    assert cast.index("streamer.require_compatible_ffmpeg()") < (
-        cast.index("previous.stop(device"))
+    # The check runs in the parallel preflight; its result is collected (and any
+    # failure raised) before the previous cast is stopped.
+    assert "workers.submit(streamer.require_compatible_ffmpeg)" in cast
+    assert cast.index("ffmpeg_future.result()") < cast.index("previous.stop(device")
     assert restart.index("streamer.require_compatible_ffmpeg()") < (
         restart.index("session.stop(device, send_stop=False)")
     )

@@ -187,7 +187,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     subs_path = subs_future.result() if subs_future is not None else picked_subs_path
                     media, prewarm_fingerprint = media_future.result()
                     ffmpeg_future.result()
-                except Exception:
+                except Exception:  # noqa: BLE001 - cancel the sibling checks, then re-raise
                     for future in (subs_future, media_future, ffmpeg_future):
                         if future is not None:
                             future.cancel()

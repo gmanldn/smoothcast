@@ -13,7 +13,7 @@ BANNED = {"gi", "subprocess", "socket", "socketserver", "http", "urllib", "async
 CORE = [
     "action_state", "api_spec", "audio_delay", "hw_encoder_state", "paths", "picture_adjustments",
     "playback_state", "room_layout", "store", "settings", "stream_health", "subtitle_style",
-    "ui_tokens", "shutdown_plan", "errors",
+    "ui_tokens", "shutdown_plan", "errors", "settings_catalog",
 ]
 
 
