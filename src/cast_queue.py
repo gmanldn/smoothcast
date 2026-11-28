@@ -237,7 +237,7 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
     def clear_queue(self) -> None:
         self._cancel_queue_prewarm()
-        self.queue.clear()
+        QueueComponent(self.queue).clear()
         self.selected_index = None
         self._retire_unqueued_preview()
         self._rebuild_queue()
