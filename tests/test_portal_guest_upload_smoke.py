@@ -364,3 +364,67 @@ def test_guest_upload_pause_then_resume_delivers_once(guest_room, monkeypatch, t
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+def test_guest_upload_resumes_after_page_reload(guest_room, monkeypatch, tmp_path):
+    """#570: after a reload the guest reselects the same file and Resume finishes once."""
+    import threading
+    import time
+    from playwright.sync_api import expect, sync_playwright
+
+    rig, uploads, deliveries = guest_room
+    audio = tmp_path / "reload.wav"
+    audio.write_bytes(_audio_bytes())
+    original_append = uploads.append
+    entered = threading.Event()
+    calls = []
+
+    def slow_first_append(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            entered.set()
+            time.sleep(3)
+        return original_append(*args, **kwargs)
+
+    monkeypatch.setattr(uploads, "append", slow_first_append)
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Reload guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.locator("#videoFile").set_input_files(str(audio))
+            page.locator("#uploadButton").click()
+            for _ in range(100):  # never block Playwright's loop with a threading wait
+                if entered.is_set():
+                    break
+                page.wait_for_timeout(100)
+            assert entered.is_set()
+            expect(page.locator("#pauseUpload")).to_be_visible()
+            page.locator("#pauseUpload").click()
+            expect(page.locator("#uploadStatus")).to_contain_text("Paused", timeout=15000)
+            expect(page.locator("#uploadButton")).to_contain_text("Resume", timeout=15000)
+            expect(page.locator("#uploadButton")).to_be_enabled()
+            page.reload(wait_until="domcontentloaded")
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.locator("#videoFile").set_input_files(str(audio))
+            expect(page.locator("#uploadButton")).to_contain_text("Resume", timeout=15000)
+            expect(page.locator("#uploadButton")).to_be_enabled()
+            page.locator("#uploadButton").click()
+            expect(page.locator("#transferDelivery")).to_have_text("Added to Up Next", timeout=20000)
+            expect(page.locator("#transferPercent")).to_have_text("100%")
+            assert deliveries == [("queue_add", audio.name,
+                                   hashlib.sha256(audio.read_bytes()).hexdigest())]
+        finally:
+            context.close()
+            browser.close()
