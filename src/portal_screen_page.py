@@ -222,17 +222,17 @@ function apply(o){
   else if(o.kind==="volume"){video.volume=o.value/100}
   else if(o.kind==="stop"){playSeq=o.seq;stopPlayback()}
   report(true,o.seq)}
-let transcoded=false,baseStart=0;
+let transcoded=false,baseStart=0,activeUrl=null;
 function load(url,start,convert){
-  transcoded=!!convert;baseStart=start||0;clearTimeout(stallTimer);
+  activeUrl=url;transcoded=!!convert;baseStart=start||0;clearTimeout(stallTimer);
   const src=convert?url+(url.includes("?")?"&":"?")+"start="+encodeURIComponent(baseStart):url;
   video.src=src;video.load();
   if(!convert&&baseStart){video.addEventListener("loadedmetadata",()=>{safe(()=>{video.currentTime=baseStart})},{once:true})}
   tryPlay()}
 async function tryPlay(){try{await video.play()}catch(err){if(err&&err.name==="NotAllowedError"){banner("Tap the screen to start playback")}}}
 function position(){return transcoded?baseStart+(video.currentTime||0):(video.currentTime||0)}
-function seekTo(t){t=Math.max(0,Number(t)||0);if(transcoded){load(current.url,t,true)}else{safe(()=>{video.currentTime=t})}}
-function stopPlayback(){current=null;clearTimeout(stallTimer);video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
+function seekTo(t){t=Math.max(0,Number(t)||0);if(transcoded){load(activeUrl,t,true)}else{safe(()=>{video.currentTime=t})}}
+function stopPlayback(){current=null;activeUrl=null;transcoded=false;baseStart=0;clearTimeout(stallTimer);video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
 document.addEventListener("click",()=>{if(current&&video.paused&&!$("banner").hidden)tryPlay();wake()});
 function state(){
   if(!current)return"idle";if(video.error)return"error";if(video.ended)return"ended";
@@ -265,7 +265,7 @@ video.addEventListener("error",()=>{
   // A converted stream can drop while paused or buffering: resume where we were.
   if(transcoded&&Date.now()-recoverAt>4000&&video.error&&video.error.code===2){recover();return}
   report(true)});
-function recover(){if(!current||!transcoded)return;recoverAt=Date.now();const at=position();load(current.url,at,true)}
+function recover(){if(!current||!transcoded||!activeUrl)return;recoverAt=Date.now();const at=position();load(activeUrl,at,true)}
 function wake(){const hud=$("hud"),tools=$("tools"),home=$("homeLink"),ver=$("scVersion");hud.classList.remove("hide");tools.classList.remove("hide");home.classList.remove("hide");ver.classList.remove("hide");clearTimeout(hideTimer);
   hideTimer=setTimeout(()=>{if(!video.paused&&!$("player").hidden){hud.classList.add("hide");tools.classList.add("hide");home.classList.add("hide");ver.classList.add("hide")}},3500)}
 document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(!e.repeat&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.target?.isContentEditable&&!["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target?.tagName)&&(!$("slate").hidden||!$("player").hidden)&&(e.key==="f"||e.key==="F")){e.preventDefault();fullscreen()}});

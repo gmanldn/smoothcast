@@ -69,6 +69,54 @@ def test_wake_lock_pip_and_dim_hint_contract():
     assert "For an iPad on a stand, turn on Guided Access" in html
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_direct_decode_fallback_route_survives_seek_recovery_and_next_item(tmp_path):
+    html = portal_screen_page.screen_page().decode()
+    script = _scripts(html)[0]
+    signatures = ("let transcoded=false,baseStart=0,activeUrl=null;", "function load(",
+                  "function position(", "function seekTo(", "function stopPlayback(",
+                  "function recover()")
+    lines = script.splitlines()
+    load_start = script.index("function load(")
+    load_end = script.index("async function tryPlay(", load_start)
+    load_code = script[load_start:load_end].strip()
+    state_line = next(line for line in lines if line.startswith(signatures[0]))
+    helpers = [line for line in lines if line.startswith(signatures[2:])]
+    assert len(helpers) == len(signatures) - 2
+    route_code = "\n".join([state_line, load_code, *helpers])
+    harness = f'''\
+let requests=[];
+let current={{url:"https://host/play?id=first&mode=direct",fallback:"https://host/play?id=first&mode=transcode"}};
+let recoverAt=0,stallTimer=null;
+const READY="Ready",video={{src:"",currentTime:0,paused:false,
+  load(){{requests.push(this.src)}},play(){{}},pause(){{this.paused=true}},
+  removeAttribute(){{this.src=""}},addEventListener(){{}}}};
+function clearTimeout(){{}}
+function tryPlay(){{}}
+function safe(fn){{try{{return fn()}}catch(_){{}}}}
+function show(){{}}
+function setSlate(){{}}
+{route_code}
+load(current.url,0,false);video.currentTime=38;
+load(current.fallback,position(),true);
+seekTo(90);video.currentTime=5;recover();
+current={{url:"https://host/play?id=second&mode=direct",fallback:"https://host/play?id=second&mode=transcode"}};
+load(current.url,0,false);
+console.log(JSON.stringify(requests));
+'''
+    result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    import json
+    requests = json.loads(result.stdout)
+    assert requests[0] == "https://host/play?id=first&mode=direct"
+    assert requests[1:4] == [
+        "https://host/play?id=first&mode=transcode&start=38",
+        "https://host/play?id=first&mode=transcode&start=90",
+        "https://host/play?id=first&mode=transcode&start=95",
+    ]
+    assert requests[4] == "https://host/play?id=second&mode=direct"
+
+
 def test_idle_screen_shows_self_hosted_join_qr_and_safe_short_address():
     html = portal_screen_page.screen_page().decode()
     assert '<div class="stage" id="slate" hidden>' in html
