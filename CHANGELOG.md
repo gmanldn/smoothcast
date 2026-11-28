@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f751d8a7de475449107281afeb238965abb89f3a -->
+<!-- sc-changelog-through: 005b7fb9e343621554e760c06ab05b12ae59392b -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:26:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:26:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:26:48 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`005b7fb9e343`](https://github.com/gmanldn/smoothcast/commit/005b7fb9e343621554e760c06ab05b12ae59392b)
+
+- ⬜ **04:26:48 · Maintenance** — chore: record justified URL callback guard growth (Refs #747) · [`847976eebb5c`](https://github.com/gmanldn/smoothcast/commit/847976eebb5cef5dd4d7eee25d78d745ed19292c)
+
+- 🟥 **04:26:48 · Fix** — fix: ignore stale remote URL cast completions (Refs #747) · [`f4ab7e0aa614`](https://github.com/gmanldn/smoothcast/commit/f4ab7e0aa614ca894b7099d3566f1ca12ce5e4bb)
 
 - ⬜ **04:26:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f751d8a7de47`](https://github.com/gmanldn/smoothcast/commit/f751d8a7de475449107281afeb238965abb89f3a)
 
 - 🟦 **04:26:09 · Refactor** — refactor(settings): share preferences group descriptions (Refs #708) · [`3a24d44e9d97`](https://github.com/gmanldn/smoothcast/commit/3a24d44e9d97adb05b3338a60e51446213050141)
+
+- ⬜ **04:26:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e7f1f02b7b41`](https://github.com/gmanldn/smoothcast/commit/e7f1f02b7b4187aa864718c883c425901eb2b02a)
 
 - 🟥 **04:22:22 · Fix** — fix(bounce): refresh and verify installed build before idle launch (Refs #626) · [`6ee0679bd3eb`](https://github.com/gmanldn/smoothcast/commit/6ee0679bd3eb5d534c681f1446cdd36d57744743)
 
