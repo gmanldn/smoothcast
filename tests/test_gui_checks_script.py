@@ -98,7 +98,7 @@ def test_demo_target_survives_config_normalisation(tmp_path, monkeypatch):
     (cfg / "config.json").write_text(json.dumps(
         {"cast_targets": [{"name": "SmoothCast Demo TV", "host": "127.0.0.1", "port": 4321}]}))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv(demo_mode.TARGET_ENV, raising=False)
+    monkeypatch.setenv(demo_mode.TARGET_ENV, "")  # registered, so the cache never leaks
     assert demo_mode.demo_target() == ("127.0.0.1", 4321, "SmoothCast Demo TV")
     (cfg / "config.json").write_text(json.dumps({"cast_targets": []}))  # the app rewrites it
     assert demo_mode.demo_target() == ("127.0.0.1", 4321, "SmoothCast Demo TV")
