@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 68136a11aa13abc6258e17f8ebcc8f240263ac73 -->
+<!-- sc-changelog-through: 64fa1f47ae046480cbe4d3fe2c7292ef97ce10bb -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **03:45:00 · Fix** — fix(runtime): fence cancelled tasks and serialize shutdown admission (Refs #696) <!-- sc-changelog-pending -->
+- ⬜ **03:46:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:46:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`64fa1f47ae04`](https://github.com/gmanldn/smoothcast/commit/64fa1f47ae046480cbe4d3fe2c7292ef97ce10bb)
+
+- 🟥 **03:46:11 · Fix** — fix: type host-setting errors, follow #708 in the portal harness, budget cast\_portal growth · [`9c185e36bea5`](https://github.com/gmanldn/smoothcast/commit/9c185e36bea52b67497d06cdca7c3127efde5891)
+
+- 🟥 **03:46:11 · Fix** — fix(tests): treat an unreaped zombie as gone in the link-worker lifecycle tests · [`a0e68bff79fb`](https://github.com/gmanldn/smoothcast/commit/a0e68bff79fbe7c17e5639febec3a8d406346e8e)
+
+- 🟥 **03:44:29 · Fix** — fix(runtime): fence cancelled tasks and serialize shutdown admission (Refs #696) · [`5f99735a98fb`](https://github.com/gmanldn/smoothcast/commit/5f99735a98fbec020f7436029319ab9f93a1e2ba)
 
 - ⬜ **03:42:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9d966f8df015`](https://github.com/gmanldn/smoothcast/commit/9d966f8df0159d3703b5c5475f91cd324adc47d2)
 
