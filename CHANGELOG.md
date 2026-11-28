@@ -8,17 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 005b7fb9e343621554e760c06ab05b12ae59392b -->
+<!-- sc-changelog-through: d83fa46b318da92519759858690e1b8eb59b6a8c -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:26:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:28:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:28:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d83fa46b318d`](https://github.com/gmanldn/smoothcast/commit/d83fa46b318da92519759858690e1b8eb59b6a8c)
+
+- 🟦 **04:28:33 · Refactor** — refactor(ui): apply caption scale across GTK and web (Refs #708) · [`c935f59243d0`](https://github.com/gmanldn/smoothcast/commit/c935f59243d061a9c4e64b3f098741bb6903c02f)
 
 - ⬜ **04:26:48 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`005b7fb9e343`](https://github.com/gmanldn/smoothcast/commit/005b7fb9e343621554e760c06ab05b12ae59392b)
 
 - ⬜ **04:26:48 · Maintenance** — chore: record justified URL callback guard growth (Refs #747) · [`847976eebb5c`](https://github.com/gmanldn/smoothcast/commit/847976eebb5cef5dd4d7eee25d78d745ed19292c)
 
 - 🟥 **04:26:48 · Fix** — fix: ignore stale remote URL cast completions (Refs #747) · [`f4ab7e0aa614`](https://github.com/gmanldn/smoothcast/commit/f4ab7e0aa614ca894b7099d3566f1ca12ce5e4bb)
+
+- ⬜ **04:26:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`993507495bad`](https://github.com/gmanldn/smoothcast/commit/993507495baddc6c7d66f53b25d31b697ab5dbd0)
 
 - ⬜ **04:26:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f751d8a7de47`](https://github.com/gmanldn/smoothcast/commit/f751d8a7de475449107281afeb238965abb89f3a)
 
