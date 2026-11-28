@@ -117,7 +117,7 @@ class VisualDesignTests(unittest.TestCase):
         self.assertIn('window.cfg["auto_theme"] = False', control)
         # The schedule is re-evaluated while the app runs, not only at startup.
         timers = (ROOT / "src/cast_ui_timers.py").read_text("utf-8")
-        self.assertIn("GLib.timeout_add_seconds(600, self._theme_tick)", timers)
+        self.assertIn("GLib.timeout_add_seconds(600, w._theme_tick)", timers)
         ui = (ROOT / "src/cast_ui.py").read_text("utf-8")
         self.assertIn("ui_theme.is_dark_hour(", ui)
         lifecycle = (ROOT / "src/cast_lifecycle.py").read_text("utf-8")
