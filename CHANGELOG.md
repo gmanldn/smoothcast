@@ -8,17 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0ca096276fe85139fd9e3c0c58c173917dcc1b32 -->
+<!-- sc-changelog-through: fc9eaa73d0fcc6bca5a6dc9e840ff8247041f2cf -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:48:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:57:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:57:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fc9eaa73d0fc`](https://github.com/gmanldn/smoothcast/commit/fc9eaa73d0fcc6bca5a6dc9e840ff8247041f2cf)
+
+- 🟩 **04:56:55 · Feature** — feat(gtk): show room at a glance on the player card (Refs #709) · [`7b70f19c6853`](https://github.com/gmanldn/smoothcast/commit/7b70f19c68533690fad848e43e05626d5a71c3f0)
 
 - ⬜ **04:48:54 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0ca096276fe8`](https://github.com/gmanldn/smoothcast/commit/0ca096276fe85139fd9e3c0c58c173917dcc1b32)
 
 - 🟥 **04:48:54 · Fix** — fix: bootstrap installed launcher from latest checkout; refresh complexity baseline after justified #745 recovery UI growth (Refs #579) · [`5fc67d7b980d`](https://github.com/gmanldn/smoothcast/commit/5fc67d7b980d40cfaf5ba74b956b767f3bde8520)
 
 - 🟥 **04:48:54 · Fix** — fix: update registered install before launcher handoff (Refs #579) · [`01453b6fb746`](https://github.com/gmanldn/smoothcast/commit/01453b6fb7467d83fc72099c947056202978d794)
+
+- ⬜ **04:48:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e89af69384b8`](https://github.com/gmanldn/smoothcast/commit/e89af69384b82e9d6270e8f2e17af86c4035d301)
 
 - ⬜ **04:48:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2b4e95c266cc`](https://github.com/gmanldn/smoothcast/commit/2b4e95c266cc613a5b43a4fae32937e50572139f)
 
