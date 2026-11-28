@@ -24,11 +24,10 @@ import network_activity
 from cast_portal_host import PortalHostMixin
 from cast_portal_room import PortalRoomMixin
 from portal_upload_recovery import PortalUploadRecoveryMixin
-from network_activity_ui import NetworkActivityMixin
 from cast_widgets import save_config
 from gi.repository import GLib
 
-class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMixin):
+class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin):
     def _refresh_portal(self) -> bool:
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:

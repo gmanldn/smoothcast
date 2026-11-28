@@ -29,6 +29,7 @@ import ab_repeat
 import responsive_layout
 import gui_test_safety
 from cast_portal import PortalMixin
+from network_activity_ui import NetworkActivityController
 from cast_portal_queue import PortalQueueMixin
 from join_slate_ui import JoinSlateController
 import version
@@ -62,6 +63,9 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiT
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._network_activity = NetworkActivityController(self)
+        self._build_network_activity_card = self._network_activity._build_network_activity_card  # #691
+        self._refresh_network_activity = self._network_activity._refresh_network_activity
         self._settings_card = SettingsCardController(self)
         self._build_settings_card = self._settings_card._build_settings_card  # #691
         self._sleep_fade_tick = self._settings_card._sleep_fade_tick

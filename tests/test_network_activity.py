@@ -105,11 +105,11 @@ def test_refresh_skips_while_a_cast_is_starting(monkeypatch):
     calls = []
     monkeypatch.setattr(network_activity_ui.Async, "run", lambda *a, **k: calls.append(a))
 
-    class W(network_activity_ui.NetworkActivityMixin):
+    class W:
         _closing = False
         busy = True
         devices = [object()]
         dlna_devices = []
 
-    assert W()._refresh_network_activity() is True
+    assert network_activity_ui.NetworkActivityController(W())._refresh_network_activity() is True
     assert calls == []
