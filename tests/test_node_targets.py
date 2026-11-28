@@ -88,3 +88,108 @@ def test_readiness_requires_literal_opt_in_and_fresh_numeric_timestamp():
         row = nt.targets([{"id": "n", "accepts_playback": True, "last_seen": boolean}],
                          {"n"}, {}, 10)[0]
         assert row["status"] == nt.OFFLINE and not row["selectable"]
+
+
+def test_concurrent_claim_one_winner_one_busy_one_epoch():
+    """Two rooms race to claim the same node; exactly one wins, one gets busy,
+    and exactly one epoch is minted across repeated races."""
+    import threading
+
+    f = nt.Fence()
+
+    for _ in range(200):
+        results = []
+        errors = []
+
+        def claim_room(session):
+            try:
+                epoch, msg = f.claim("n", session)
+                results.append((session, epoch, msg))
+            except Exception as exc:  # pragma: no cover - defensive
+                errors.append(exc)
+
+        t1 = threading.Thread(target=claim_room, args=("roomA",))
+        t2 = threading.Thread(target=claim_room, args=("roomB",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert not errors, f"unexpected exceptions: {errors}"
+        assert len(results) == 2
+        winners = [r for r in results if r[1] is not None]
+        busies = [r for r in results if r[1] is None]
+        assert len(winners) == 1, f"expected exactly one winner, got {results}"
+        assert len(busies) == 1, f"expected exactly one busy, got {results}"
+        assert winners[0][2] == ""  # no error message on success
+        assert busies[0][2] == "That computer is playing for another room."
+        assert f.owners() == {"n": winners[0][0]}
+        # Release for the next race
+        session, epoch, _ = winners[0]
+        f.release("n", session, epoch)
+
+
+def test_concurrent_snapshot_and_release_no_iteration_exceptions():
+    """Concurrent owners() calls during claims/releases must not raise or
+    return partial answers."""
+    import threading
+
+    f = nt.Fence()
+    f.claim("n", "roomA")
+
+    errors = []
+    snapshots = []
+
+    def snapshot():
+        for _ in range(50):
+            try:
+                snapshots.append(f.owners())
+            except Exception as exc:  # pragma: no cover - defensive
+                errors.append(exc)
+
+    def churn():
+        for _ in range(25):
+            f.release("n", "roomA", 1)
+            f.claim("n", "roomA")
+
+    threads = [threading.Thread(target=snapshot) for _ in range(3)]
+    threads.append(threading.Thread(target=churn))
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"iteration exceptions: {errors}"
+    for snap in snapshots:
+        assert snap == {} or snap == {"n": "roomA"}, f"partial snapshot: {snap}"
+
+
+def test_concurrent_distinct_nodes_independent():
+    """Claims on different nodes must not interfere with each other."""
+    import threading
+
+    f = nt.Fence()
+    results = {}
+    errors = []
+
+    def claim_node(node, session):
+        try:
+            results[(node, session)] = f.claim(node, session)
+        except Exception as exc:  # pragma: no cover - defensive
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=claim_node, args=(f"n{i}", f"room{i}"))
+        for i in range(20)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    assert len(results) == 20
+    for (node, session), (epoch, msg) in results.items():
+        assert epoch is not None
+        assert msg == ""
+        assert f.owners()[node] == session

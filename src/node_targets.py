@@ -8,6 +8,7 @@ competing rooms and stale commands are rejected without touching playback.
 from __future__ import annotations
 
 import math
+import threading
 
 READY, OFFLINE, BUSY, NOT_ENABLED, NOT_TRUSTED = "ready", "offline", "busy", "not_enabled", "not_trusted"
 LABELS = {READY: "Ready", OFFLINE: "Offline", BUSY: "Playing for another room",
@@ -42,30 +43,36 @@ class Fence:
     def __init__(self) -> None:
         self._owner: dict[str, tuple[str, int]] = {}
         self._epoch = 0
+        self._lock = threading.Lock()
 
     def claim(self, node: str, session: str) -> tuple[int | None, str]:
-        cur = self._owner.get(node)
-        if cur and cur[0] != session:
-            return None, "That computer is playing for another room."
-        if cur:
-            return cur[1], ""
-        self._epoch += 1
-        self._owner[node] = (session, self._epoch)
-        return self._epoch, ""
+        with self._lock:
+            cur = self._owner.get(node)
+            if cur and cur[0] != session:
+                return None, "That computer is playing for another room."
+            if cur:
+                return cur[1], ""
+            self._epoch += 1
+            self._owner[node] = (session, self._epoch)
+            return self._epoch, ""
 
     def accept(self, node: str, session: str, epoch: int, command: str) -> tuple[bool, str]:
-        cur = self._owner.get(node)
-        if cur is None or cur != (session, epoch):
-            return False, "Stale or foreign command."
-        return True, ""
+        with self._lock:
+            cur = self._owner.get(node)
+            if cur is None or cur != (session, epoch):
+                return False, "Stale or foreign command."
+            return True, ""
 
     def release(self, node: str, session: str, epoch: int) -> bool:
         """Free the node only for the exact claim; a stale epoch is a no-op."""
-        return self._owner.get(node) == (session, epoch) and bool(self._owner.pop(node))
+        with self._lock:
+            return self._owner.get(node) == (session, epoch) and bool(self._owner.pop(node))
 
     def revoke(self, node: str) -> bool:
         """Administrative teardown: drop any claim."""
-        return self._owner.pop(node, None) is not None
+        with self._lock:
+            return self._owner.pop(node, None) is not None
 
     def owners(self) -> dict[str, str]:
-        return {n: s for n, (s, _) in self._owner.items()}
+        with self._lock:
+            return {n: s for n, (s, _) in self._owner.items()}
