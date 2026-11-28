@@ -18,7 +18,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
             with self.subTest(method=method):
                 body = self.methods[method]
                 self.assertNotIn("self.now_playing =", body)
-                self.assertIn("self._cast_path(", body)
+                self.assertTrue("self._cast_path(" in body or "w._cast_path(" in body)
 
     def test_play_without_owned_session_uses_local_preview_not_tv(self):
         code = self.methods["toggle_play"]
@@ -56,7 +56,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
             self.methods["seek_to"],
         )
         self.assertIn(
-            "self.session and self.session.state is not None",
+            "w.session and w.session.state is not None",
             self.methods["_remove_queue"],
         )
         self.assertIn(
@@ -69,7 +69,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("offset: float | None = None", gui)
         self.assertIn("playback_state.start_offset(", gui)
         self.assertIn("self._cast_path(next_path, 0.0)", self.methods["_on_finished"])
-        self.assertIn("self._cast_path(path, None)", self.methods["open_recent"])
+        self.assertIn("w._cast_path(path, None)", self.methods["open_recent"])
 
     def test_idle_stop_sends_no_receiver_command(self):
         # Before the first poll (or any owned playback) Stop must not fall
@@ -97,10 +97,10 @@ class PlayerActionSafetyTests(unittest.TestCase):
         # Manual IPv4 entry (Return and Add IP) must obey the same ownership
         # rule as the dropdown: remember the target, never retarget mid-cast.
         code = self.methods["_add_cast_target"]
-        guard = "self.session is not None or self.busy"
+        guard = "w.session is not None or w.busy"
         self.assertIn(guard, code)
-        self.assertLess(code.index(guard), code.index('self.cfg["device"] = target'))
-        self.assertIn("self.cast_ip_entry.set_text(\"\")", code)
+        self.assertLess(code.index(guard), code.index('w.cfg["device"] = target'))
+        self.assertIn("w.cast_ip_entry.set_text(\"\")", code)
 
     def test_gtk_tick_and_details_never_read_the_filesystem(self):
         # SC-069 #78: progress and segment counts are sampled in the background.

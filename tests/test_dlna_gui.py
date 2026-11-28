@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from gui_source import main_window_methods
+from gui_source import main_window_methods_legacy as main_window_methods
 
 METHODS = main_window_methods()
 
@@ -67,7 +67,7 @@ class DlnaGuiContracts(unittest.TestCase):
 
     def test_dlna_session_shutdown_requires_server_cleanup(self):
         close = METHODS["_on_close"]
-        self.assertIn('w.session.mode == "dlna"', close)
+        self.assertIn('self.session.mode == "dlna"', close)
         self.assertIn("session.stop(device)", close)
 
     def test_remote_url_does_not_send_catt_command_to_dlna_target(self):

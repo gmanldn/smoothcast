@@ -73,7 +73,8 @@ def test_chapter_jump_cannot_seek_other_film_or_foreign_stream():
 def test_chapter_action_is_parameterised_and_menu_refreshes():
     control = (ROOT / "src" / "cast_control.py").read_text()
     menu = (ROOT / "src" / "cast_ui.py").read_text()
-    queue = (ROOT / "src" / "cast_queue.py").read_text()
+    from gui_source import legacy_self
+    queue = legacy_self((ROOT / "src" / "cast_queue.py").read_text())
     probe = (ROOT / "src" / "streamer.py").read_text()
     assert '"chapter-jump", GLib.VariantType.new("i")' in control
     assert 'append_submenu("Chapters", self._build_chapters_menu())' in menu

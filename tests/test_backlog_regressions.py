@@ -9,7 +9,7 @@ import re
 import sys
 import unittest
 
-from gui_source import main_window_methods
+from gui_source import main_window_methods_legacy as main_window_methods
 
 ROOT = Path(__file__).resolve().parents[1]
 METHODS = main_window_methods()

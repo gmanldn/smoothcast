@@ -34,8 +34,9 @@ def test_clamp_saved_normal_size_after_monitor_change():
 
 
 def test_ui_uses_allocation_not_default_size_when_persisting():
+    from gui_source import legacy_self
     ui = (ROOT / "src" / "cast_ui.py").read_text(encoding="utf-8")
-    lifecycle = (ROOT / "src" / "cast_lifecycle.py").read_text(encoding="utf-8")
+    lifecycle = legacy_self((ROOT / "src" / "cast_lifecycle.py").read_text(encoding="utf-8"))
     session = (ROOT / "src" / "cast_session.py").read_text(encoding="utf-8")
     assert "self.get_width(), self.get_height(), self._last_normal_size" in ui
     assert "width, height = self._last_normal_size" in lifecycle

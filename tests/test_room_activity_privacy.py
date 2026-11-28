@@ -42,7 +42,8 @@ def test_only_the_users_explicit_export_menu_action_collects_diagnostics():
         if path.name != "diagnostics.py" and "diagnostics.export(" in path.read_text("utf-8"):
             callers.append(path.name)
     assert callers == ["cast_lifecycle.py"]  # a menu action; nothing sends it anywhere
-    body = (ROOT / "src" / "cast_lifecycle.py").read_text("utf-8")
+    from gui_source import legacy_self
+    body = legacy_self((ROOT / "src" / "cast_lifecycle.py").read_text("utf-8"))
     assert 'self.toast("Collecting diagnostics…")' in body
 
 

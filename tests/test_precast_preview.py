@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import ast
+import re
 from types import SimpleNamespace
 import unittest
 
 from gui_source import main_window_methods
 
-METHODS = main_window_methods()
+METHODS = {
+    # Controller methods read ``w = self.w``; normalise so assertions use ``self``.
+    name: re.sub(r"(?<![\w.])w\.", "self.",
+                 src.replace('        w = getattr(self, "w", self)\n', ""))
+    for name, src in main_window_methods().items()
+}
 
 
 class PreCastPreviewTests(unittest.TestCase):

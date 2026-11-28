@@ -132,6 +132,17 @@ def main_window_tree() -> ast.Module:
     return ast.parse(main_window_source())
 
 
+def legacy_self(source: str) -> str:
+    """Rewrite controller ``w``-style source back to ``self`` for text assertions."""
+    import re
+    source = source.replace('        w = getattr(self, "w", self)\n', "").replace("        w = self.w\n", "")
+    return re.sub(r"(?<![\w.])w\.", "self.", source)
+
+
+def main_window_methods_legacy() -> dict[str, str]:
+    return {k: legacy_self(v) for k, v in main_window_methods().items()}
+
+
 def main_window_methods() -> dict[str, str]:
     """``{method name: exact source segment}`` for the reassembled MainWindow."""
     return dict(_cached_main_window_methods())

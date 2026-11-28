@@ -25,6 +25,7 @@ def load_mixin(async_jobs, ffprobe):
     }
     module = ast.Module(body=[cls], type_ignores=[])
     exec(compile(module, str(source), "exec"), namespace)
+    namespace[cls.name].w = property(lambda self: self)
     return namespace[cls.name]
 
 

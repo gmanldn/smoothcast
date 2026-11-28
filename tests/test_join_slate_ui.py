@@ -202,6 +202,7 @@ def test_setting_and_wiring_are_registered():
     assert "join_slate_ui.add_switch(self, room)" in (src / "preferences_room_ui.py").read_text()
     assert '"Show join code on the TV when idle"' in (src / "join_slate_ui.py").read_text()
     assert '"idle_join_slate"' in prefs.split("def _change_switch", 1)[1]
-    queue = (src / "cast_discovery.py").read_text()
+    from gui_source import legacy_self
+    queue = legacy_self((src / "cast_discovery.py").read_text())
     assert "self._join_slate_observe(info)" in queue
     assert "_join_slate_showing(info)" in queue.split("def _detect_external", 1)[1]

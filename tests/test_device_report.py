@@ -55,7 +55,8 @@ class ReceiverReportTests(unittest.TestCase):
                 self.assertNotIn("model", receiver)
 
     def test_gui_diagnostics_action_passes_the_active_receiver(self):
-        source = (ROOT / "src" / "cast_lifecycle.py").read_text("utf-8")
+        from gui_source import legacy_self
+        source = legacy_self((ROOT / "src" / "cast_lifecycle.py").read_text("utf-8"))
         self.assertIn("diagnostics.receiver_report(self._dlna_renderer()", source)
         self.assertIn("receiver=receiver", source)
 

@@ -71,7 +71,7 @@ def test_quality_ui_exposes_explicit_manual_override():
     root = Path(__file__).resolve().parents[1] / "src"
     assert '"quality_auto", "Automatically choose video quality"' in (
         root / "preferences_ui.py").read_text()
-    assert 'self.cfg["quality_auto"] = False' in (root / "cast_av.py").read_text()
+    assert 'self.cfg["quality_auto"] = False' in (root / "cast_av.py").read_text().replace("w.cfg", "self.cfg")
     assert 'low_end_policy.schedule_probe(enabled=bool' in (root / "cast_control.py").read_text()
     content = (root / "cast_session.py").read_text()
     assert content.count("low_end_policy.effective_quality(cfg, media)") == 2

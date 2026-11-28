@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from gui_source import combined_source, main_window_methods
+from gui_source import combined_source, legacy_self, main_window_methods
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import playlist_control
@@ -138,7 +138,7 @@ class PlaylistTests(unittest.TestCase):
                                display_title="Original Film.mp4"))
 
     def test_queue_filter_preserves_original_index_and_focus_shortcut(self):
-        source = combined_source()
+        source = legacy_self(combined_source())
         self.assertIn("self.queue_list.set_filter_func(self._queue_row_matches)", source)
         self.assertIn("self.queue_list.invalidate_filter()", source)
         self.assertIn("row.source_path = path", source)
@@ -207,7 +207,7 @@ class PlaylistTests(unittest.TestCase):
         self.assertNotIn("row.get_index()", selected)
         self.assertIn("playlist_control.selection_after_move(", methods["_move_queue"])
         # Removal is delegated to QueueComponent, which owns the selection rule.
-        self.assertIn("QueueComponent(self.queue).remove(", methods["_remove_queue"])
+        self.assertIn("QueueComponent(w.queue).remove(", methods["_remove_queue"])
         component = (Path(__file__).resolve().parents[1] / "src" / "queue_component.py").read_text(encoding="utf-8")
         self.assertIn("playlist_control.selection_after_remove(", component)
 
@@ -221,7 +221,7 @@ class PlaylistTests(unittest.TestCase):
         # The chooser lives in _load_playlist; enqueueing happens after the
         # off-thread parse succeeds in the chosen-file callback.
         self.assertIn("dialog.open(", methods["_load_playlist"])
-        self.assertIn("self._enqueue(additions)", methods["_playlist_open_chosen"])
+        self.assertIn("w._enqueue(additions)", methods["_playlist_open_chosen"])
         self.assertIn('simple("loop", lambda *a: self._window()._toggle_loop())', source)
 
 

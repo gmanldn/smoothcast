@@ -10,7 +10,7 @@ from pathlib import Path
 import textwrap
 import unittest
 
-from gui_source import main_window_methods
+from gui_source import legacy_self, main_window_methods
 import settings
 import streamer
 
@@ -92,7 +92,7 @@ class LocalPreviewMeterTests(unittest.TestCase):
         self.assertNotIn("dB", hint)
 
     def test_preview_playback_starts_and_stops_the_meter(self):
-        source = CAST_AV.read_text(encoding="utf-8")
+        source = legacy_self(CAST_AV.read_text(encoding="utf-8"))
         toggle = method_source(source, "_toggle_local_preview")
         self.assertIn("self._start_local_meter(", toggle)
         self.assertIn("self._stop_local_meter()", toggle)
@@ -104,7 +104,7 @@ class LocalPreviewMeterTests(unittest.TestCase):
         self.assertIn("self._meter_position()", tick)
 
     def test_local_meter_never_clears_a_cast_meter(self):
-        stop = method_source(CAST_AV.read_text(encoding="utf-8"), "_stop_local_meter")
+        stop = method_source(legacy_self(CAST_AV.read_text(encoding="utf-8")), "_stop_local_meter")
         self.assertIn("if self._local_video_path is None:", stop)
 
 

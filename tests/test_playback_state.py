@@ -48,7 +48,7 @@ class PlaybackStateTests(unittest.TestCase):
         source = combined_source()
         self.assertIn("self._cast_path(next_path, 0.0)", source)
         self.assertIn("self._cast_path(pathlib.Path(self.now_playing), target)", source)
-        self.assertIn("self._cast_path(path, None)", source)
+        self.assertIn("w._cast_path(path, None)", source)
         self.assertIn('offset = playback_state.start_offset(', source)
 
     def test_only_device_completion_advances_the_queue(self):
