@@ -8,15 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4f0adaeb45f43c808224d7c1a2039323f3075f0c -->
+<!-- sc-changelog-through: 6b53020d867b07232b87beae692b377f9b5cd670 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:44:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **07:46:05 · Fix** — fix(dlna): preserve playback state within a shared SOAP status budget (Refs #726) <!-- sc-changelog-pending -->
 
 - ⬜ **07:44:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4f0adaeb45f4`](https://github.com/gmanldn/smoothcast/commit/4f0adaeb45f43c808224d7c1a2039323f3075f0c)
 
 - 🟪 **07:44:18 · Tests** — test(queue): headless QueueComponent scenario, no GTK import (Refs #691) · [`c612518aa9d0`](https://github.com/gmanldn/smoothcast/commit/c612518aa9d074429bfd2547da9c52f56b056e61)
+
+- ⬜ **07:44:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`6b53020d867b`](https://github.com/gmanldn/smoothcast/commit/6b53020d867b07232b87beae692b377f9b5cd670)
 
 - 🟦 **07:43:40 · Performance** — perf(dlna): reuse recent successful receiver format negotiation (Refs #725) · [`591f2add0865`](https://github.com/gmanldn/smoothcast/commit/591f2add0865407d128cb1ba496d0dc1a3fb4dae)
 

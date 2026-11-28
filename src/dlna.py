@@ -47,6 +47,7 @@ SERVICE_PREFIX = "urn:schemas-upnp-org:service:"
 IDEMPOTENT_SOAP_ACTIONS = {"Play", "Pause", "Stop", "Seek", "SetVolume", "SetMute"}
 MAX_DESCRIPTION = 512 * 1024
 MAX_SOAP_RESPONSE = 128 * 1024
+SOAP_TIMEOUT_S = 5.0
 MAX_RENDERERS = 64
 MAX_DISCOVERY_WORKERS = 8
 PROTOCOL_CACHE_SECONDS = 30.0
@@ -341,8 +342,24 @@ def _upnp_fault(data: bytes) -> str:
     return ""
 
 
+def _soap_timeout(deadline: float | None) -> float:
+    if deadline is None:
+        return SOAP_TIMEOUT_S
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise DlnaError("DLNA status poll deadline expired")
+    return min(SOAP_TIMEOUT_S, remaining)
+
+
+def _limit_status_socket(sock: socket.socket | None, deadline: float) -> None:
+    timeout = _soap_timeout(deadline)
+    if sock is not None:
+        sock.settimeout(timeout)
+
+
 def _soap(renderer: Renderer, action: str, params: dict[str, str],
-          *, rendering: bool = False, connection: bool = False) -> ET.Element:
+          *, rendering: bool = False, connection: bool = False,
+          deadline: float | None = None) -> ET.Element:
     if connection:
         url, service = renderer.connection_url, renderer.connection_service
     elif rendering:
@@ -362,15 +379,26 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
     ).encode("utf-8")
     attempts = 2 if action in IDEMPOTENT_SOAP_ACTIONS else 1
     for attempt in range(attempts):
-        conn = HTTPConnection(host, port, timeout=5)
+        conn = HTTPConnection(host, port, timeout=_soap_timeout(deadline))
+        response = None
         try:
+            if deadline is not None:
+                conn.connect()
+                _limit_status_socket(conn.sock, deadline)
             conn.request("POST", target, body=request_xml, headers={
                 "Content-Type": 'text/xml; charset="utf-8"',
                 "SOAPACTION": f'"{service}#{action}"',
                 "Connection": "close",
             })
+            sock = conn.sock if deadline is not None else None
+            if deadline is not None:
+                _limit_status_socket(sock, deadline)
             response = conn.getresponse()
+            if deadline is not None:
+                _limit_status_socket(sock, deadline)
             data = response.read(MAX_SOAP_RESPONSE + 1)
+            if deadline is not None:
+                _soap_timeout(deadline)
             if len(data) > MAX_SOAP_RESPONSE:
                 raise DlnaError("DLNA response exceeds safe size limit")
             if response.status != 200:
@@ -390,6 +418,8 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
                 continue
             raise DlnaError(f"DLNA {action} failed: {exc}") from exc
         finally:
+            if response is not None and deadline is not None:
+                response.close()
             conn.close()
     raise DlnaError(f"DLNA {action} failed")
 
@@ -465,8 +495,9 @@ def _clock(position: float) -> str:
 
 
 def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
+    deadline = time.monotonic() + SOAP_TIMEOUT_S
     try:
-        state = _soap(renderer, "GetTransportInfo", {"InstanceID": "0"})
+        state = _soap(renderer, "GetTransportInfo", {"InstanceID": "0"}, deadline=deadline)
     except DlnaError:
         return None
     raw = _value(state, "CurrentTransportState").upper()
@@ -479,8 +510,10 @@ def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
                     "title": renderer.name}
     command_trace.stage("status_observed")
     command_trace.observe_receiver(renderer.key, result["player_state"])
+    if time.monotonic() >= deadline:
+        return result
     try:
-        pos = _soap(renderer, "GetPositionInfo", {"InstanceID": "0"})
+        pos = _soap(renderer, "GetPositionInfo", {"InstanceID": "0"}, deadline=deadline)
         result["current_time"] = _seconds(_value(pos, "RelTime"))
         result["duration"] = _seconds(_value(pos, "TrackDuration"))
         metadata = _value(pos, "TrackMetaData")
@@ -495,11 +528,11 @@ def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
                 pass  # Some renderers return partial or non-XML metadata.
     except DlnaError:
         pass
-    if include_volume and renderer.rendering_url:
+    if include_volume and renderer.rendering_url and time.monotonic() < deadline:
         try:
             volume = _soap(renderer, "GetVolume", {
                 "InstanceID": "0", "Channel": "Master",
-            }, rendering=True)
+            }, rendering=True, deadline=deadline)
             result["volume_level"] = max(0.0, min(1.0, int(_value(volume, "CurrentVolume")) / 100))
         except (DlnaError, ValueError):
             pass

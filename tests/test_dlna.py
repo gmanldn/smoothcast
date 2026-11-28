@@ -249,6 +249,48 @@ class DlnaSOAPTests(unittest.TestCase):
         result.read.return_value = body
         return result
 
+    def test_status_preserves_playing_when_position_spends_the_remaining_budget(self):
+        now = [100.0]
+        timing = []
+
+        def read_transport(_limit):
+            now[0] += 3.0
+            return b"<root><CurrentTransportState>PLAYING</CurrentTransportState></root>"
+
+        def read_position(_limit):
+            now[0] += 2.0
+            raise TimeoutError("position did not arrive")
+
+        connections = []
+        for read in (read_transport, read_position, lambda _: b"<root/>"):
+            conn = mock.Mock()
+            conn.getresponse.return_value = mock.Mock(status=200)
+            conn.getresponse.return_value.read.side_effect = read
+            conn.sock.settimeout.side_effect = lambda timeout: timing.append((now[0], timeout))
+            connections.append(conn)
+        with (
+            mock.patch.object(dlna.time, "monotonic", side_effect=lambda: now[0]),
+            mock.patch.object(dlna, "HTTPConnection", side_effect=connections) as connect,
+        ):
+            info = dlna.info(self.renderer)
+        self.assertEqual(info["player_state"], "PLAYING")
+        self.assertNotIn("current_time", info)
+        self.assertNotIn("volume_level", info)
+        self.assertEqual([call.kwargs["timeout"] for call in connect.call_args_list], [5.0, 2.0])
+        self.assertIn("GetTransportInfo", connections[0].request.call_args.kwargs["headers"]["SOAPACTION"])
+        self.assertIn("GetPositionInfo", connections[1].request.call_args.kwargs["headers"]["SOAPACTION"])
+        connections[2].request.assert_not_called()
+        self.assertTrue(timing)
+        self.assertTrue(all(0 < timeout <= 105.0 - moment for moment, timeout in timing))
+
+    def test_status_never_requests_optional_metadata_if_transport_is_unavailable(self):
+        conn = mock.Mock()
+        conn.getresponse.side_effect = TimeoutError("no answer")
+        with mock.patch.object(dlna, "HTTPConnection", return_value=conn) as connect:
+            self.assertIsNone(dlna.info(self.renderer))
+        connect.assert_called_once()
+        self.assertIn("GetTransportInfo", conn.request.call_args.kwargs["headers"]["SOAPACTION"])
+
     def test_set_uri_escapes_title_and_sends_correct_action(self):
         envelope = b"<s:Envelope xmlns:s='urn:test'><s:Body /></s:Envelope>"
         connection = mock.MagicMock()
