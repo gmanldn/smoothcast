@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2664d9d74ed38be08cf8bc98b027682b991e330c -->
+<!-- sc-changelog-through: cd849c44b83dbc071a1e07dede888c959d9cf7c0 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:34:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:38:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:38:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cd849c44b83d`](https://github.com/gmanldn/smoothcast/commit/cd849c44b83dbc071a1e07dede888c959d9cf7c0)
+
+- 🟦 **09:37:51 · Refactor** — refactor(portal): PortalUploadRecoveryMixin becomes composed PortalUploadRecoveryController (Refs #691) · [`84dc531c8c4c`](https://github.com/gmanldn/smoothcast/commit/84dc531c8c4c1fe15b0426c63c03622d7a947d27)
 
 - ⬜ **09:34:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2664d9d74ed3`](https://github.com/gmanldn/smoothcast/commit/2664d9d74ed38be08cf8bc98b027682b991e330c)
+
+- ⬜ **09:34:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`9bb595d69afb`](https://github.com/gmanldn/smoothcast/commit/9bb595d69afbdd58d2f35bba92543192071e7359)
 
 - 🟦 **09:34:37 · Refactor** — refactor(network-activity): NetworkActivityMixin becomes composed NetworkActivityController (Refs #691) · [`f70f010956b7`](https://github.com/gmanldn/smoothcast/commit/f70f010956b78eb87cd397f797687626d7bb4000)
 
