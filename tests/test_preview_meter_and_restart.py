@@ -11,6 +11,7 @@ import textwrap
 import unittest
 
 from gui_source import main_window_methods
+import settings
 import streamer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +34,7 @@ def extracted(*names, streamer_module=streamer):
         textwrap.indent(textwrap.dedent(main_window_methods()[name]), "    ")
         for name in names
     )
-    namespace = {"streamer": streamer_module}
+    namespace = {"streamer": streamer_module, "settings": settings}
     exec(compile(code, "<preview-methods>", "exec"), namespace)  # noqa: S102 - test harness
     return namespace["Methods"]
 
