@@ -221,3 +221,34 @@ def test_guest_upload_real_browser_smoke(guest_room, monkeypatch, tmp_path):
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+@pytest.mark.parametrize("width", [320, 768, 1440])
+def test_guest_upload_card_never_overflows_viewport(guest_room, width):
+    """#570: Add panel and its actions stay inside 320 px to desktop widths."""
+    from playwright.sync_api import expect, sync_playwright
+
+    rig = guest_room[0]
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": width, "height": 800},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Layout guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            for sel in ("#uploadCard", "#uploadButton", "#uploadCastNow"):
+                box = page.locator(sel).bounding_box()
+                assert box is not None and box["x"] >= 0 and box["x"] + box["width"] <= width + 0.5, sel
+        finally:
+            context.close()
+            browser.close()
