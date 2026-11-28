@@ -16,6 +16,7 @@ import stat
 import settings
 import portal
 import portal_uploads
+from queue_component import QueueComponent
 import queue_metadata
 import media_source
 
@@ -287,14 +288,8 @@ class PortalQueueMixin:
                     position = 0
             if type(position) is not int or not 0 <= position < len(self.queue):
                 raise portal.PortalRequestError(400, "Queue position is outside the queue")
-            selected = getattr(self, "selected_index", None)
-            selected_path = (self.queue[selected]
-                             if selected is not None and 0 <= selected < len(self.queue)
-                             else None)
-            path = self.queue.pop(index)
-            self.queue.insert(position, path)
-            self.selected_index = (self.queue.index(selected_path)
-                                   if selected_path in self.queue else None)
+            self.selected_index = QueueComponent(self.queue).move(
+                index, position, getattr(self, "selected_index", None))
             self._rebuild_queue()
             self._portal_observe_queue()
             return "Queued next." if operation == "queue_next" else "Queue order updated."

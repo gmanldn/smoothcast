@@ -38,3 +38,9 @@ class QueueComponent:
         if selected is None or not 0 <= selected < len(self.paths):
             return None
         return selected
+
+    def move(self, index: int, position: int, selected: int | None) -> int | None:
+        """Move ``index`` to ``position``; return the selected index, which follows its path."""
+        selected_path = self.paths[selected] if selected is not None and 0 <= selected < len(self.paths) else None
+        self.paths.insert(position, self.paths.pop(index))
+        return self.paths.index(selected_path) if selected_path in self.paths else None

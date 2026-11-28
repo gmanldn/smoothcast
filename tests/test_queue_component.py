@@ -26,3 +26,10 @@ def test_clear_and_reselect():
     assert c.reselect(1) == 1 and c.reselect(2) is None and c.reselect(None) is None
     c.clear()
     assert q == [] and c.reselect(0) is None
+
+
+def test_move_keeps_selection_on_same_path():
+    q = ["a", "b", "c"]
+    sel = QueueComponent(q).move(0, 2, 0)
+    assert q == ["b", "c", "a"] and sel == 2
+    assert QueueComponent(q).move(1, 0, None) is None and q == ["c", "b", "a"]
