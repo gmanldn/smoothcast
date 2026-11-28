@@ -24,10 +24,13 @@ def test_room_glance_labels_are_shared_by_gtk_and_web():
     from pathlib import Path
 
     gtk = (Path(__file__).resolve().parents[1] / "src" / "cast_ui.py").read_text(encoding="utf-8")
-    for key, label in ui_tokens.ROOM_GLANCE_LABELS.items():
-        assert f'ROOM_GLANCE_LABELS["{key}"]' in gtk or f"ROOM_GLANCE_LABELS['{key}']" in gtk
-        assert f'<span class="glance-label">{label}</span>' in portal._HTML
-    assert "__SC_GLANCE_" not in portal._HTML
+    assert ui_tokens.web_glance_html() in portal._HTML
+    assert "for field in ui_tokens.ROOM_GLANCE_FIELDS" in gtk
+    assert 'if field["gtk_slot"] != "summary"' in gtk
+    for field in ui_tokens.ROOM_GLANCE_FIELDS:
+        assert f'<span class="glance-label">{field["label"]}</span>' in portal._HTML
+        assert field["web_id"] in portal._HTML
+    assert "__SC_ROOM_GLANCE__" not in portal._HTML
 
 
 def test_web_settings_map_tracks_desktop_preferences_pages_and_groups():

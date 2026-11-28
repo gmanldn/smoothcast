@@ -7,17 +7,26 @@ scales are emitted as browser custom properties and concrete GTK CSS values.
 from __future__ import annotations
 
 import re
+from html import escape
 
 RADIUS = {"sm": 10, "md": 14, "lg": 22, "pill": 999}
 SPACING = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 22}
 TYPE = {"body": "16px", "caption": ".9em", "eyebrow": ".8em", "hero": "1.65rem"}
 FONT_FAMILY = 'ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif'
-ROOM_GLANCE_LABELS = {
-    "now_playing": "Now playing",
-    "target": "Selected target",
-    "next": "Up next",
-    "people": "People here",
-}
+ROOM_GLANCE_FIELDS = (
+    {"key": "now_playing", "label": "Now playing", "web_id": "glanceTitle",
+     "initial": "Nothing playing", "gtk_slot": "hero"},
+    {"key": "target", "label": "Selected target", "web_id": "glanceWhere",
+     "initial": "No TV or speaker yet", "gtk_slot": "summary",
+     "gtk_initial": "No screen selected"},
+    {"key": "next", "label": "Up next", "web_id": "glanceQueue",
+     "initial": "Nothing waiting", "gtk_slot": "summary",
+     "gtk_initial": "Nothing waiting", "href": "#queuePanel",
+     "aria_label": "Open Up Next queue"},
+    {"key": "people", "label": "People here", "web_id": "glanceWho",
+     "initial": "Just you", "gtk_slot": "summary", "gtk_initial": "Just you"},
+)
+ROOM_GLANCE_LABELS = {item["key"]: item["label"] for item in ROOM_GLANCE_FIELDS}
 _STEPS = sorted(v for k, v in RADIUS.items() if k != "pill")
 
 
@@ -28,6 +37,23 @@ def web_css() -> str:
               *( (f"--sc-type-{name}", value) for name, value in TYPE.items()),
               ("--sc-font-family", FONT_FAMILY)]
     return ":root{" + "".join(f"{name}:{value};" for name, value in values) + "}"
+
+
+def web_glance_html() -> str:
+    """Generate the browser glance tiles from the shared room layout model."""
+    tiles = []
+    for item in ROOM_GLANCE_FIELDS:
+        label = escape(item["label"])
+        element_id = escape(item["web_id"], quote=True)
+        value = escape(item["initial"])
+        if "href" in item:
+            content = (f'<a id="{element_id}" href="{escape(item["href"], quote=True)}" '
+                       f'aria-label="{escape(item["aria_label"], quote=True)}">{value}</a>')
+        else:
+            content = f'<strong id="{element_id}">{value}</strong>'
+        tiles.append(f'<div class="glance-tile"><span class="glance-label">{label}</span>{content}</div>')
+    return ('<div id="glance" class="glance" role="group" aria-label="Room at a glance">'
+            + "".join(tiles) + "</div>")
 
 
 def apply_gtk(css: bytes) -> bytes:

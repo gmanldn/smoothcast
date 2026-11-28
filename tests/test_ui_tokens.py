@@ -32,6 +32,14 @@ def test_gtk_and_web_consume_shared_component_tokens():
     assert f"--sc-type-caption:{ui_tokens.TYPE['caption']}" in portal._HTML
 
 
+def test_gtk_and_web_room_glance_use_the_same_geometry_tokens():
+    css = ui_theme.CSS.decode() if isinstance(ui_theme.CSS, bytes) else ui_theme.CSS
+    assert (f".room-glance-tile {{\n    padding: {ui_tokens.SPACING['md']}px;\n    "
+            f"border-radius: {ui_tokens.RADIUS['md']}px;") in css
+    assert ".glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--sc-space-sm);" in portal._HTML
+    assert ".glance-tile{background:var(--card);border:1px solid var(--line);border-radius:var(--sc-radius-md);padding:var(--sc-space-md);" in portal._HTML
+
+
 def test_snap():
     assert ui_tokens.snap(99) == 999 and ui_tokens.snap(0) == 0
     assert ui_tokens.snap(8) == 10 and ui_tokens.snap(16) == 14

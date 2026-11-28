@@ -244,16 +244,32 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self.np_meta.add_css_class("dim-label")
         self.np_meta.add_css_class("hero-subtitle")
         body.append(self.np_meta)
-        self.room_glance_label = Gtk.Label(
-            label=(f"{ui_tokens.ROOM_GLANCE_LABELS['target']}: No screen selected · "
-                   f"{ui_tokens.ROOM_GLANCE_LABELS['next']}: Nothing waiting · "
-                   f"{ui_tokens.ROOM_GLANCE_LABELS['people']}: Just you"),
-            xalign=0.0, wrap=True,
-        )
-        self.room_glance_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-        self.room_glance_label.add_css_class("caption")
-        self.room_glance_label.add_css_class("dim-label")
-        body.append(self.room_glance_label)
+        room_glance = Gtk.FlowBox()
+        room_glance.set_selection_mode(Gtk.SelectionMode.NONE)
+        room_glance.set_homogeneous(True)
+        room_glance.set_min_children_per_line(1)
+        room_glance.set_max_children_per_line(3)
+        room_glance.set_column_spacing(ui_tokens.SPACING["sm"])
+        room_glance.set_row_spacing(ui_tokens.SPACING["sm"])
+        room_glance.add_css_class("room-glance-grid")
+        self.room_glance_values = {}
+        for field in ui_tokens.ROOM_GLANCE_FIELDS:
+            if field["gtk_slot"] != "summary":
+                continue
+            tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                           spacing=ui_tokens.SPACING["xs"])
+            tile.add_css_class("room-glance-tile")
+            tile.set_hexpand(True)
+            caption = Gtk.Label(label=field["label"], xalign=0.0)
+            caption.add_css_class("room-glance-label")
+            value = Gtk.Label(label=field["gtk_initial"], xalign=0.0, wrap=True)
+            value.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            value.add_css_class("room-glance-value")
+            tile.append(caption)
+            tile.append(value)
+            room_glance.append(tile)
+            self.room_glance_values[field["key"]] = value
+        body.append(room_glance)
         # Preview screen above the scrubbing bar.
         self.preview = PreviewScreen()
         self.preview_picture = Gtk.Picture()
@@ -1351,8 +1367,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
     def _sync_room_glance(self) -> None:
         """Keep the target, next item and room presence visible on the player card."""
-        label = getattr(self, "room_glance_label", None)
-        if label is None:
+        values = getattr(self, "room_glance_values", None)
+        if not isinstance(values, dict):
             return
         device = str((getattr(self, "cfg", {}) or {}).get("device") or "").strip()
         target = device or "No screen selected"
@@ -1370,11 +1386,10 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         people = "Just you" if not guests else "You, " + ", ".join(guests[:2])
         if len(guests) > 2:
             people += f" +{len(guests) - 2} more"
-        labels = ui_tokens.ROOM_GLANCE_LABELS
-        summary = (f"{labels['target']}: {target} · {labels['next']}: {next_title} · "
-                   f"{labels['people']}: {people}")
-        if label.get_text() != summary:
-            label.set_text(summary)
+        for key, text in (("target", target), ("next", next_title), ("people", people)):
+            label = values.get(key)
+            if label is not None and label.get_text() != text:
+                label.set_text(text)
 
 
     def _update_header_subtitle(self) -> None:

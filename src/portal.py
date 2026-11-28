@@ -2285,8 +2285,8 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 #playback #state{font-size:.85rem;font-weight:700;border-radius:99px;padding:4px 10px;background:color-mix(in srgb,currentColor 9%,transparent)}
 #playback #title.big{font-size:var(--sc-type-hero);font-weight:800;line-height:1.2;overflow-wrap:anywhere}
 #playback #receiver,#playback #nowDetails{font-size:.95rem}
-.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px}
-.glance-tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md,12px);padding:12px 14px;min-width:0}
+.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--sc-space-sm);margin:0 0 var(--sc-space-md)}
+.glance-tile{background:var(--card);border:1px solid var(--line);border-radius:var(--sc-radius-md);padding:var(--sc-space-md);min-width:0}
 .glance-label{display:block;color:var(--accent);font-size:.75rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
 .glance-tile strong{display:block;font-size:1.05rem;overflow-wrap:anywhere}
 </style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><button type="button" class="update-btn" id="updateBtn" hidden></button><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
@@ -2307,7 +2307,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
 <div class="room-heading"><div class="home-room-title"><h2 id="homeHeading" tabindex="-1">Your room</h2><a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a></div><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
-<div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">__SC_GLANCE_NOW_PLAYING__</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">__SC_GLANCE_TARGET__</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">__SC_GLANCE_NEXT__</span><a id="glanceQueue" href="#queuePanel" aria-label="Open Up Next queue">Nothing waiting</a></div><div class="glance-tile"><span class="glance-label">__SC_GLANCE_PEOPLE__</span><strong id="glanceWho">Just you</strong></div></div>
+__SC_ROOM_GLANCE__
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <h2 id="quickCastHeading">Start playing</h2>
 <div class="actions"><button id="uploadCastNow" class="primary-action" type="button" aria-describedby="quickCastStatus">Choose a file to cast</button><a href="#screensPanel" id="homeChooseScreen">Choose a TV or speaker</a><a href="#uploadCard" id="quickQueueUpload">Add media to Up Next</a></div>
@@ -4780,7 +4780,4 @@ function syncMediaSession(s){
 </script></body></html>"""
 _HTML = (_HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())
          .replace("__SC_SETTINGS_CATALOG__", settings_catalog.web_overview_html())
-         .replace("__SC_GLANCE_NOW_PLAYING__", ui_tokens.ROOM_GLANCE_LABELS["now_playing"])
-         .replace("__SC_GLANCE_TARGET__", ui_tokens.ROOM_GLANCE_LABELS["target"])
-         .replace("__SC_GLANCE_NEXT__", ui_tokens.ROOM_GLANCE_LABELS["next"])
-         .replace("__SC_GLANCE_PEOPLE__", ui_tokens.ROOM_GLANCE_LABELS["people"]))
+         .replace("__SC_ROOM_GLANCE__", ui_tokens.web_glance_html()))

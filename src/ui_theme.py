@@ -45,6 +45,19 @@ CSS = """
 }
 .hero-subtitle, .section-caption { font-size: 0.95em; }
 .card .caption, .empty-subtitle, .detail-key, .console-idle { font-size: 0.9em; }
+.room-glance-grid { margin-top: 2px; }
+.room-glance-tile {
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid alpha(@card_fg_color, 0.12);
+    background-color: alpha(@card_fg_color, 0.035);
+}
+.room-glance-label {
+    color: @accent_color;
+    font-size: 0.8em;
+    font-weight: 700;
+}
+.room-glance-value { font-size: 1.05em; }
 .setting-group, .detail-section, .meter-legend, .volume-label {
     color: @accent_color;
     font-size: 0.85em;

@@ -19,7 +19,10 @@ class Label:
 
 
 def _owner(**values):
-    state = {"room_glance_label": Label(), "cfg": {}, "queue": [],
+    state = {"room_glance_values": {
+                 field["key"]: Label() for field in ui_tokens.ROOM_GLANCE_FIELDS
+                 if field["gtk_slot"] == "summary"
+             }, "cfg": {}, "queue": [],
              "now_playing": None, "portal_guest_ids": ()}
     state.update(values)
     return SimpleNamespace(**state)
@@ -35,11 +38,9 @@ def test_room_glance_shows_next_item_without_the_current_queue_entry():
 
     cast_ui.UiMixin._sync_room_glance(owner)
 
-    assert owner.room_glance_label.text == (
-        f"{ui_tokens.ROOM_GLANCE_LABELS['target']}: Living Room TV · "
-        f"{ui_tokens.ROOM_GLANCE_LABELS['next']}: next episode 02 · +1 more · "
-        f"{ui_tokens.ROOM_GLANCE_LABELS['people']}: You, Sam, Jo"
-    )
+    assert owner.room_glance_values["target"].text == "Living Room TV"
+    assert owner.room_glance_values["next"].text == "next episode 02 · +1 more"
+    assert owner.room_glance_values["people"].text == "You, Sam, Jo"
 
 
 def test_room_glance_handles_empty_target_queue_and_guests_and_skips_redundant_redraw():
@@ -48,12 +49,10 @@ def test_room_glance_handles_empty_target_queue_and_guests_and_skips_redundant_r
     cast_ui.UiMixin._sync_room_glance(owner)
     cast_ui.UiMixin._sync_room_glance(owner)
 
-    assert owner.room_glance_label.text == (
-        f"{ui_tokens.ROOM_GLANCE_LABELS['target']}: No screen selected · "
-        f"{ui_tokens.ROOM_GLANCE_LABELS['next']}: Nothing waiting · "
-        f"{ui_tokens.ROOM_GLANCE_LABELS['people']}: Just you"
-    )
-    assert owner.room_glance_label.updates == 1
+    assert owner.room_glance_values["target"].text == "No screen selected"
+    assert owner.room_glance_values["next"].text == "Nothing waiting"
+    assert owner.room_glance_values["people"].text == "Just you"
+    assert all(label.updates == 1 for label in owner.room_glance_values.values())
 
 
 def test_room_glance_uses_first_item_when_nothing_is_currently_playing():
@@ -61,4 +60,4 @@ def test_room_glance_uses_first_item_when_nothing_is_currently_playing():
 
     cast_ui.UiMixin._sync_room_glance(owner)
 
-    assert "Up next: first song · +1 more" in owner.room_glance_label.text
+    assert owner.room_glance_values["next"].text == "first song · +1 more"
