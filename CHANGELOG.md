@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0dac5fcabf7870e4ffa3c875bf3df11c1e2a68f5 -->
+<!-- sc-changelog-through: 4a30fac827e8be060c7013dfb835d2eb9a1c2b6b -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:42:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:44:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:44:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4a30fac827e8`](https://github.com/gmanldn/smoothcast/commit/4a30fac827e8be060c7013dfb835d2eb9a1c2b6b)
+
+- 🟥 **02:44:15 · Fix** — fix: declare demo\_cast\_helper in the wheel module manifest (Refs #706) · [`77a16b611ce1`](https://github.com/gmanldn/smoothcast/commit/77a16b611ce1e0abfba3bf56e54a1819201e7a64)
 
 - ⬜ **02:42:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0dac5fcabf78`](https://github.com/gmanldn/smoothcast/commit/0dac5fcabf7870e4ffa3c875bf3df11c1e2a68f5)
 
 - 🟥 **02:42:30 · Fix** — fix(cast): keep the existing stream alive until a remote URL handoff is confirmed (Refs #746) · [`c403a59c6913`](https://github.com/gmanldn/smoothcast/commit/c403a59c6913cb9dfb2d0bf2478a0d7b1f17c034)
+
+- ⬜ **02:42:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4055693df29e`](https://github.com/gmanldn/smoothcast/commit/4055693df29e80c080723ef68e0dadf16b75eb8e)
 
 - ⬜ **02:41:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`17725f6c2cdf`](https://github.com/gmanldn/smoothcast/commit/17725f6c2cdf58ba4b6f815b4c1f4c5d46e7433c)
 
