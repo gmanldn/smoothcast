@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e31759fe05d73e42a0c194d65a98acbdbf383a50 -->
+<!-- sc-changelog-through: 0fa2dcb107f6796b5d0361bfa37e606b886a132e -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **04:36:00 · Fix** — fix: verify frozen MSI version and publish atomically across volumes (Refs #535) <!-- sc-changelog-pending -->
+- ⬜ **04:37:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:37:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0fa2dcb107f6`](https://github.com/gmanldn/smoothcast/commit/0fa2dcb107f6796b5d0361bfa37e606b886a132e)
+
+- 🟪 **04:37:25 · Tests** — test(update): verify detached canonical launcher handoff (Refs #711) · [`239b86838800`](https://github.com/gmanldn/smoothcast/commit/239b86838800869c85b9d3a6d5aeb385a45d9cfd)
+
+- 🟥 **04:36:24 · Fix** — fix: verify frozen MSI version and publish atomically across volumes (Refs #535) · [`29a5a135fb37`](https://github.com/gmanldn/smoothcast/commit/29a5a135fb37875362d33715e1ed94e017e112fc)
 
 - ⬜ **04:35:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9af8dc0de376`](https://github.com/gmanldn/smoothcast/commit/9af8dc0de376ba3305bc053570915975b5c647ba)
 
