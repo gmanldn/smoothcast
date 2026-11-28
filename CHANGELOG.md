@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c429d044fc062b4fc3ccc968264319cf66160541 -->
+<!-- sc-changelog-through: 5ded1212e084d480aa31230f2e4036f77f327f60 -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **07:14:48 · Fix** — fix(cast): release the registry lock before disconnecting rejected receivers (Refs #722) <!-- sc-changelog-pending -->
+- ⬜ **07:17:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:17:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5ded1212e084`](https://github.com/gmanldn/smoothcast/commit/5ded1212e084d480aa31230f2e4036f77f327f60)
+
+- 🟪 **07:17:11 · Tests** — test: ratchet against new hard-coded paths (Refs #701) · [`9e49aba31794`](https://github.com/gmanldn/smoothcast/commit/9e49aba31794e0bb6f0e9fc2d50d7256ee85f901)
+
+- 🟥 **07:15:03 · Fix** — fix(cast): release the registry lock before disconnecting rejected receivers (Refs #722) · [`51f673c9e95f`](https://github.com/gmanldn/smoothcast/commit/51f673c9e95fbf4089815498bd6c9ea12a500bba)
 
 - ⬜ **07:14:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b1ae8090ee99`](https://github.com/gmanldn/smoothcast/commit/b1ae8090ee99d887d228f3ba2980607e6404688d)
 
