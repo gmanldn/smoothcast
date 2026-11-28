@@ -8,15 +8,25 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cfae34f502f8f5a5034e156dcde13298b0aa854b -->
+<!-- sc-changelog-through: b0b031d597bd95355d09ecc30bf9d6535f3f0d04 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:08:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:40:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:40:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b0b031d597bd`](https://github.com/gmanldn/smoothcast/commit/b0b031d597bd95355d09ecc30bf9d6535f3f0d04)
+
+- 🟥 **02:40:43 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`914d57ad7406`](https://github.com/gmanldn/smoothcast/commit/914d57ad740637b0f74062ceea36499b47f99bae)
+
+- 🟥 **02:39:57 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`2835e75cbe0c`](https://github.com/gmanldn/smoothcast/commit/2835e75cbe0c459a76dd0177bbc6aab60de0febc)
+
+- 🟥 **02:39:46 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`c47836ad40cc`](https://github.com/gmanldn/smoothcast/commit/c47836ad40cca0a1e26345f81c36f0710f7e284e)
 
 - ⬜ **02:08:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cfae34f502f8`](https://github.com/gmanldn/smoothcast/commit/cfae34f502f8f5a5034e156dcde13298b0aa854b)
 
 - 🟥 **02:08:03 · Fix** — fix(tests): repair test harnesses and assertions that drifted after refactors · [`72c1836e076b`](https://github.com/gmanldn/smoothcast/commit/72c1836e076b163274e2813e15fcdd78a242b515)
+
+- ⬜ **02:08:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1abaa1ba1faa`](https://github.com/gmanldn/smoothcast/commit/1abaa1ba1faa200e3dd4f373f664a69ba9791ac8)
 
 - ⬜ **02:06:00 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`75ffd8e19f20`](https://github.com/gmanldn/smoothcast/commit/75ffd8e19f20fce80e09958ccfe83ca15fc410cf)
 
