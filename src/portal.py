@@ -2307,7 +2307,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
 <div class="room-heading"><div class="home-room-title"><h2 id="homeHeading" tabindex="-1">Your room</h2><a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a></div><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
-<div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
+<div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">Up next</span><a id="glanceQueue" href="#queuePanel" aria-label="Open Up Next queue">Nothing waiting</a></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <h2 id="quickCastHeading">Start playing</h2>
 <div class="actions"><button id="uploadCastNow" class="primary-action" type="button" aria-describedby="quickCastStatus">Choose a file to cast</button><a href="#screensPanel" id="homeChooseScreen">Choose a TV or speaker</a><a href="#uploadCard" id="quickQueueUpload">Add media to Up Next</a></div>
@@ -3188,6 +3188,7 @@ function renderSharedQueue(s){
   renderQueue(s.queue,revision);
   const qTotal=Number.isSafeInteger(s.queue_total)&&s.queue&&s.queue_total>s.queue.length?s.queue_total:0;
   $("queueCount").textContent=s.queue&&s.queue.length?(qTotal?`${s.queue.length} of ${qTotal} shown`:`${s.queue.length} waiting`):"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+  renderGlanceQueue(s.queue);
 }
 function applyStatus(d){
   if(!matchingBuild(d))return false;
@@ -3275,6 +3276,13 @@ function renderGlance(room){
   const people=Array.isArray(room&&room.participants)?room.participants:[];
   const online=people.filter(p=>p.online).length;
   set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
+}
+function renderGlanceQueue(items){
+  const link=$("glanceQueue");if(!link)return;
+  const rows=Array.isArray(items)?items:[],first=rows[0];
+  const title=first&&typeof first.title==="string"&&first.title.trim()?first.title.trim():"Media";
+  link.textContent=rows.length?(title+(rows.length>1?` · +${rows.length-1} more`:"")):"Nothing waiting";
+  link.setAttribute("aria-label",rows.length?`Up Next: ${title}${rows.length>1?`, ${rows.length-1} more waiting`:""}. Open queue`:"Up Next is empty. Open queue");
 }
 let hostSettingsLoaded=false,hostSettingsLoading=false;
 function renderHostSettings(values){

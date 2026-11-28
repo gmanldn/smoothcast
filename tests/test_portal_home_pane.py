@@ -79,9 +79,38 @@ def test_home_pane_surfaces_device_queue_and_people():
     page = _page()
     for element in ("receiver", "title", "queue", "queueCount", "homePeople"):
         assert element in page.ids, f"home pane must show {element}"
+    assert page.tags["glance"] == "div"
+    assert page.tags["glanceQueue"] == "a"
+    assert 'id="glanceQueue" href="#queuePanel" aria-label="Open Up Next queue"' in portal._HTML
+    assert "renderGlanceQueue(s.queue);" in portal._HTML
+    assert 'function renderGlanceQueue(items){' in portal._HTML
     # The dedicated panes keep their own ids.
     for element in ("queue", "people", "playback"):
         assert element in page.ids
+
+
+def test_home_glance_names_the_next_queue_item_and_waiting_count():
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for live Home queue summary check")
+    html = portal._HTML
+    start = html.index("function renderGlanceQueue(items){")
+    end = html.index("\nlet hostSettingsLoaded", start)
+    function = html[start:end]
+    harness = r"""
+const link={textContent:"",attrs:{},setAttribute(k,v){this.attrs[k]=v}};
+const $=id=>id==="glanceQueue"?link:null;
+const check=(ok,message)=>{if(!ok)throw Error(message)};
+"""
+    checks = r"""
+renderGlanceQueue([]);
+check(link.textContent==="Nothing waiting","empty queue is clear");
+check(link.attrs["aria-label"]==="Up Next is empty. Open queue","empty queue has a clear accessible name");
+renderGlanceQueue([{title:"  Quiet Film  "},{title:"Second"},{title:"Third"}]);
+check(link.textContent==="Quiet Film · +2 more","next item and count are summarized");
+check(link.attrs["aria-label"]==="Up Next: Quiet Film, 2 more waiting. Open queue","queue link explains its action");
+"""
+    subprocess.run(["node", "-"], input=harness + function + checks,
+                   text=True, check=True, timeout=10)
 
 
 def test_home_embeds_the_cast_entry_and_drops_the_old_welcome_block():
