@@ -499,9 +499,21 @@ class _StatusMirror:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        # A receiver's connection lifecycle is single-flight: wait() starts
+        # PyChromecast's SocketClient thread, so disconnect/join must not race
+        # that start. Stripes keep lock memory bounded across arbitrary hosts.
+        self._host_locks = tuple(threading.RLock() for _ in range(8))
+        self._closed = False
         self._casts: dict[str, object] = {}
 
     def info(self, host: str, timeout: float) -> ReceiverInfo | None:
+        with self._host_lock(host):
+            with self._lock:
+                if self._closed:
+                    return None
+            return self._info_locked(host, timeout)
+
+    def _info_locked(self, host: str, timeout: float) -> ReceiverInfo | None:
         deadline = time.monotonic() + timeout
         # A kept connection can go stale without any event (TV standby, app
         # switch, Wi-Fi roam): it keeps answering from a cache that stays UNKNOWN
@@ -591,28 +603,34 @@ class _StatusMirror:
 
     def connected(self, host: str) -> bool:
         """True only while the kept socket is live; stale caches never answer."""
-        with self._lock:
-            chromecast = self._casts.get(host)
-        try:
-            client = getattr(chromecast, "socket_client", None)
-            return bool(client is not None and client.is_connected)
-        except Exception:  # noqa: BLE001 - a broken socket client means not connected
-            return False
+        with self._host_lock(host):
+            with self._lock:
+                chromecast = self._casts.get(host)
+            try:
+                client = getattr(chromecast, "socket_client", None)
+                return bool(client is not None and client.is_connected)
+            except Exception:  # noqa: BLE001 - a broken socket client means not connected
+                return False
 
     def forget(self, host: str) -> None:
         self._drop(host)
 
     def _drop(self, host: str) -> None:
-        with self._lock:
-            chromecast = self._casts.pop(host, None)
-        if chromecast is not None:
-            try:
-                cast(Any, chromecast).disconnect(timeout=1)
-            except Exception as exc:  # noqa: BLE001 - a failed disconnect is logged
-                log_backend_failure(f"receiver disconnect failed: {exc}")
+        with self._host_lock(host):
+            with self._lock:
+                chromecast = self._casts.pop(host, None)
+            if chromecast is not None:
+                try:
+                    cast(Any, chromecast).disconnect(timeout=1)
+                except Exception as exc:  # noqa: BLE001 - a failed disconnect is logged
+                    log_backend_failure(f"receiver disconnect failed: {exc}")
+
+    def _host_lock(self, host: str) -> threading.RLock:
+        return self._host_locks[hash(host) % len(self._host_locks)]
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             hosts = list(self._casts)
         for host in hosts:
             self._drop(host)
