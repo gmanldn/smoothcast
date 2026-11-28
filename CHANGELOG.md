@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2ee595562ae64ef5c003ae8a1491831c3b1b0a3b -->
+<!-- sc-changelog-through: 76cd100ef82714943d65ba72fc4d238b7f49b055 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:11:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:14:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:14:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`76cd100ef827`](https://github.com/gmanldn/smoothcast/commit/76cd100ef82714943d65ba72fc4d238b7f49b055)
+
+- 🟥 **03:14:13 · Fix** — fix: cancel stale screen queue advances (Refs #749) · [`2feb4aa970c9`](https://github.com/gmanldn/smoothcast/commit/2feb4aa970c924695bbc06cc2faef9c282607509)
+
+- ⬜ **03:11:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`60b0b0731d29`](https://github.com/gmanldn/smoothcast/commit/60b0b0731d291b8bd2cee632c205b381d63f7eb6)
 
 - ⬜ **03:11:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2ee595562ae6`](https://github.com/gmanldn/smoothcast/commit/2ee595562ae64ef5c003ae8a1491831c3b1b0a3b)
 
