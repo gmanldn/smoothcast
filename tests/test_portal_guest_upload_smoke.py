@@ -645,3 +645,49 @@ def test_cast_target_changes_after_confirm_requires_reconfirmation(guest_room, t
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+def test_busy_receiver_at_completion_shows_guidance_without_false_success(guest_room, tmp_path):
+    """#570: receiver busy when the upload finishes -> clear message, never 'Added'/'playing'."""
+    from playwright.sync_api import expect, sync_playwright
+    from portal import PortalRequestError
+
+    rig, _uploads, deliveries = guest_room
+    video = tmp_path / "busy.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 2048)
+    inner = rig.server.dispatch
+
+    def dispatch(action, payload):
+        if action == "upload_target":
+            return {"receiver": "Test TV", "target_id": "a" * 64, "active": False}
+        if action == "cast_upload":
+            raise PortalRequestError(409, "The receiver is busy. Try again in a moment.")
+        return inner(action, payload)
+
+    rig.server.dispatch = dispatch
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        page.on("dialog", lambda d: d.accept())
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Busy guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.locator("#videoFile").set_input_files(str(video))
+            page.locator("#uploadQueue").uncheck()
+            page.locator("#uploadButton").click()
+            expect(page.locator("#uploadStatus")).to_contain_text("receiver is busy", timeout=20000)
+            assert "Added to Up Next" not in page.locator("#transferDelivery").inner_text()
+            assert deliveries == []
+        finally:
+            context.close()
+            browser.close()
