@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 595ac65d855bce941187cd72cba33f34bbbd8fde -->
+<!-- sc-changelog-through: 741a06cb41e77de8b821045d124a1fd817b9c789 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **10:10:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **10:14:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **10:14:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`741a06cb41e7`](https://github.com/gmanldn/smoothcast/commit/741a06cb41e77de8b821045d124a1fd817b9c789)
+
+- 🟦 **10:13:59 · Refactor** — refactor(av): AvMixin -&gt; AvController, MainWindow bases 4-&gt;3 (Refs #691) · [`aa3f560ce482`](https://github.com/gmanldn/smoothcast/commit/aa3f560ce482ffae6e659c7521a5ad6c5ba4df96)
+
+- 🟦 **10:12:32 · Refactor** — refactor(av): AvMixin -&gt; AvController, MainWindow bases 4-&gt;3 (Refs #691) · [`dc69f2fc1101`](https://github.com/gmanldn/smoothcast/commit/dc69f2fc110112fab8eb46c3d0cbff3d5bf82dee)
 
 - ⬜ **10:10:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`595ac65d855b`](https://github.com/gmanldn/smoothcast/commit/595ac65d855bce941187cd72cba33f34bbbd8fde)
+
+- ⬜ **10:10:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`08524d5dc217`](https://github.com/gmanldn/smoothcast/commit/08524d5dc217c316c88a86e126e8fd75245c9152)
 
 - 🟦 **10:10:46 · Refactor** — refactor(queue): QueueMixin family -&gt; controllers, MainWindow bases 5-&gt;4 (Refs #691) · [`9ee25e93f90c`](https://github.com/gmanldn/smoothcast/commit/9ee25e93f90c8bee0c733acc80a2ac7fb83828b8)
 
