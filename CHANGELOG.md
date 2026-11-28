@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 40e38fe8a3aa792fe9a27594ac00af95edabb7d0 -->
+<!-- sc-changelog-through: ed05c905663d8fd82909fee4537d6f3341ab5ea6 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:15:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:30:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:30:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ed05c905663d`](https://github.com/gmanldn/smoothcast/commit/ed05c905663d8fd82909fee4537d6f3341ab5ea6)
+
+- 🟦 **09:30:20 · Refactor** — refactor(settings): SettingsCardMixin becomes composed SettingsCardController; bases 10-&gt;9 (Refs #691) · [`1b476e620242`](https://github.com/gmanldn/smoothcast/commit/1b476e6202424f5f35c370705b76c41e4a4bfe80)
 
 - ⬜ **09:15:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`40e38fe8a3aa`](https://github.com/gmanldn/smoothcast/commit/40e38fe8a3aa792fe9a27594ac00af95edabb7d0)
+
+- ⬜ **09:15:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`6de7e9ec3302`](https://github.com/gmanldn/smoothcast/commit/6de7e9ec33023f65920a54a28bd596100c5be050)
 
 - 🟦 **09:14:49 · Refactor** — refactor(subtitles): SubtitleFileMixin becomes composed SubtitleFileController; bases 11-&gt;10 (Refs #691) · [`d0aa639db0cc`](https://github.com/gmanldn/smoothcast/commit/d0aa639db0ccf3917296848017305436e77ad88b)
 
