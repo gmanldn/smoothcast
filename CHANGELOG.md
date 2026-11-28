@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: aac4685e9b7382d70ccb58537924b533c139cb15 -->
+<!-- sc-changelog-through: c6db5e134ba7b0c8e2fa1c12c5764f38dc64ac7f -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **01:19:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **01:34:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **01:34:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c6db5e134ba7`](https://github.com/gmanldn/smoothcast/commit/c6db5e134ba7b0c8e2fa1c12c5764f38dc64ac7f)
+
+- 🟪 **01:34:29 · Tests** — test(agent): repair 7 stale lifecycle tests for scope check and per-shipment PATCH; drop their quarantine entries (Refs #700) · [`fd0ab522d431`](https://github.com/gmanldn/smoothcast/commit/fd0ab522d4311a86e2ba3ebdd45a2e24a2ed022f)
+
+- 🟩 **01:22:24 · Feature** — feat(portal): say what to do next in empty room screens · [`fd9cd4205530`](https://github.com/gmanldn/smoothcast/commit/fd9cd4205530065026883ba1d15103523082e0d8)
 
 - ⬜ **01:19:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`aac4685e9b73`](https://github.com/gmanldn/smoothcast/commit/aac4685e9b7382d70ccb58537924b533c139cb15)
+
+- ⬜ **01:19:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ebeea3a2639d`](https://github.com/gmanldn/smoothcast/commit/ebeea3a2639d0fab91621eed7f1b1eac9dc117c8)
 
 - 🟥 **01:19:18 · Fix** — fix(tests): quarantine GUI size ratchet to #706 with owner/expiry; skip GTK settings test without a usable PyGObject (Refs #700) · [`95271e5cc427`](https://github.com/gmanldn/smoothcast/commit/95271e5cc42782979ee1022d423e649f32078b7b)
 
