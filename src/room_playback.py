@@ -1,121 +1,113 @@
-"""Receiver ownership and playback as commands and events (ARCH-07, #695).
+"""Event-sourced playback + receiver ownership (ARCH-07 / #695). GTK-free, pure.
 
-Pure and GTK-free, a sibling of ``room_store`` (queue). One owner holds the receiver;
-only that owner can change playback, so two controllers cannot fight over a TV.
-Idempotency keys and revision fences are enforced here once. State is
-``replay(events)``. Not wired into the app yet.
+Same contract as ``room_events``: validated commands -> numbered events ->
+``apply`` is the only mutation, ``replay`` rebuilds the state. Adds:
+
+* Ownership: one owner at a time; only the owner may play/pause/stop/release.
+* Single poller per receiver: ``attach_poller`` fails for a second poller by
+  construction, and only the attached poller's ``report`` is accepted.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-CLAIM, RELEASE, PLAY, PAUSE, STOP = "claim", "release", "play", "pause", "stop"
-IDLE, PLAYING, PAUSED = "idle", "playing", "paused"
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class Command:
-    kind: str
-    key: str                        # idempotency key, unique per user intent
-    owner: str = ""                 # who is asking
-    receiver: str = ""              # claim only
-    item: str = ""                  # play only
-    base_revision: int | None = None
-
-
-@dataclass(frozen=True)
-class Event:
+class PlaybackEvent:
     seq: int
-    kind: str
-    owner: str = ""
-    receiver: str = ""
-    item: str = ""
-
-
-@dataclass(frozen=True)
-class State:
-    owner: str = ""
-    receiver: str = ""
-    status: str = IDLE
-    item: str = ""
+    kind: str  # claimed | released | playing | paused | stopped | position | poller_attached | poller_detached
+    data: tuple
 
 
 @dataclass
-class Result:
-    ok: bool
-    reason: str = ""
-    event: Event | None = None
-    duplicate: bool = False
+class PlaybackState:
+    owner: str | None = None
+    media: str | None = None
+    status: str = "idle"  # idle | playing | paused
+    position: float = 0.0
+    poller: str | None = None
+    revision: int = 0
 
 
-def apply(state: State, event: Event) -> State:
-    if event.kind == CLAIM:
-        return State(owner=event.owner, receiver=event.receiver)
-    if event.kind == RELEASE:
-        return State()
-    if event.kind == PLAY:
-        return State(state.owner, state.receiver, PLAYING, event.item or state.item)
-    if event.kind == PAUSE:
-        return State(state.owner, state.receiver, PAUSED, state.item)
-    if event.kind == STOP:
-        return State(state.owner, state.receiver, IDLE, "")
-    return state
+def apply(state: PlaybackState, event: PlaybackEvent) -> None:
+    if event.seq != state.revision + 1:
+        raise ValueError(f"event {event.seq} does not follow revision {state.revision}")
+    kind, data = event.kind, event.data
+    if kind == "claimed":
+        state.owner = data[0]
+    elif kind == "released":
+        state.owner, state.media, state.status, state.position = None, None, "idle", 0.0
+    elif kind == "playing":
+        state.media, state.status = data[0], "playing"
+        state.position = data[1]
+    elif kind == "paused":
+        state.status = "paused"
+    elif kind == "stopped":
+        state.media, state.status, state.position = None, "idle", 0.0
+    elif kind == "position":
+        state.position = data[0]
+    elif kind == "poller_attached":
+        state.poller = data[0]
+    elif kind == "poller_detached":
+        state.poller = None
+    else:
+        raise ValueError(f"unknown event kind {kind!r}")
+    state.revision = event.seq
 
 
-def replay(events: list[Event]) -> State:
-    state = State()
+def replay(events) -> PlaybackState:
+    state = PlaybackState()
     for event in events:
-        state = apply(state, event)
+        apply(state, event)
     return state
 
 
-@dataclass
-class RoomPlayback:
-    events: list[Event] = field(default_factory=list)
-    _seen: dict = field(default_factory=dict)
+class PlaybackStore:
+    def __init__(self) -> None:
+        self.state = PlaybackState()
+        self.log: list[PlaybackEvent] = []
+        self._seen: dict[str, tuple[PlaybackEvent, ...]] = {}
 
-    @property
-    def revision(self) -> int:
-        return len(self.events)
+    def submit(self, command_id: str, kind: str, actor: str, *args,
+               expected_revision: int | None = None) -> tuple[PlaybackEvent, ...]:
+        """Run a command for ``actor``; rejected or no-op commands return ``()``."""
+        if command_id in self._seen:
+            return self._seen[command_id]
+        if expected_revision is not None and expected_revision != self.state.revision:
+            return ()
+        events = tuple(self._events_for(kind, actor, args))
+        for event in events:
+            apply(self.state, event)
+            self.log.append(event)
+        self._seen[command_id] = events
+        return events
 
-    @property
-    def state(self) -> State:
-        return replay(self.events)
-
-    def submit(self, cmd: Command) -> Result:
-        if cmd.key in self._seen:
-            first = self._seen[cmd.key]
-            if isinstance(first, Result):              # a rejection stays rejected; use a new key to try again
-                return Result(False, first.reason, duplicate=True)
-            return Result(True, "duplicate", first, duplicate=True)
-        result = self._decide(cmd)
-        if not result.ok:
-            self._seen[cmd.key] = result
-        return result
-
-    def _decide(self, cmd: Command) -> Result:
-        if cmd.base_revision is not None and cmd.base_revision != self.revision:
-            return Result(False, "stale_revision")
-        if not cmd.owner:
-            return Result(False, "missing_owner")
-        state = self.state
-        if cmd.kind == CLAIM:
-            if not cmd.receiver:
-                return Result(False, "missing_receiver")
-            if state.owner and state.owner != cmd.owner:
-                return Result(False, "receiver_busy")
-        elif cmd.kind in (RELEASE, PLAY, PAUSE, STOP):
-            if not state.owner:
-                return Result(False, "no_owner")
-            if state.owner != cmd.owner:
-                return Result(False, "not_owner")
-            if cmd.kind == PLAY and not (cmd.item or state.item):
-                return Result(False, "missing_item")
-            if cmd.kind == PAUSE and state.status != PLAYING:
-                return Result(False, "not_playing")
+    def _events_for(self, kind: str, actor: str, args: tuple):
+        s, seq = self.state, self.state.revision + 1
+        owns = s.owner == actor
+        if kind == "claim":
+            if s.owner is None:
+                yield PlaybackEvent(seq, "claimed", (actor,))
+        elif kind == "release":
+            if owns:
+                yield PlaybackEvent(seq, "released", ())
+        elif kind == "play":
+            if owns:
+                yield PlaybackEvent(seq, "playing", (args[0], float(args[1]) if len(args) > 1 else 0.0))
+        elif kind == "pause":
+            if owns and s.status == "playing":
+                yield PlaybackEvent(seq, "paused", ())
+        elif kind == "stop":
+            if owns and s.status != "idle":
+                yield PlaybackEvent(seq, "stopped", ())
+        elif kind == "attach_poller":
+            if s.poller is None:
+                yield PlaybackEvent(seq, "poller_attached", (actor,))
+        elif kind == "detach_poller":
+            if s.poller == actor:
+                yield PlaybackEvent(seq, "poller_detached", ())
+        elif kind == "report":
+            if s.poller == actor and s.status == "playing" and float(args[0]) != s.position:
+                yield PlaybackEvent(seq, "position", (float(args[0]),))
         else:
-            return Result(False, "unknown_command")
-        event = Event(self.revision + 1, cmd.kind, cmd.owner, cmd.receiver, cmd.item)
-        self.events.append(event)
-        self._seen[cmd.key] = event
-        return Result(True, event=event)
+            raise ValueError(f"unknown command {kind!r}")

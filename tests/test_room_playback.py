@@ -1,73 +1,78 @@
 import random
 
-from room_playback import Command, RoomPlayback, replay, PLAYING, PAUSED, IDLE
+import pytest
+
+from room_playback import PlaybackStore, replay
 
 
-def _owned():
-    r = RoomPlayback()
-    assert r.submit(Command("claim", "k0", owner="ann", receiver="tv")).ok
-    return r
+def owned_playing():
+    store = PlaybackStore()
+    store.submit("1", "claim", "tv-app")
+    store.submit("2", "play", "tv-app", "film.mp4", 3)
+    return store
 
 
-def test_commands_emit_events_and_replay_to_the_same_state():
-    r = _owned()
-    r.submit(Command("play", "k1", owner="ann", item="a"))
-    r.submit(Command("pause", "k2", owner="ann"))
-    assert r.state.status == PAUSED and r.state.item == "a"
-    assert replay(r.events) == r.state and [e.seq for e in r.events] == [1, 2, 3]
+def test_only_the_owner_controls_playback():
+    store = owned_playing()
+    assert store.submit("x", "claim", "phone") == ()
+    for cmd in ("pause", "stop", "release"):
+        assert store.submit(cmd, cmd, "phone") == ()
+    assert store.state.owner == "tv-app" and store.state.status == "playing"
 
 
-def test_only_the_owner_controls_the_receiver():
-    r = _owned()
-    assert r.submit(Command("play", "k1", owner="bob", item="a")).reason == "not_owner"
-    assert r.submit(Command("claim", "k2", owner="bob", receiver="tv")).reason == "receiver_busy"
-    assert r.revision == 1
-    assert r.submit(Command("release", "k3", owner="ann")).ok
-    assert r.submit(Command("claim", "k4", owner="bob", receiver="tv")).ok
+def test_pause_stop_release_flow_and_replay():
+    store = owned_playing()
+    store.submit("3", "pause", "tv-app")
+    assert store.state.status == "paused"
+    store.submit("4", "stop", "tv-app")
+    store.submit("5", "release", "tv-app")
+    assert (store.state.owner, store.state.status) == (None, "idle")
+    assert replay(store.log) == store.state
 
 
-def test_retry_is_idempotent_and_stale_fence_rejects():
-    r = _owned()
-    first = r.submit(Command("play", "k1", owner="ann", item="a"))
-    again = r.submit(Command("play", "k1", owner="ann", item="a"))
-    assert again.duplicate and again.event == first.event and r.revision == 2
-    assert r.submit(Command("stop", "k2", owner="ann", base_revision=1)).reason == "stale_revision"
-    assert r.state.status == PLAYING
+def test_second_poller_is_impossible_and_only_the_poller_reports():
+    store = owned_playing()
+    assert store.submit("p1", "attach_poller", "poll-a")
+    assert store.submit("p2", "attach_poller", "poll-b") == ()
+    assert store.submit("r1", "report", "poll-b", 9.0) == ()
+    assert store.submit("r2", "report", "poll-a", 9.0)
+    assert store.state.position == 9.0
+    store.submit("p3", "detach_poller", "poll-a")
+    assert store.submit("p4", "attach_poller", "poll-b")
 
 
-def test_validation():
-    r = RoomPlayback()
-    assert r.submit(Command("play", "a", owner="ann", item="x")).reason == "no_owner"
-    assert r.submit(Command("claim", "b", owner="", receiver="tv")).reason == "missing_owner"
-    assert r.submit(Command("claim", "c", owner="ann")).reason == "missing_receiver"
-    assert r.submit(Command("dance", "d", owner="ann")).reason == "unknown_command"
-    r.submit(Command("claim", "e", owner="ann", receiver="tv"))
-    assert r.submit(Command("pause", "f", owner="ann")).reason == "not_playing"
-    assert r.submit(Command("play", "g", owner="ann")).reason == "missing_item"
-    r.submit(Command("play", "h", owner="ann", item="a")); r.submit(Command("stop", "i", owner="ann"))
-    assert r.state.status == IDLE and r.state.item == ""
+def test_idempotent_ids_and_revision_fence():
+    store = PlaybackStore()
+    first = store.submit("c", "claim", "a")
+    assert store.submit("c", "claim", "b") == first and store.state.owner == "a"
+    assert store.submit("d", "release", "a", expected_revision=0) == ()
+    assert store.submit("d", "release", "a", expected_revision=1)
 
 
-def test_random_contention_never_gives_two_owners_and_replays_exactly():
-    rng = random.Random(7)
-    r = RoomPlayback()
-    for n in range(400):
-        who = rng.choice(["ann", "bob", "cy"])
-        kind = rng.choice(["claim", "release", "play", "pause", "stop"])
-        key = f"k{rng.randrange(150)}"           # many retried keys
-        r.submit(Command(kind, key, owner=who, receiver="tv", item=f"i{n % 5}"))
-        s = r.state
-        assert (s.owner == "") == (s.receiver == "")
-    assert replay(r.events) == r.state
-    assert len({e.seq for e in r.events}) == len(r.events)
+def test_unknown_command_raises():
+    with pytest.raises(ValueError):
+        PlaybackStore().submit("1", "explode", "a")
 
 
-def test_a_rejected_key_stays_rejected_after_the_receiver_frees_up():
-    r = _owned()
-    busy = r.submit(Command("claim", "bob1", owner="bob", receiver="tv"))
-    assert not busy.ok and busy.reason == "receiver_busy"
-    assert r.submit(Command("release", "k1", owner="ann")).ok
-    again = r.submit(Command("claim", "bob1", owner="bob", receiver="tv"))
-    assert not again.ok and again.duplicate and again.reason == "receiver_busy"
-    assert r.state.owner == ""
-    assert r.submit(Command("claim", "bob2", owner="bob", receiver="tv")).ok   # a fresh intent uses a fresh key
+@pytest.mark.parametrize("seed", range(25))
+def test_random_interleavings_keep_invariants_and_replay(seed):
+    rng = random.Random(seed)
+    store = PlaybackStore()
+    actors = ["a", "b", "c"]
+    kinds = ["claim", "release", "play", "pause", "stop", "attach_poller", "detach_poller", "report"]
+    issued = []
+    for n in range(120):
+        if issued and rng.random() < 0.25:
+            cid, kind, actor, args = rng.choice(issued)  # duplicate delivery
+        else:
+            kind, actor = rng.choice(kinds), rng.choice(actors)
+            args = {"play": ("m%d" % rng.randrange(3), rng.randrange(50)),
+                    "report": (rng.randrange(100),)}.get(kind, ())
+            cid = f"c{n}"
+            issued.append((cid, kind, actor, args))
+        store.submit(cid, kind, actor, *args)
+        s = store.state
+        assert s.status == "idle" or s.owner is not None   # never playing unowned
+        assert s.status == "idle" or s.media is not None
+    assert [e.seq for e in store.log] == list(range(1, len(store.log) + 1))
+    assert replay(store.log) == store.state
