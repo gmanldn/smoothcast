@@ -44,7 +44,7 @@
   "cast_portal_room.py": 161,
   "cast_queue.py": 425,
   "cast_recovery.py": 208,
-  "cast_remote_url.py": 100,
+  "cast_remote_url.py": 114,
   "cast_retry_ui.py": 52,
   "cast_session.py": 1245,
   "cast_settings.py": 215,
@@ -96,7 +96,7 @@
   "error_banner_ui.py": 39,
   "error_log.py": 197,
   "error_tail.py": 455,
-  "errors.py": 289,
+  "errors.py": 293,
   "exporters.py": 196,
   "failure_boundary.py": 140,
   "federated_search.py": 174,
@@ -335,7 +335,7 @@
   "stream_health_view.py": 33,
   "stream_route.py": 283,
   "stream_watchdog.py": 158,
-  "streamer.py": 2317,
+  "streamer.py": 2319,
   "streamer_generation.py": 91,
   "subtitle_delay.py": 92,
   "subtitle_encoding.py": 292,
@@ -372,6 +372,6 @@
   "watch_history.py": 208,
   "zoom_pan.py": 78
  },
- "src_lines": 69042,
+ "src_lines": 69062,
  "src_modules": 369
 }
