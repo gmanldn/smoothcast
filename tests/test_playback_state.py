@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 import unittest
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -77,6 +78,20 @@ def test_external_runtime_is_unknown_for_live_or_malformed_reports():
                  {"duration": float("inf")}, {"duration": float("nan")},
                  {"duration": 10 ** 9}, {"duration": "soon"}, {"duration": [1]}):
         assert playback_state.external_runtime(info) is None, info
+
+
+@pytest.mark.parametrize(("info", "expected"), [
+    ({"duration": 3723.4}, "1:02:03"),
+    ({"duration": 3723.6}, "1:02:04"),
+    ({"duration": 60}, "1:00"),
+    ({"duration": 0, "stream_type": "LIVE"}, "Live"),
+    ({"duration": None}, "Length unknown"),
+])
+def test_external_length_label_reports_total_runtime_without_remaining_prefix(info, expected):
+    assert playback_state.external_length_label(info) == expected
+    details = playback_state.external_details(info)
+    if expected not in {"Live", "Length unknown"}:
+        assert expected in details
 
 
 def test_external_display_clock_projects_only_playing_and_keeps_unknowns_independent(monkeypatch):

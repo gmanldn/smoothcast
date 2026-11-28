@@ -35,6 +35,7 @@ def extracted(*names, async_runs):
         "castctl": castctl,
         "idle_slate": idle_slate,
         "reliability_metrics": reliability_metrics,
+        "fmt_time": castctl.fmt_time,
         "pathlib": pathlib,
         "time": time,
         "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **_kwargs:
@@ -211,6 +212,41 @@ def test_external_detector_requires_exact_saved_url_even_when_encoder_alive():
         w.device_state = "PLAYING"
         w._detect_external()
         assert w.external is is_external
+
+
+def test_external_native_clock_shows_total_length_not_negative_remaining():
+    w, _ = window("_detect_external")
+
+    class Label:
+        def __init__(self):
+            self.text = ""
+
+        def set_text(self, text):
+            self.text = text
+
+        def set_tooltip_text(self, _text):
+            pass
+
+    w.np_title = Label()
+    w.np_meta = Label()
+    w.elapsed_label = Label()
+    w.remaining_label = Label()
+    w.seekbar = SimpleNamespace(scrubbing=False, set_state=lambda *_args, **_kwargs: None)
+    w.device_info = {"player_state": "PLAYING", "current_time": 42,
+                     "duration": 3723.6, "stream_type": "BUFFERED"}
+    w._detect_external()
+    assert w.elapsed_label.text == "0:42"
+    assert w.remaining_label.text == "1:02:04"
+
+    w.device_info = {"player_state": "PLAYING", "current_time": 0,
+                     "duration": 0, "stream_type": "LIVE"}
+    w._detect_external()
+    assert w.remaining_label.text == "Live"
+
+    w.device_info = {"player_state": "PLAYING", "current_time": 10,
+                     "duration": None, "stream_type": "BUFFERED"}
+    w._detect_external()
+    assert w.remaining_label.text == "Length unknown"
 
 
 def test_stop_rechecks_receiver_identity_before_sending_remote_stop():

@@ -198,6 +198,19 @@ def external_runtime(info: dict | None) -> tuple[float, float] | None:
     return min(position, total), total
 
 
+def external_length_label(info: dict | None) -> str:
+    """Display the receiver-reported total length, or say why it is unknown."""
+    runtime = external_runtime(info)
+    stream = str(info.get("stream_type") or "").upper() if isinstance(info, dict) else ""
+    if runtime is None:
+        return "Live" if stream == "LIVE" else "Length unknown"
+    total = int(math.floor(runtime[1] + 0.5))
+    hours, remainder = divmod(total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return (f"{hours}:{minutes:02d}:{seconds:02d}" if hours
+            else f"{minutes}:{seconds:02d}")
+
+
 def external_display_clock(info: dict | None, state: str):
     """Receiver-only display clock; never grants ownership or seek capability.
 
@@ -262,16 +275,7 @@ def external_details(info: dict | None) -> str:
     width, height = meta.get("width"), meta.get("height")
     if type(width) is int and type(height) is int and width > 0 and height > 0:
         parts.append(f"{width}×{height}")
-    runtime = external_runtime(info)
-    stream = str(info.get("stream_type") or "").upper()
-    if stream == "LIVE" and runtime is None:
-        parts.append("Live")
-    elif runtime is not None:
-        total = int(runtime[1])
-        h, rest = divmod(total, 3600)
-        parts.append(f"{h}:{rest // 60:02d}:{rest % 60:02d}" if h else f"{rest // 60}:{rest % 60:02d}")
-    else:
-        parts.append("Length unknown")
+    parts.append(external_length_label(info))
     app = info.get("display_name")
     if isinstance(app, str) and app.strip():
         parts.append(app.strip()[:40])

@@ -1003,13 +1003,18 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:
                 self.elapsed_label.set_text(fmt_time(position))
-                if duration:
+                if self.external:
+                    self.remaining_label.set_text(
+                        playback_state.external_length_label(self.device_info))
+                elif duration:
                     self.remaining_label.set_text(f"-{fmt_time(duration - position)}")
                 else:
-                    self.remaining_label.set_text("Live" if self.external else "--:--")
+                    self.remaining_label.set_text("--:--")
             else:
                 self.elapsed_label.set_text("--:--")
-                self.remaining_label.set_text("--:--")
+                self.remaining_label.set_text(
+                    playback_state.external_length_label(self.device_info)
+                    if self.external else "--:--")
         self._update_transport_icon()
         self._update_details(snapshot)
         self._publish_portal_status()
