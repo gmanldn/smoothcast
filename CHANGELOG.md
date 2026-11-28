@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e37243944d2429168c65b1c13f3ec9b7d18fa007 -->
+<!-- sc-changelog-through: e0c1714a04a2e6799ca77c42bf60b30852264da8 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **06:04:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **06:08:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:08:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e0c1714a04a2`](https://github.com/gmanldn/smoothcast/commit/e0c1714a04a2e6799ca77c42bf60b30852264da8)
+
+- 🟥 **06:08:11 · Fix** — fix(screens): rebuild a reclaimed screen's player from the host, not just the missed orders · [`0d0b428cf782`](https://github.com/gmanldn/smoothcast/commit/0d0b428cf782676aa307ed1b3a743d9e66f47400)
 
 - ⬜ **06:04:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e37243944d24`](https://github.com/gmanldn/smoothcast/commit/e37243944d2429168c65b1c13f3ec9b7d18fa007)
+
+- ⬜ **06:04:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`22745933f7b2`](https://github.com/gmanldn/smoothcast/commit/22745933f7b2f6143622bd964163f8f791700105)
 
 - 🟥 **06:04:03 · Fix** — fix(screens): resync a screen whose poll cursor fell behind the mailbox · [`84d9571a9ec1`](https://github.com/gmanldn/smoothcast/commit/84d9571a9ec1e781119af7e5999fd263617601cf)
 
