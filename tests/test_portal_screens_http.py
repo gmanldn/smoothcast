@@ -18,6 +18,7 @@ import portal
 import portal_join
 import portal_media
 import portal_status
+import portal_screens_http
 
 PIN = "234567"
 CAPS = ["video/mp4", "audio/mpeg", "audio/mp4"]
@@ -291,6 +292,75 @@ def test_a_following_screen_advances_and_skips_unplayable_entries(rig):
     rig.json("POST", url + "/report", {"state": "ended", "play_seq": 2},
              cookie=cookie, csrf=csrf)
     assert rig.json("GET", url + "/poll?since=2", cookie=cookie)[1]["orders"] == []
+
+
+@pytest.mark.parametrize("interruption", ["stop", "manual_play"])
+def test_late_follow_lookup_cannot_override_stop_or_manual_play(
+        rig, monkeypatch, interruption):
+    cookie, csrf = rig.login("TV")
+    screen = rig.register(cookie, csrf)
+    first = rig.add("one.mp4", b"1")
+    second = rig.add("two.mp4", b"2")
+    third = rig.add("three.mp4", b"3")
+    url = f"/api/screens/{screen['id']}"
+    command_url = url + "/command"
+    rig.json("POST", command_url,
+             {"action": "play", "item": first, "follow": True},
+             cookie=cookie, csrf=csrf)
+    rig.json("POST", url + "/report", {"state": "playing", "play_seq": 1},
+             cookie=cookie, csrf=csrf)
+
+    entered, release = threading.Event(), threading.Event()
+    original_queue_rows = portal_screens_http._queue_rows
+
+    def blocked_queue_rows(handler):
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(2.0)
+        return original_queue_rows(handler)
+
+    monkeypatch.setattr(portal_screens_http, "_queue_rows", blocked_queue_rows)
+    reply = []
+    report = threading.Thread(target=lambda: reply.append(rig.json(
+        "POST", url + "/report", {"state": "ended", "play_seq": 1},
+        cookie=cookie, csrf=csrf)), daemon=True)
+    report.start()
+    assert entered.wait(1.0)
+    try:
+        if interruption == "stop":
+            status, _ = rig.json("POST", command_url, {"action": "stop"},
+                                 cookie=cookie, csrf=csrf)
+        else:
+            status, _ = rig.json("POST", command_url,
+                                 {"action": "play", "item": third},
+                                 cookie=cookie, csrf=csrf)
+        assert status == 202
+    finally:
+        release.set()
+        report.join(2.0)
+
+    assert not report.is_alive()
+    orders = rig.json("GET", url + "/poll?since=0", cookie=cookie)[1]["orders"]
+    assert second not in [order.get("item") for order in orders]
+    if interruption == "manual_play":
+        assert [order["item"] for order in orders if order["kind"] == "play"] == [first, third]
+    else:
+        assert orders[-1]["kind"] == "stop"
+
+
+def test_uninterrupted_follow_lookup_issues_exactly_one_next_order(rig):
+    cookie, csrf = rig.login("TV")
+    screen = rig.register(cookie, csrf)
+    first = rig.add("one.mp4", b"1")
+    second = rig.add("two.mp4", b"2")
+    url = f"/api/screens/{screen['id']}"
+    rig.json("POST", url + "/command",
+             {"action": "play", "item": first, "follow": True},
+             cookie=cookie, csrf=csrf)
+    rig.json("POST", url + "/report", {"state": "ended", "play_seq": 1},
+             cookie=cookie, csrf=csrf)
+    orders = rig.json("GET", url + "/poll?since=1", cookie=cookie)[1]["orders"]
+    assert [order["item"] for order in orders] == [second]
 
 
 # -- media delivery --------------------------------------------------------

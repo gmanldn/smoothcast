@@ -210,7 +210,7 @@ def _report(handler, screen_id: str) -> None:
     result = handler.server.screens.report(screen_id, _key(handler), body)
     item = result["advance"]
     if item:
-        _advance(handler, screen_id, item)
+        _advance(handler, screen_id, item, result["play_seq"])
     handler._send(200, {"ok": True, "play_seq": result["play_seq"]})
 
 
@@ -235,7 +235,7 @@ def _resolve(handler, item: str) -> dict:
     return info
 
 
-def _advance(handler, screen_id: str, finished: str) -> None:
+def _advance(handler, screen_id: str, finished: str, expected_play_seq: int) -> None:
     """A following screen finished an item: start the next one in the queue."""
     try:
         rows = _queue_rows(handler)
@@ -246,16 +246,22 @@ def _advance(handler, screen_id: str, finished: str) -> None:
         return
     for row in rows[ids.index(finished) + 1:ids.index(finished) + 6]:
         try:
-            _play(handler, screen_id, row["id"], follow=True, rows=rows)
+            _play(handler, screen_id, row["id"], follow=True, rows=rows,
+                  expected_play_seq=expected_play_seq)
             return
-        except (portal_screens.ScreenError, portal_media.MediaError):
+        except portal_screens.ScreenError as exc:
+            if exc.status == 409:
+                return  # a manual order or stop superseded this auto-advance
+            continue
+        except portal_media.MediaError:
             continue          # skip an unplayable entry rather than stall
         except Exception:  # noqa: BLE001 - stop auto-advance on any other failure
             return
 
 
 def _play(handler, screen_id: str, item: str, *, follow: bool, start: float = 0.0,
-          command_id: object = None, rows: list[dict] | None = None) -> dict:
+          command_id: object = None, rows: list[dict] | None = None,
+          expected_play_seq: int | None = None) -> dict:
     info = _resolve(handler, item)
     row = next((r for r in (rows if rows is not None else _queue_rows(handler))
                 if r.get("id") == item), {})
@@ -264,7 +270,8 @@ def _play(handler, screen_id: str, item: str, *, follow: bool, start: float = 0.
     return handler.server.screens.command(
         screen_id, "play", command_id=command_id, item=item, title=title,
         duration=duration if isinstance(duration, (int, float)) else 0.0,
-        suffix=portal_media.safe_suffix(info["path"]), follow=follow, start=start)
+        suffix=portal_media.safe_suffix(info["path"]), follow=follow, start=start,
+        expected_play_seq=expected_play_seq)
 
 
 def _command(handler, screen_id: str) -> None:

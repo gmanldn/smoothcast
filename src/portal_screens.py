@@ -394,7 +394,8 @@ class ScreenRegistry:
     def command(self, screen_id: str, action: str, *, command_id: object = None,
                 item: str = "", title: str = "", duration: float = 0.0,
                 suffix: str = "", value: object = None,
-                follow: bool = False, start: float = 0.0) -> dict:
+                follow: bool = False, start: float = 0.0,
+                expected_play_seq: int | None = None) -> dict:
         """Issue one fenced order to a screen; identical retries are idempotent."""
         if action not in ACTIONS:
             raise ScreenError(400, "Unsupported screen action")
@@ -408,6 +409,9 @@ class ScreenRegistry:
             screen = self._screens.get(screen_id)
             if screen is None:
                 raise ScreenError(404, "That screen is no longer here")
+            if (expected_play_seq is not None
+                    and screen.play_seq != expected_play_seq):
+                raise ScreenError(409, "Playback changed before the next item could start")
             if command_id is not None and command_id in screen.commands:
                 screen.commands.move_to_end(command_id)
                 return dict(screen.commands[command_id])
