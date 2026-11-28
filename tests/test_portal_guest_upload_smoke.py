@@ -599,3 +599,49 @@ def test_cast_confirm_journey_no_target_and_declined(guest_room, tmp_path):
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+def test_cast_target_changes_after_confirm_requires_reconfirmation(guest_room, tmp_path):
+    """#570: receiver switched after confirm -> 409 guidance, file kept, nothing delivered."""
+    from playwright.sync_api import expect, sync_playwright
+
+    rig, _uploads, deliveries = guest_room
+    video = tmp_path / "fence.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 2048)
+    ids = iter(["a" * 64, "b" * 64, "b" * 64])
+    inner = rig.server.dispatch
+
+    def dispatch(action, payload):
+        if action == "upload_target":
+            return {"receiver": "Test TV", "target_id": next(ids), "active": False}
+        return inner(action, payload)
+
+    rig.server.dispatch = dispatch
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844},
+                                      service_workers="block")
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.route("**/*", lambda route: route.continue_()
+                   if route.request.url.startswith(origin + "/") else route.abort())
+        page.on("dialog", lambda d: d.accept())
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Fence guest")
+            page.locator("#loginForm button").click()
+            expect(page.locator("#uploadCard")).to_be_visible()
+            page.locator("#videoFile").set_input_files(str(video))
+            page.locator("#uploadQueue").uncheck()
+            page.locator("#uploadButton").click()
+            expect(page.locator("#uploadStatus")).to_contain_text(
+                "Casting target changed. Confirm the current receiver again.")
+            expect(page.locator("#uploadStatus")).to_contain_text("Your files are still selected")
+            assert page.evaluate("document.getElementById('videoFile').files.length") == 1
+            assert deliveries == []
+        finally:
+            context.close()
+            browser.close()
