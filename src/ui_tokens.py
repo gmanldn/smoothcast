@@ -31,6 +31,7 @@ def apply_gtk(css: bytes) -> bytes:
                       f".card {{\n    padding: {SPACING['xl']}px;\n    border-radius: {RADIUS['md']}px;".encode())
     css = css.replace(b"font-size: 1.65em;", f"font-size: {TYPE['hero'].replace('rem', 'em')};".encode())
     css = css.replace(b"font-size: 0.8em;", f"font-size: {TYPE['eyebrow']};".encode())
+    css = css.replace(b"font-size: 0.9em;", f"font-size: {TYPE['caption']};".encode())
     return snap_gtk_spacing(snap_gtk_radii(css))
 
 

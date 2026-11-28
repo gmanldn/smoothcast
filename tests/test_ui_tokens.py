@@ -26,8 +26,10 @@ def test_gtk_and_web_consume_shared_component_tokens():
     css = ui_theme.CSS.decode() if isinstance(ui_theme.CSS, bytes) else ui_theme.CSS
     assert f".card {{\n    padding: {ui_tokens.SPACING['xl']}px;\n    border-radius: {ui_tokens.RADIUS['md']}px;" in css
     assert f"font-size: {ui_tokens.TYPE['hero'].replace('rem', 'em')};" in css
+    assert f"font-size: {ui_tokens.TYPE['caption']};" in css
     assert "--font:var(--sc-font-family)" in portal._HTML
     assert "font-size:var(--sc-type-hero)" in portal._HTML
+    assert f"--sc-type-caption:{ui_tokens.TYPE['caption']}" in portal._HTML
 
 
 def test_snap():
