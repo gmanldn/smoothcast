@@ -138,7 +138,7 @@ class ConfigRecoveryTests(unittest.TestCase):
                                 ("cast_subtitles.py", "_on_burn")):
             source = (ROOT / "src" / module).read_text(encoding="utf-8")
             method = source.split(f"def {handler}(", 1)[1].split("\n\n", 1)[0]
-            self.assertIn("if self._syncing", method)
+            self.assertRegex(method, r"if (self|w)\._syncing")
         persistence = (ROOT / "src" / "config_persistence.py").read_text(encoding="utf-8")
         self.assertIn("_config_writer().submit(cfg)", persistence)
         lifecycle = (ROOT / "src" / "cast_lifecycle.py").read_text(encoding="utf-8")

@@ -12,14 +12,21 @@ import subtitle_delay
 from cast_widgets import save_config
 
 
-class SubtitleMixin:
+class SubtitleController:
+    """Composition replacement for SubtitleMixin (#691): drives the window, owns no widgets."""
+
+    def __init__(self, window, save=save_config) -> None:
+        self.w = window
+        self.save = save
+
     def _on_burn(self, switch, _param) -> None:
-        if self._syncing:
+        w = self.w
+        if w._syncing:
             return
-        self.cfg["burn_subs"] = switch.get_active()
-        save_config(self.cfg)
+        w.cfg["burn_subs"] = switch.get_active()
+        self.save(w.cfg)
         if switch.get_active():
-            self.toast("Subtitles will be burned in (slower encode)")
+            w.toast("Subtitles will be burned in (slower encode)")
 
 
     def _adjust_subtitle_delay(self, direction: int) -> None:
@@ -29,42 +36,43 @@ class SubtitleMixin:
         the current film position so the new timing is burned in; the old
         stream stays owned until the replacement is confirmed.
         """
-        session = self.session
+        w = self.w
+        session = w.session
         state = session.state if session is not None else None
         if state is not None:
             path = state.file
-        elif self.media is not None:
-            path = str(self.media.path)
+        elif w.media is not None:
+            path = str(w.media.path)
         else:
-            path = self._preview_path
+            path = w._preview_path
         if not path:
-            self.toast("Open a video first")
+            w.toast("Open a video first")
             return
-        if state is not None and self.busy:
-            self.toast("Hold on — finishing the last command")
+        if state is not None and w.busy:
+            w.toast("Hold on — finishing the last command")
             return
-        current = subtitle_delay.get(self.cfg, path)
+        current = subtitle_delay.get(w.cfg, path)
         new = 0 if direction == 0 else subtitle_delay.step(current, direction)
         if new == current:
-            self.toast("Subtitle delay already off" if new == 0
+            w.toast("Subtitle delay already off" if new == 0
                        else f"Subtitle delay limit reached ({subtitle_delay.label(new)})")
             return
-        subtitle_delay.put(self.cfg, path, new)
-        save_config(self.cfg)
+        subtitle_delay.put(w.cfg, path, new)
+        self.save(self.w.cfg)
         text = f"Subtitle delay {subtitle_delay.label(new)}"
         if state is None:
-            self.toast(text + " — applies when you cast")
+            w.toast(text + " — applies when you cast")
             return
         if not (state.subs or state.embedded_subtitle_index >= 0):
-            self.toast(text + " — this stream has no subtitles")
+            w.toast(text + " — this stream has no subtitles")
             return
         if session.mode == "direct":
-            self.toast(text + " — applies the next time you cast")
+            w.toast(text + " — applies the next time you cast")
             return
-        self.busy = True
-        self._refresh_controls()
-        position = self.tracker.value() or 0.0
-        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
-        self.tracker.device_update(position, duration)
-        self._restart_at(session, position)
-        self.toast(text + " — stream restarted")
+        w.busy = True
+        w._refresh_controls()
+        position = w.tracker.value() or 0.0
+        duration = w.tracker.duration or (w.media.duration if w.media else 0.0)
+        w.tracker.device_update(position, duration)
+        w._restart_at(session, position)
+        w.toast(text + " — stream restarted")
