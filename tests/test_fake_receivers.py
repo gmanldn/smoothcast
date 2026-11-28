@@ -98,6 +98,11 @@ class FakeDlnaTests(unittest.TestCase):
     def test_connection_manager_query_is_read_only_and_tolerates_fault(self):
         renderer = dlna.parse_renderer(self.tv.description_xml(), self.tv.location, "127.0.0.1")
         self.assertEqual(dlna.advertised_http_formats(renderer), {"video/mp4"})
+        # A recent success is reused (#725): the repeat makes no second query.
+        self.assertEqual(dlna.advertised_http_formats(renderer), {"video/mp4"})
+        self.assertEqual(self.tv.calls, [("GetProtocolInfo", {})])
+        with dlna._protocol_cache_lock:
+            dlna._protocol_cache.clear()
         self.tv.fail("GetProtocolInfo")
         self.assertEqual(dlna.advertised_http_formats(renderer), set())
         self.assertEqual(self.tv.calls, [("GetProtocolInfo", {}), ("GetProtocolInfo", {})])
