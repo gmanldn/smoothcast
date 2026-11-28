@@ -534,29 +534,16 @@ class PyChromecastBackend:
             self._refresh_status(identifier)
 
     def _refresh_status(self, identifier: str) -> None:
-        """Re-observe current receiver media status after a reconnect.
-
-        A disconnect discards the cached media evidence, and PyChromecast only
-        emits media-status events on change. When the receiver reconnects while
-        still playing the same content, no new event fires, so the device would
-        otherwise appear to stop reporting playback. Read the receiver's current
-        status and republish it.
-        """
+        """Request fresh receiver and media status after a reconnect."""
         with self._lock:
             if self._closed or identifier not in self._casts:
                 return
             cast = self._casts.get(identifier)
         if cast is None:
             return
-        try:
-            media_status = cast.media_controller.status
-            cast_status = cast.status
-        except Exception:  # noqa: BLE001 - status refresh is best-effort
-            return
-        self._publish(identifier, self._status_dict(media_status, cast_status))
-        # The cached objects can be stale or still empty (UNKNOWN) after a
-        # reconnect: ask the receiver for fresh status. The answers arrive
-        # through the registered listeners and replace this snapshot.
+        # Never republish controller objects cached before the disconnect:
+        # they may describe media that is no longer playing. The fresh replies
+        # arrive through the registered status listeners.
         for request in (
             lambda: cast.socket_client.receiver_controller.update_status(),
             lambda: cast.media_controller.update_status(),
