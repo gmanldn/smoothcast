@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ae725d3f918decd0457a10317a0a1b0257798999 -->
+<!-- sc-changelog-through: e56b15b4c6a412ac4e09f5e4a4d6a7611f1c4ded -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:09:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:11:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:11:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e56b15b4c6a4`](https://github.com/gmanldn/smoothcast/commit/e56b15b4c6a412ac4e09f5e4a4d6a7611f1c4ded)
+
+- 🟦 **09:11:41 · Refactor** — refactor(join-slate): JoinSlateMixin becomes composed JoinSlateController; bases 12-&gt;11 (Refs #691) · [`d53167cd9753`](https://github.com/gmanldn/smoothcast/commit/d53167cd975382a8efef9c8db64ff08a4b27fce8)
 
 - ⬜ **09:09:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ae725d3f918d`](https://github.com/gmanldn/smoothcast/commit/ae725d3f918decd0457a10317a0a1b0257798999)
+
+- ⬜ **09:09:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2a4e717bf6cf`](https://github.com/gmanldn/smoothcast/commit/2a4e717bf6cfbceb60716070a76e1ee954457fd2)
 
 - 🟦 **09:09:21 · Refactor** — refactor(find): FindMixin becomes composed FindController; bases 13-&gt;12 (Refs #691) · [`7a369f543768`](https://github.com/gmanldn/smoothcast/commit/7a369f543768fe08fb1fe0c832a306a3522afe8c)
 
