@@ -360,6 +360,7 @@ py-modules = [
     "series_model",
     "server",
     "settings",
+    "settings_catalog",
     "share_target",
     "shortcut_map",
     "shutdown_plan",

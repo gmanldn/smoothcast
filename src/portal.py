@@ -46,6 +46,7 @@ import portal_media
 import portal_mesh_http
 import portal_update_http
 import portal_mesh_panel
+import settings_catalog
 import portal_routing
 import portal_screens_http
 import portal_uploads
@@ -2224,6 +2225,11 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #quickCastCard #homeChooseScreen{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-md);color:var(--text);font-weight:650;text-decoration:none}
 #advancedPanel .settings-scope-list{display:grid;gap:6px;padding:12px 12px 12px 30px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--input);color:var(--text)}
 #advancedPanel .settings-scope-list li{line-height:1.45}
+.preference-map{margin:10px 0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--sc-radius-md);background:var(--card)}
+.preference-map h4{margin:0 0 8px;font-size:1rem}
+.preference-map ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.preference-map li{display:grid;gap:2px;line-height:1.4}
+.preference-map li span{color:var(--muted);font-size:.92em}
 #homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
 #homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
 #homePanel .home-action span:not(.home-icon){display:none}
@@ -2379,7 +2385,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="people" class="participants"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
-<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>These settings are grouped by who they affect. Playback and queue controls are on Home; screen selection is under Screens; connection and transfer details are under Mesh.</p><ul class="settings-scope-list" aria-label="Settings and where they apply"><li><strong>Your profile:</strong> your display name in this room.</li><li><strong>This browser:</strong> lock-screen controls and keeping this display awake.</li><li><strong>Everyone in this room:</strong> audio normalisation.</li><li><strong>Room host only:</strong> rename the shared room from the host computer.</li></ul><p>House PIN, host policies and shared-library folders are managed in desktop Preferences.</p>
+<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Change your room name and audio normalisation here. Lock-screen controls and keeping this display awake affect only this browser. Playback, sound, appearance, updates and library preferences are managed on the computer running SmoothCast.</p><ul class="settings-scope-list" aria-label="Settings and where they apply"><li><strong>Your profile:</strong> your display name in this room.</li><li><strong>This browser:</strong> lock-screen controls and keeping this display awake.</li><li><strong>Everyone in this room:</strong> audio normalisation.</li><li><strong>Room host only:</strong> rename the shared room from the host computer.</li></ul><p>Desktop Preferences covers:</p><div class="preference-catalog">__SC_SETTINGS_CATALOG__</div>
 <div class="advanced-grid">
 <section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">Your display name is shown to people in this room. Changing it does not change the room name.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
@@ -4688,4 +4694,5 @@ function syncMediaSession(s){
   window.updateTick=function(){const n=Date.now();if(n-last<60000)return;last=n;load()};
 })();
 </script></body></html>"""
-_HTML = _HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())
+_HTML = (_HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())
+         .replace("__SC_SETTINGS_CATALOG__", settings_catalog.web_overview_html()))

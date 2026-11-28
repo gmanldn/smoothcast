@@ -1,5 +1,6 @@
 """#708: the web Now Playing card keeps the desktop hero-card vocabulary."""
 import portal
+import settings_catalog
 import ui_theme
 
 
@@ -16,3 +17,25 @@ def test_front_page_has_at_a_glance_tiles_fed_by_room_state():
     html = portal._HTML
     for needle in ('id="glance"', 'id="glanceTitle"', 'id="glanceWhere"', 'id="glanceWho"', "renderGlance(room)"):
         assert needle in html
+
+
+def test_web_settings_map_tracks_desktop_preferences_pages_and_groups():
+    from html import escape
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    gtk_preferences = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (root / "src").glob("*preferences*ui.py")
+    )
+    gtk_preferences += (root / "src/library_folders_ui.py").read_text(encoding="utf-8")
+    web = portal._page().decode("utf-8")
+    for page, groups in settings_catalog.PREFERENCES:
+        assert f'<h4>{escape(page)}</h4>' in web
+        assert f'"{page}"' in gtk_preferences
+        for group, summary in groups:
+            assert f'<strong>{escape(group)}</strong>' in web
+            assert group in gtk_preferences
+            assert escape(summary) in web
+    assert "__SC_SETTINGS_CATALOG__" not in web
+    assert "managed on the computer running SmoothCast" in web
