@@ -1,6 +1,7 @@
 """Casting session management: ffmpeg HLS transcode, direct play, device cast."""
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import ipaddress
 import json
@@ -994,10 +995,8 @@ def _ffprobe_cancellable(args: list[str], cancel: threading.Event, timeout: floa
 
 def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> MediaInfo:
     media = MediaInfo(path=path)
-    try:
+    with contextlib.suppress(OSError):  # size is informational; probing below reports real failures
         media.size = path.stat().st_size
-    except OSError:
-        pass
     try:
         args = [media_tools.resolve_media_tool("ffprobe"), "-v", "error", "-print_format", "json",
                 "-show_format", "-show_streams", "-show_chapters", str(path)]
