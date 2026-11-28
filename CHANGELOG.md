@@ -8,13 +8,25 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a02430cbc51d75465211433f05ebf2079f681f56 -->
+<!-- sc-changelog-through: aac4685e9b7382d70ccb58537924b533c139cb15 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **00:09:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **01:19:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **01:19:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`aac4685e9b73`](https://github.com/gmanldn/smoothcast/commit/aac4685e9b7382d70ccb58537924b533c139cb15)
+
+- 🟥 **01:19:18 · Fix** — fix(tests): quarantine GUI size ratchet to #706 with owner/expiry; skip GTK settings test without a usable PyGObject (Refs #700) · [`95271e5cc427`](https://github.com/gmanldn/smoothcast/commit/95271e5cc42782979ee1022d423e649f32078b7b)
+
+- 🟥 **01:19:18 · Fix** — fix(ci): ship stops on unowned pre-existing red; quarantine entries need owner, ticket and live expiry (Refs #700) · [`25d7cee07bc5`](https://github.com/gmanldn/smoothcast/commit/25d7cee07bc51ac4050d09b21938bd6ae099080d)
+
+- ⬜ **00:28:35 · Maintenance** — Merge branch 'develop' of https://github.com/gmanldn/smoothcast into develop · [`c7914ca82b25`](https://github.com/gmanldn/smoothcast/commit/c7914ca82b2519c319bbf4dca2eb092a4795b008)
+
+- ⬜ **00:28:14 · Maintenance** — 1 · [`ad3fbb284d57`](https://github.com/gmanldn/smoothcast/commit/ad3fbb284d57744b95640c894cff50677ac1bba6)
 
 - ⬜ **00:09:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a02430cbc51d`](https://github.com/gmanldn/smoothcast/commit/a02430cbc51d75465211433f05ebf2079f681f56)
+
+- ⬜ **00:09:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a50944c94891`](https://github.com/gmanldn/smoothcast/commit/a50944c9489135fd29f2ea922c822821c9bd7c22)
 
 - 🟩 **00:09:23 · Feature** — feat(ui): show elapsed / total on external-stream label (Refs #588) · [`b0e5992e1ed9`](https://github.com/gmanldn/smoothcast/commit/b0e5992e1ed966150bf9e6b9e71e23acacccae39)
 
