@@ -52,6 +52,55 @@ class HlsRecoveryTests(unittest.TestCase):
         with mock.patch.object(streamer, "_server_healthy", return_value=True):
             self.assertTrue(session.recoverable_hls())
 
+    def test_finalised_hls_recovers_on_the_advertised_fallback_port(self):
+        self.playlist()
+        session = self.saved()
+        session.state.stream_url = "http://192.168.1.10:9107/movie.m3u8"
+        response = mock.Mock(status=200)
+        response.read.return_value = streamer.hls_server.HEALTH_BODY
+        response.getheader.side_effect = lambda name, default=None: default
+        with mock.patch.object(streamer, "HTTPConnection") as connect, \
+             mock.patch.object(streamer.subprocess, "Popen") as launch:
+            connect.return_value.getresponse.return_value = response
+            connect.side_effect = lambda host, port, timeout: (
+                connect.return_value if port == 9107 else mock.Mock(
+                    getresponse=mock.Mock(side_effect=ConnectionRefusedError))
+            )
+            self.assertTrue(session.recoverable_hls())
+            self.assertEqual(session.port, 9107)
+            connect.assert_called_once_with("127.0.0.1", 9107, timeout=0.4)
+            launch.assert_not_called()
+
+    def test_foreign_listener_on_the_advertised_port_is_rejected(self):
+        self.playlist()
+        session = self.saved()
+        session.state.stream_url = "http://192.168.1.10:9107/movie.m3u8"
+        response = mock.Mock(status=200)
+        response.read.return_value = b"foreign HTTP server"
+        with mock.patch.object(streamer, "HTTPConnection") as connect:
+            connect.return_value.getresponse.return_value = response
+            self.assertFalse(session.recoverable_hls())
+            connect.assert_called_once_with("127.0.0.1", 9107, timeout=0.4)
+
+    def test_malformed_saved_stream_does_not_probe_a_listener(self):
+        self.playlist()
+        session = self.saved()
+        for url in (
+            "http://[bad:9107/movie.m3u8",
+            "http://192.168.1.10:not-a-port/movie.m3u8",
+            "http://192.168.1.10:65536/movie.m3u8",
+            "http:///movie.m3u8",
+            "https://192.168.1.10:9107/movie.m3u8",
+            "http://name@192.168.1.10:9107/movie.m3u8",
+        ):
+            with self.subTest(url=url), \
+                 mock.patch.object(streamer, "_server_healthy") as health, \
+                 mock.patch.object(session, "_start_sampler"):
+                session.state.stream_url = url
+                session.restore(session.state)
+                self.assertFalse(session.recoverable_hls())
+                health.assert_not_called()
+
     def test_dead_or_missing_http_server_prevents_recovery(self):
         self.playlist()
         session = self.saved()

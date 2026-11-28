@@ -92,13 +92,20 @@ _GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})(-fmp4)?\.m3u8\Z")
 _PLAYLIST_PREFIX_BYTES = 64 * 1024  # enough for the header and the first entries
 
 
+def _hls_url_path(url: str) -> str:
+    try:
+        return urlsplit(url).path
+    except ValueError:
+        return ""
+
+
 def _hls_names_from_url(url: str) -> tuple[str, str]:
     """Recover a safe exact-generation playlist and segment glob from a URL.
 
     Legacy fixed URLs can be recovered only while their old files exist;
     all newly encoded casts use distinct random resource names.
     """
-    path = urlsplit(url).path
+    path = _hls_url_path(url)
     if path == "/movie.m3u8":
         return HLS_NAME, SEGMENT_GLOB
     match = _GENERATION_PLAYLIST.fullmatch(path.removeprefix("/"))
@@ -112,7 +119,7 @@ def _hls_names_from_url(url: str) -> tuple[str, str]:
 
 def _hls_init_from_url(url: str) -> str:
     """Return the generation-bound fMP4 initialization resource, if any."""
-    match = _GENERATION_PLAYLIST.fullmatch(urlsplit(url).path.removeprefix("/"))
+    match = _GENERATION_PLAYLIST.fullmatch(_hls_url_path(url).removeprefix("/"))
     return f"init-{match.group(1)}.mp4" if match and match.group(2) else ""
 
 
@@ -1372,12 +1379,24 @@ class Session:
             return False
         if self.ffmpeg is not None and self.ffmpeg.poll() is None:
             return False
+        try:
+            address = urlsplit(self.state.stream_url)
+            port = address.port
+        except ValueError:
+            return False
+        if (address.scheme != "http" or not address.hostname or address.username is not None
+                or address.fragment or port is None or not valid_port(port)
+                or any(char.isspace() for char in address.netloc)):
+            return False
         playlist, pattern = _hls_names_from_url(self.state.stream_url)
         if not playlist or not pattern:
             return False
         self._playlist_name, self._segment_pattern = playlist, pattern
         self._init_name = _hls_init_from_url(self.state.stream_url)
-        return self._playlist_is_complete(ROOT / playlist) and _server_healthy()
+        if not self._playlist_is_complete(ROOT / playlist) or not _server_healthy(port):
+            return False
+        self.port = port
+        return True
 
     def encoder_finished(self) -> bool:
         if self.mode == "transcode":

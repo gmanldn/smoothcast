@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a2acd87fd9ea3c3674016a61061d0a61c9857daf -->
+<!-- sc-changelog-through: 3aa80fec29fe861fb5a325d7017e75a7ed3e0cb9 -->
 
 ## 2026-11-28 · UTC
 
-- 🟦 **07:29:01 · Performance** — perf(screens): wake only the browser with an order or registration change (Refs #757) <!-- sc-changelog-pending -->
+- 🟥 **07:30:40 · Fix** — fix(hls): recover completed playback on its advertised port (Refs #730) <!-- sc-changelog-pending -->
+
+- 🟦 **07:29:09 · Performance** — perf(screens): wake only the browser with an order or registration change (Refs #757) · [`3aa80fec29fe`](https://github.com/gmanldn/smoothcast/commit/3aa80fec29fe861fb5a325d7017e75a7ed3e0cb9)
 
 - 🟪 **07:26:39 · Tests** — test: repair stale headless and UI parity checks (Refs #699) · [`a2acd87fd9ea`](https://github.com/gmanldn/smoothcast/commit/a2acd87fd9ea3c3674016a61061d0a61c9857daf)
 
