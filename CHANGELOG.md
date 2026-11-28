@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: cd849c44b83dbc071a1e07dede888c959d9cf7c0 -->
+<!-- sc-changelog-through: 2afe4f3859b95a6e05bf0498c6b6c1e1fba4b957 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **09:38:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **09:41:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **09:41:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2afe4f3859b9`](https://github.com/gmanldn/smoothcast/commit/2afe4f3859b95a6e05bf0498c6b6c1e1fba4b957)
+
+- 🟦 **09:41:22 · Refactor** — refactor(portal): PortalRoomMixin -&gt; PortalRoomController (Refs #691) · [`8c71d6453765`](https://github.com/gmanldn/smoothcast/commit/8c71d6453765f0061a93b7da07c5ad89fe377bbc)
 
 - ⬜ **09:38:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cd849c44b83d`](https://github.com/gmanldn/smoothcast/commit/cd849c44b83dbc071a1e07dede888c959d9cf7c0)
+
+- ⬜ **09:38:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`beb424a60e4e`](https://github.com/gmanldn/smoothcast/commit/beb424a60e4e2251f14255d1cb45ad8efeea7041)
 
 - 🟦 **09:37:51 · Refactor** — refactor(portal): PortalUploadRecoveryMixin becomes composed PortalUploadRecoveryController (Refs #691) · [`84dc531c8c4c`](https://github.com/gmanldn/smoothcast/commit/84dc531c8c4c1fe15b0426c63c03622d7a947d27)
 
