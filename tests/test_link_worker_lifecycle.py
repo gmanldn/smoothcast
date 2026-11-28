@@ -39,11 +39,21 @@ def _run(provider, tmp_path, script, *, cancelled=lambda: False, seconds=10):
 
 
 def _alive(pid):
+    """True while the process can still run; a killed-but-unreaped zombie is gone.
+
+    ``os.kill(pid, 0)`` also succeeds for a zombie, which lingers whenever the
+    orphan's new parent (PID 1 in a container) reaps slowly under load.
+    """
     try:
         os.kill(pid, 0)
     except OSError:
         return False
-    return True
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as handle:
+            state = handle.read().rpartition(b")")[2].split()[0]
+    except (OSError, IndexError):
+        return True  # no /proc (not Linux): fall back to the kill(0) answer
+    return state not in (b"Z", b"X")
 
 
 def _gone(pid):
