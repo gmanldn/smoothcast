@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0016d18220e316e2fbb32c71d779179b36c09389 -->
+<!-- sc-changelog-through: c053fafd2caa96b69b095d910203e416cc27e1e6 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **08:45:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **08:47:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **08:47:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c053fafd2caa`](https://github.com/gmanldn/smoothcast/commit/c053fafd2caa96b69b095d910203e416cc27e1e6)
+
+- 🟦 **08:47:06 · Refactor** — refactor(queue): QueueComponent.prune\_records owns provenance pruning (Refs #691) · [`805b95571d80`](https://github.com/gmanldn/smoothcast/commit/805b95571d809300103488413010f553ef3ecb2a)
 
 - ⬜ **08:45:17 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0016d18220e3`](https://github.com/gmanldn/smoothcast/commit/0016d18220e316e2fbb32c71d779179b36c09389)
+
+- ⬜ **08:45:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5d649a2d4246`](https://github.com/gmanldn/smoothcast/commit/5d649a2d42465391706485a4e02084e95b88ffd2)
 
 - 🟦 **08:45:03 · Refactor** — refactor(queue): QueueComponent.total\_duration owns summary duration rule (Refs #691) · [`582f1ba0f922`](https://github.com/gmanldn/smoothcast/commit/582f1ba0f92265f7f47af5a4192247466df0e2b4)
 
