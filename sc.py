@@ -99,7 +99,7 @@ def _launch_installed(root: Path, args: list[str], *, updated: bool = False) -> 
     try:
         # Mark the hand-off so two launchers can never bounce between each other.
         env = {**os.environ, "SMOOTHCAST_HANDOFF": "1"}
-        if (ROOT / ".git").exists():
+        if not updated and (ROOT / ".git").exists():
             env["SMOOTHCAST_LAUNCH_SOURCE"] = str(ROOT.resolve())
         if updated:
             env["SMOOTHCAST_UPDATE_APPLIED"] = "1"
@@ -188,6 +188,20 @@ def _main(argv: list[str] | None = None) -> int:
         print(f"SmoothCast: installation unavailable: {exc}", file=sys.stderr)
         return 1
     if installed is not None and installed != ROOT.resolve():
+        if not _headless(args) and not portable and not os.environ.get("SMOOTHCAST_UPDATE_APPLIED"):
+            import checkout_refresh
+            import installed_update
+
+            if (ROOT / ".git").exists():
+                os.environ["SMOOTHCAST_LAUNCH_SOURCE"] = str(ROOT.resolve())
+            code = installed_update.refresh(
+                installed, target, lambda: launch.gui_instances(all_installations=True))
+            if code:
+                return code
+            os.environ.pop("SMOOTHCAST_LAUNCH_SOURCE", None)
+            # The child launcher may itself be old; mark the completed check so
+            # it starts the copy we just verified without repeating the check.
+            return _launch_installed(installed, args, updated=True)
         return _launch_installed(installed, args)
     if _headless(args):
         return launch.main(args)

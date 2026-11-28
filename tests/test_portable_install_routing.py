@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import os
 from pathlib import Path
 import sys
 from unittest import mock
@@ -41,13 +42,25 @@ def entry(monkeypatch):
     return module, runtime
 
 
-def test_installed_wins_even_if_checkout_runtime_exists(entry, tmp_path):
+def test_installed_wins_even_if_checkout_runtime_exists(entry, tmp_path, monkeypatch):
     module, runtime = entry
     installed = tmp_path / "My apps" / "SmoothCast"
     module._installed_root.return_value = installed
+    monkeypatch.chdir(tmp_path)
     args = ["relative film.mkv", "https://example.org/a?b=c"]
+    refresher = sys.modules["checkout_refresh"]
+    refresher.installed_revision.side_effect = ["a" * 40, "b" * 40]
+
+    def refresh(root, target, _running):
+        assert root == installed and target == "linux"
+        assert os.environ["SMOOTHCAST_LAUNCH_SOURCE"] == str(module.ROOT.resolve())
+        os.environ["SMOOTHCAST_LATEST_DEVELOP_TIP"] = "b" * 40
+        return 0
+
+    sys.modules["installed_update"].refresh.side_effect = refresh
     assert module.main(args) == 0
-    module._launch_installed.assert_called_once_with(installed, args)
+    module._launch_installed.assert_called_once_with(installed, args, updated=True)
+    sys.modules["installed_update"].refresh.assert_called_once()
     runtime.ensure_single_instance.assert_not_called()
     runtime.runtime_ready.assert_not_called()
     module._bootstrap.assert_not_called()
@@ -169,13 +182,13 @@ def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch
     assert actual._installed_root("linux") == (tmp_path / expected if expected else None)
 
 
-def test_checkout_hands_off_without_using_its_local_source(entry, tmp_path):
+def test_checkout_updates_registered_install_before_handoff(entry, tmp_path):
     module, runtime = entry
     module._installed_root.return_value = tmp_path
     assert module.main([]) == 0
     sys.modules["checkout_refresh"].refresh.assert_not_called()
-    sys.modules["installed_update"].refresh.assert_not_called()
-    module._launch_installed.assert_called_once_with(tmp_path, [])
+    sys.modules["installed_update"].refresh.assert_called_once()
+    module._launch_installed.assert_called_once_with(tmp_path, [], updated=True)
     runtime.main.assert_not_called()
 
 def test_version_query_never_refreshes_installed_files(entry, tmp_path):
