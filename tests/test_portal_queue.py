@@ -269,6 +269,37 @@ def test_local_library_queue_add_preserves_receiver_and_reports_real_acceptance(
         }
 
 
+def test_queue_only_contribution_preserves_active_source_time_and_track_choices(tmp_path):
+    """An Up Next edit must leave receiver ownership and session media state intact."""
+    from types import SimpleNamespace
+
+    root = tmp_path / "uploads"
+    root.mkdir()
+    upload = root / ("a" * 32 + ".mkv")
+    upload.write_bytes(b"validated media")
+    host = QueueHost()
+    host._portal = SimpleNamespace(server=SimpleNamespace(
+        uploads=SimpleNamespace(root=root),
+    ))
+    host.busy = True
+    state = SimpleNamespace(offset=91.25, audio_track_index=2, subs="/private/en.srt",
+                            embedded_subtitle_index=1)
+    session = SimpleNamespace(state=state)
+    host.session = session
+    playing = host.now_playing
+    host._enqueue = lambda paths: host.queue.extend(paths)
+    payload = {"path": str(upload), "name": "guest.mkv", "_portal_source": "upload"}
+
+    assert host._portal_queue_action("queue_add", payload) == "Added to the queue."
+    assert host._portal_queue_action("queue_add", payload) == "Added to the queue."
+
+    assert host.queue.count(str(upload.resolve())) == 1
+    assert host.busy and host.session is session and host.now_playing == playing
+    assert (state.offset, state.audio_track_index, state.subs, state.embedded_subtitle_index) == (
+        91.25, 2, "/private/en.srt", 1,
+    )
+
+
 def test_active_upload_title_survives_clear_until_playback_ends():
     host = QueueHost()
     active, waiting = host.queue
