@@ -219,14 +219,24 @@ class PortalHostMixin:
         roster = tuple((person["id"], str(person.get("name") or "Guest"))
                        for person in participants if isinstance(person, dict)
                        and isinstance(person.get("id"), str))
+        online_names = tuple(str(person.get("name") or "Guest")
+                             for person in participants if isinstance(person, dict)
+                             and isinstance(person.get("id"), str)
+                             and person.get("online", True) is True)
         ids = tuple(guest_id for guest_id, _ in roster)
         prior = getattr(self, "portal_guest_ids", ())
         if ids == prior and roster == getattr(self, "_portal_guest_roster", None):
+            if online_names != getattr(self, "portal_guest_online_names", None):
+                self.portal_guest_online_names = online_names
+                update_glance = getattr(self, "_sync_room_glance", None)
+                if callable(update_glance):
+                    update_glance()
             return
         selected = dropdown.get_selected()
         chosen = prior[selected] if 0 <= selected < len(prior) else None
         self.portal_guest_ids = ids
         self._portal_guest_roster = roster
+        self.portal_guest_online_names = online_names
         dropdown.set_model(Gtk.StringList.new(
             [name for _, name in roster] or ["No guests connected"]))
         # A departed selected guest must not silently select someone else.
@@ -235,6 +245,9 @@ class PortalHostMixin:
         dropdown.set_selected(index)
         dropdown.set_sensitive(bool(ids))
         self.portal_revoke_button.set_sensitive(bool(ids))
+        update_glance = getattr(self, "_sync_room_glance", None)
+        if callable(update_glance):
+            update_glance()
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""

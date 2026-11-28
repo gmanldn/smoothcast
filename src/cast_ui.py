@@ -242,6 +242,14 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self.np_meta.add_css_class("dim-label")
         self.np_meta.add_css_class("hero-subtitle")
         body.append(self.np_meta)
+        self.room_glance_label = Gtk.Label(
+            label="Selected: No screen selected · Up next: Nothing waiting · Here: Just you",
+            xalign=0.0, wrap=True,
+        )
+        self.room_glance_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.room_glance_label.add_css_class("caption")
+        self.room_glance_label.add_css_class("dim-label")
+        body.append(self.room_glance_label)
         # Preview screen above the scrubbing bar.
         self.preview = PreviewScreen()
         self.preview_picture = Gtk.Picture()
@@ -1337,6 +1345,32 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             self.np_meta.set_text(text)
 
 
+    def _sync_room_glance(self) -> None:
+        """Keep the target, next item and room presence visible on the player card."""
+        label = getattr(self, "room_glance_label", None)
+        if label is None:
+            return
+        device = str((getattr(self, "cfg", {}) or {}).get("device") or "").strip()
+        target = device or "No screen selected"
+        queue = list(getattr(self, "queue", ()) or ())
+        current = getattr(self, "now_playing", None)
+        if current in queue:
+            queue = queue[queue.index(current) + 1:]
+        if queue:
+            next_title = pretty_title(pathlib.Path(queue[0]))
+            if len(queue) > 1:
+                next_title += f" · +{len(queue) - 1} more"
+        else:
+            next_title = "Nothing waiting"
+        guests = tuple(getattr(self, "portal_guest_online_names", ()) or ())
+        people = "Just you" if not guests else "You, " + ", ".join(guests[:2])
+        if len(guests) > 2:
+            people += f" +{len(guests) - 2} more"
+        summary = f"Selected: {target} · Up next: {next_title} · Here: {people}"
+        if label.get_text() != summary:
+            label.set_text(summary)
+
+
     def _update_header_subtitle(self) -> None:
         state = state_labels.present(self.device_state).short.lower()
         if self.external and state not in {"offline", "ready", "unknown", "error"}:
@@ -1388,6 +1422,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         # current/queued state without an O(n) rebuild on every status refresh.
         if hasattr(self, "queue_list"):
             queue_accessibility.sync_rows(self, Gtk)
+        self._sync_room_glance()
         online = self.device_state != "OFFLINE"
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"

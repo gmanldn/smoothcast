@@ -91,8 +91,10 @@ def test_guest_roster_rename_preserves_selection_and_avoids_unchanged_rebuild():
             self.sensitive = value
 
     drop = Dropdown()
+    glance_updates = []
     owner = SimpleNamespace(portal_guest_dropdown=drop, portal_guest_ids=(),
-                            portal_revoke_button=SimpleNamespace(set_sensitive=lambda _: None))
+                            portal_revoke_button=SimpleNamespace(set_sensitive=lambda _: None),
+                            _sync_room_glance=lambda: glance_updates.append(True))
     sync = ns["_sync_portal_guest_roster"]
     guests = [{"id": "a", "name": "Sam"}, {"id": "b", "name": "Jo"}]
     sync(owner, guests)
@@ -103,6 +105,12 @@ def test_guest_roster_rename_preserves_selection_and_avoids_unchanged_rebuild():
     sync(owner, guests)
     assert drop.models[-1] == ["Sam", "Joseph"]
     assert owner.portal_guest_ids[drop.selected] == "b"
+    model_count = len(drop.models)
+    guests[1]["online"] = False
+    sync(owner, guests)
+    assert owner.portal_guest_online_names == ("Sam",)
+    assert len(drop.models) == model_count
+    assert glance_updates[-1]
     sync(owner, guests[::-1])
     assert drop.selected == 0 and owner.portal_guest_ids[0] == "b"
     sync(owner, guests[:1])
