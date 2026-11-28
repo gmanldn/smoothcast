@@ -303,6 +303,7 @@ def test_unknown_length_external_stream_shows_a_moving_marker_not_a_made_up_leng
     import portal
     text = portal._HTML
     assert 'pr.removeAttribute("value")' in text and "length not reported" in text
+    assert 'typeof s.length_label==="string"&&s.length_label?s.length_label' in text
     widgets = open("src/cast_widgets.py").read()
     assert "unknown_length" in widgets and "self.position % 60.0" in widgets
     assert "unknown_length=" in open("src/cast_session.py").read()
