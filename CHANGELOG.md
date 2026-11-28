@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 29c3c8b3c55b9032a7c74278b03d08240aabefee -->
+<!-- sc-changelog-through: 6e2f1658546f79cad55dd9706d9bfd1834dc57eb -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:10:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:17:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:17:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6e2f1658546f`](https://github.com/gmanldn/smoothcast/commit/6e2f1658546f79cad55dd9706d9bfd1834dc57eb)
+
+- 🟩 **04:17:08 · Feature** — feat(settings): add clear host playback and caption controls (Refs #708) · [`16ff1416a58a`](https://github.com/gmanldn/smoothcast/commit/16ff1416a58a3e573ad1001959d0b3578de1dc3b)
+
+- 🟩 **04:16:32 · Feature** — feat(settings): add clear host playback and caption controls (Refs #708) · [`27690559b0e7`](https://github.com/gmanldn/smoothcast/commit/27690559b0e7f575368c7522b515db3a462af75b)
 
 - ⬜ **04:10:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`29c3c8b3c55b`](https://github.com/gmanldn/smoothcast/commit/29c3c8b3c55b9032a7c74278b03d08240aabefee)
+
+- ⬜ **04:10:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b84c1556baca`](https://github.com/gmanldn/smoothcast/commit/b84c1556bacafb1feb4aa42ca4ef7cd091a476b3)
 
 - 🟥 **04:10:14 · Fix** — fix: explain media without playable tracks (Refs #207) · [`87abdfa1aa0d`](https://github.com/gmanldn/smoothcast/commit/87abdfa1aa0d83098fd8c5e4afdeef651ece063f)
 
