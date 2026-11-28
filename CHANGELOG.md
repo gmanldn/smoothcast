@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: d34db4c4eff0f2545bd8c272134df927c501e453 -->
+<!-- sc-changelog-through: 9af8dc0de376ba3305bc053570915975b5c647ba -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:32:46 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:35:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:35:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9af8dc0de376`](https://github.com/gmanldn/smoothcast/commit/9af8dc0de376ba3305bc053570915975b5c647ba)
+
+- 🟥 **04:35:25 · Fix** — fix: start installed smoothcast on latest develop build (Refs #579) · [`3f3a0de461aa`](https://github.com/gmanldn/smoothcast/commit/3f3a0de461aa5360a0bca775b44f932bb2d7cd81)
 
 - ⬜ **04:32:46 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d34db4c4eff0`](https://github.com/gmanldn/smoothcast/commit/d34db4c4eff0f2545bd8c272134df927c501e453)
+
+- ⬜ **04:32:46 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`aed3b9c5515e`](https://github.com/gmanldn/smoothcast/commit/aed3b9c5515e3193017c9833052b3868cd3d92a0)
 
 - 🟥 **04:31:03 · Fix** — fix: fence stale screen playback reports (Refs #748) · [`691cd06187f6`](https://github.com/gmanldn/smoothcast/commit/691cd06187f6773d23cfcbbfddca1f7117726658)
 
