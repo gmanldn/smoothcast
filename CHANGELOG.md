@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 145e7daf14929a219da703231d3c064bd9e83985 -->
+<!-- sc-changelog-through: d829cd4044a1f4e85304db1ed3aa523982eb802f -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:56:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:00:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:00:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d829cd4044a1`](https://github.com/gmanldn/smoothcast/commit/d829cd4044a1f4e85304db1ed3aa523982eb802f)
+
+- 🟥 **03:00:07 · Fix** — fix(screen): retain the active transcode route for seek and recovery (Refs #753) · [`c29c05b56909`](https://github.com/gmanldn/smoothcast/commit/c29c05b569098a36b5eebfe2c33d3b69cd3485ac)
 
 - ⬜ **02:56:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`145e7daf1492`](https://github.com/gmanldn/smoothcast/commit/145e7daf14929a219da703231d3c064bd9e83985)
+
+- ⬜ **02:56:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a16ed1c934c4`](https://github.com/gmanldn/smoothcast/commit/a16ed1c934c42db7a11b263fd44288a71ef04955)
 
 - 🟩 **02:56:52 · Feature** — feat: show room people in network map (Refs #710) · [`8e4db8da9518`](https://github.com/gmanldn/smoothcast/commit/8e4db8da95189a9141a51b5e42a0da5980be87d5)
 
