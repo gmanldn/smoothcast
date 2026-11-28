@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 05f152e4f92073a441e292dc3ff858aa0eb287d9 -->
+<!-- sc-changelog-through: 760c9b2714f59a89e4385068b723d23b6c5c1c99 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:00:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:02:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:02:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`760c9b2714f5`](https://github.com/gmanldn/smoothcast/commit/760c9b2714f59a89e4385068b723d23b6c5c1c99)
+
+- 🟪 **07:02:39 · Tests** — test: update DLNA scan contracts for #718/#720; quarantine the #708 shared-model reds with owner and expiry (Refs #700) · [`3ccd433d1eea`](https://github.com/gmanldn/smoothcast/commit/3ccd433d1eeadb10d8653affe430ec7179351d0d)
 
 - ⬜ **07:00:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`05f152e4f920`](https://github.com/gmanldn/smoothcast/commit/05f152e4f92073a441e292dc3ff858aa0eb287d9)
+
+- ⬜ **07:00:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d243c0d49f04`](https://github.com/gmanldn/smoothcast/commit/d243c0d49f044db5852990eca6a858a11b3fb70f)
 
 - 🟩 **07:00:41 · Feature** — feat(encode-plan): rotation + VAAPI GPU round trip in the pure planner; golden-argv matrix (Refs #697) · [`cfac5ead0ad4`](https://github.com/gmanldn/smoothcast/commit/cfac5ead0ad4ec6afe199fc51b21b5c0ccd54d3e)
 
