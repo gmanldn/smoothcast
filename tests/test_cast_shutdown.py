@@ -58,6 +58,7 @@ def lifecycle_type():
         "peer_discovery_ui": mock.Mock(),
     }
     exec(compile(code, "<lifecycle-test>", "exec"), namespace)
+    namespace["Lifecycle"].w = property(lambda self: self)   # controller methods read ``self.w``
     return namespace["Lifecycle"]
 
 

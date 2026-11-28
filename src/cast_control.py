@@ -28,7 +28,7 @@ import audio_monitor
 import ab_repeat
 import responsive_layout
 import gui_test_safety
-from cast_portal import PortalMixin
+from cast_portal import PortalController
 from network_activity_ui import NetworkActivityController
 from cast_portal_host import PortalHostController
 from cast_portal_room import PortalRoomController
@@ -62,10 +62,15 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalQueueMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._portal_ctl = PortalController(self)
+        self._refresh_portal = self._portal_ctl._refresh_portal
+        self._stop_portal = self._portal_ctl._stop_portal
+        self._portal_dispatch = self._portal_ctl._portal_dispatch
+        self._portal_handle = self._portal_ctl._portal_handle
         self._portal_room = PortalRoomController(self)
         self._show_portal_qr = self._portal_room._show_portal_qr
         self._copy_portal_link = self._portal_room._copy_portal_link

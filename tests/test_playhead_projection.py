@@ -122,6 +122,7 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     exec(compile("class Window:\n" + textwrap.indent(method, "    "),
                  "<isolated-room-status>", "exec"), namespace)
     window = namespace["Window"]()
+    window.w = window
     import cast_portal_host
     window._portal_timing = cast_portal_host.PortalHostController(window)._portal_timing
     window._closing = False

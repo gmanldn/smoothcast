@@ -64,7 +64,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "SettingsCardController", "PortalHostController", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "SettingsCardController", "PortalHostController", "PortalController", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin", "DeviceDiscoveryMixin", "RemoteUrlCastMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:

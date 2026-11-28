@@ -26,8 +26,13 @@ class _HostServer:
         return self.is_host
 
 
+class _Window:
+    """Bare window double; the portal controller is bound onto it."""
+
+
 def _window(is_host=True):
-    window = object.__new__(cast_portal.PortalMixin)
+    window = _Window()
+    window._portal_handle = cast_portal.PortalController(window)._portal_handle
     window._closing = False
     window._syncing = False
     window._sync_host_setting_widgets = cast_portal_host.PortalHostController(

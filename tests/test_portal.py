@@ -1701,15 +1701,15 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
     )
     payload = {"upload_id": "retry-me", "early": True}
     with pytest.raises(RuntimeError, match="submission failed"):
-        handle(host, "cast_upload", payload)
+        handle(SimpleNamespace(w=host), "cast_upload", payload)
     assert "retry-me" not in host._portal_accepted_uploads
     assert "retry-me" not in host._portal_cast_uploads
     assert host._portal_early is False
 
     payload["early"] = False
-    handle(host, "cast_upload", payload)
+    handle(SimpleNamespace(w=host), "cast_upload", payload)
     assert "retry-me" in host._portal_accepted_uploads
-    handle(host, "cast_upload", payload)
+    handle(SimpleNamespace(w=host), "cast_upload", payload)
     assert cast.call_count == 2
 
 
@@ -1733,7 +1733,7 @@ def test_cast_upload_keeps_the_guest_filename_in_the_queue(tmp_path):
     )
     host._portal_note_display_name = MethodType(
         cast_portal_queue.PortalQueueMixin._portal_note_display_name, host)
-    handle(host, "cast_upload", {"upload_id": "u1", "early": False,
+    handle(SimpleNamespace(w=host), "cast_upload", {"upload_id": "u1", "early": False,
                                  "name": "Holiday 2024.mp4"})
     assert host._portal_queue_display_names[str(path)] == "Holiday 2024.mp4"
 

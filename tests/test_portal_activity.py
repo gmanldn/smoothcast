@@ -84,6 +84,7 @@ def _build_window(tmp_path, *, idle_add=None):
     }
     exec(compile("class Window:\n" + code, "<portal-handle-test>", "exec"), namespace)
     window = namespace["Window"]()
+    window.w = window
     import portal_upload_recovery
     recovery = portal_upload_recovery.PortalUploadRecoveryController(window, glib=namespace["GLib"])
     import cast_portal_room
