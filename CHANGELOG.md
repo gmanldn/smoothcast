@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 081ea3db194793c681e52d11ba3b0b1986949a59 -->
+<!-- sc-changelog-through: 6dd264c829429e51466d71bf08043f706c64fc41 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:56:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:58:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:58:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6dd264c82942`](https://github.com/gmanldn/smoothcast/commit/6dd264c829429e51466d71bf08043f706c64fc41)
+
+- 🟥 **03:58:01 · Fix** — fix: show external cast length in portal player (Refs #704) · [`63df8f9c9e2d`](https://github.com/gmanldn/smoothcast/commit/63df8f9c9e2d5e0abfef1929a5dbd03e4c38b49d)
 
 - ⬜ **03:56:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`081ea3db1947`](https://github.com/gmanldn/smoothcast/commit/081ea3db194793c681e52d11ba3b0b1986949a59)
 
 - 🟦 **03:56:44 · Performance** — perf: run receiver discovery protocols concurrently (Refs #718) · [`567f44c2ab5a`](https://github.com/gmanldn/smoothcast/commit/567f44c2ab5ae9aa31e97b005b3432a1106c78e7)
+
+- ⬜ **03:56:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`9bc4e1f30450`](https://github.com/gmanldn/smoothcast/commit/9bc4e1f3045008cd19e84431c5426f0e79db9e5c)
 
 - ⬜ **03:56:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`99b173037272`](https://github.com/gmanldn/smoothcast/commit/99b173037272e1947a1939f31ae78835ca207734)
 
