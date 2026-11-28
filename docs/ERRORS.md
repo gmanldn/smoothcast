@@ -377,6 +377,16 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   2. Close other media servers on this computer.
   3. Restart SmoothCast.
 
+<a id="errors-network-interface-unavailable"></a>
+## `network.interface_unavailable`
+
+- Severity: error; retryable: yes
+- Message: SmoothCast could not find a local network address for streaming.
+- Try:
+  1. Connect this computer to Wi-Fi or Ethernet.
+  2. Check that the network adapter is enabled.
+  3. Reconnect the receiver to the same local network.
+
 <a id="errors-network-vpn-default-route"></a>
 ## `network.vpn_default_route`
 

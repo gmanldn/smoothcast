@@ -745,11 +745,11 @@ def host_ip(device_host: str | None = None) -> str:
     except OSError:
         pass
 
-    raise StreamError(
+    raise errors.coded(StreamError(
         "No usable LAN IPv4 source address for streaming. "
         "Check that Wi-Fi/Ethernet is connected and the receiver is reachable "
         "on the selected network (interface enumeration and route probe failed)."
-    )
+    ), "network.interface_unavailable")
 
 _IS_WINDOWS = os.name == "nt"
 

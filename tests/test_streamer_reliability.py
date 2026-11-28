@@ -6,6 +6,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import progress_model
+import errors
+import failure_boundary
 import streamer
 
 
@@ -153,8 +155,12 @@ class StreamerReliabilityTests(unittest.TestCase):
         with mock.patch.object(streamer.socket, "socket", side_effect=OSError("no route")), \
              mock.patch.object(streamer.lan_interfaces, "select_private_lan_ip",
                                return_value=None):
-            with self.assertRaisesRegex(streamer.StreamError, "LAN IPv4"):
+            with self.assertRaisesRegex(streamer.StreamError, "LAN IPv4") as caught:
                 streamer.host_ip("192.168.1.42")
+        self.assertEqual(failure_boundary.describe(caught.exception).code,
+                         "network.interface_unavailable")
+        self.assertEqual(failure_boundary.describe(caught.exception).message,
+                         errors.CATALOGUE["network.interface_unavailable"].message)
 
     def _server_env(self):
         from contextlib import ExitStack
