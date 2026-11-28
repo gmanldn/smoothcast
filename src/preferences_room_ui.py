@@ -18,8 +18,7 @@ from portal_room import clean_room_name
 
 class RoomPreferencesMixin:
     def _build_room_preferences(self, playback) -> None:
-        room = self._group(playback, "Shared room",
-                           "Give this hosted room a recognisable name. Joining links and playback stay unchanged.")
+        room = self._group(playback, "Playback", "Shared room")
         self.room_name_row = Adw.EntryRow(title="Room name", show_apply_button=True)
         self._saved_room_name = clean_room_name(self.owner.cfg.get("room_name"))
         self.room_name_row.set_text(self._saved_room_name)

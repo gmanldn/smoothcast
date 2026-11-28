@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gio, GLib, Gtk
 
 import subtitle_search
+import settings_catalog
 from cast_widgets import save_config
 
 
@@ -24,7 +25,8 @@ class TrackPreferencesMixin:
         return page
 
     @staticmethod
-    def _group(page, title: str, description: str):
+    def _group(page, page_name: str, title: str):
+        description = settings_catalog.group_description(page_name, title)
         group = Adw.PreferencesGroup(title=title, description=description)
         page.add(group)
         return group

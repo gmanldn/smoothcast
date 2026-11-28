@@ -72,10 +72,7 @@ class PicturePreferencesMixin:
 
     def _build_picture_preferences(self, playback, output) -> None:
         picture = self._group(
-            playback, "Colour adjustments",
-            "Optional FFmpeg adjustments for transcoded output. A change applies to the "
-            "selected film; with no film selected it becomes the default. Neutral settings "
-            "preserve the source and keep direct play available.",
+            playback, "Playback", "Colour adjustments",
         )
         for key, title, step in (
             ("picture_brightness", "Brightness", 0.05),

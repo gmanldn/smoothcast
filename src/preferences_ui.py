@@ -54,10 +54,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
 
     def _build(self) -> None:
         playback = self._page("Playback", "media-playback-start-symbolic")
-        output = self._group(
-            playback, "Picture and delivery",
-            "Changes to encoding take effect on the next cast or transcode restart.",
-        )
+        output = self._group(playback, "Playback", "Picture and delivery")
         self._choice(output, "quality", "Video quality",
                      "High uses more processing; Data saver reduces bandwidth and resolution.")
         self._switch(output, "quality_auto", "Automatically choose video quality",
@@ -77,10 +74,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
                      "Only when the film is clearly interlaced; progressive video is never touched.")
         self._build_picture_preferences(playback, output)
 
-        queue = self._group(
-            playback, "Queue behaviour",
-            "These options control what happens when the current film finishes.",
-        )
+        queue = self._group(playback, "Playback", "Queue behaviour")
         self._switch(queue, "autonext", "Play next film automatically",
                      "Advance to the next item without another click.")
         self._switch(queue, "loop", "Repeat current film",
@@ -92,11 +86,8 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
 
         self._build_room_preferences(playback)
 
-        alerts = self._group(
-            playback, "Playback alerts",
-            "Alerts stay inside SmoothCast and never add a counter to the OS dock.",
-        )
-        art = self._group(playback, "Artwork", "Shown in the preview above the scrubber.")
+        alerts = self._group(playback, "Playback", "Playback alerts")
+        art = self._group(playback, "Playback", "Artwork")
         self._switch(art, "show_cover_art", "Show cover art",
                      "Use a track's embedded artwork; turn off to keep the plain slate.")
         self._switch(alerts, "notifications", "Show in-app playback alerts",
@@ -104,10 +95,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
                      "and show a short in-app toast while the window is unfocused.")
 
         sound = self._page("Sound & subtitles", "audio-speakers-symbolic")
-        audio = self._group(
-            sound, "Audio",
-            "Profiles and gain are applied at the next cast or encoder restart.",
-        )
+        audio = self._group(sound, "Sound & subtitles", "Audio")
         self._choice(audio, "audio", "Sound profile",
                      "Original preserves the mix; Dialogue boosts speech; Night tames loud passages.")
         self._switch(audio, "music_autogain", "Music autogain", "Match tracks to -16 LUFS.")
@@ -130,10 +118,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
         self.gain.connect("value-changed", self._change_gain)
         audio.add(boost)
 
-        captions = self._group(
-            sound, "Captions",
-            "Text tracks can be sent to a Cast receiver or burned into the picture.",
-        )
+        captions = self._group(sound, "Sound & subtitles", "Captions")
         self._choice(captions, "subs", "Subtitle source",
                      "Off, automatic sidecar/MKV, external file, or embedded MKV text.")
         self.subtitle_file = Adw.ActionRow(
@@ -162,10 +147,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
         self._build_subtitle_search(captions)
 
         general = self._page("Appearance", "preferences-desktop-theme-symbolic")
-        visual = self._group(
-            general, "Theme",
-            "Choose the appearance that makes the player most comfortable to read.",
-        )
+        visual = self._group(general, "Appearance", "Theme")
         self._choice(visual, "color_scheme", "Colour scheme",
                      "A manual choice turns off automatic day/night switching.")
         self._switch(visual, "auto_theme", "Switch theme by time of day",
@@ -175,11 +157,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePr
         self._choice(visual, "density", "Interface density",
                      "Scales spacing and control sizes. Long text wraps in narrow windows and under large fonts instead of being clipped.")
 
-        updates = self._group(
-            general, "Updates",
-            "Nothing is downloaded or installed automatically. These options "
-            "apply on the next app launch, not during playback.",
-        )
+        updates = self._group(general, "Appearance", "Updates")
         self._choice(updates, "update_channel", "Update channel",
                      "Develop (default) receives frequent tested builds; Main follows releases. "
                      "Only read-only checks work so far; installing safely in the background is pending.")

@@ -22,9 +22,7 @@ class LibraryFoldersPage:
         self.rows: list = []
         page = window._page("Library", "folder-symbolic")
         self.group = window._group(
-            page, "Library folders",
-            "Folders SmoothCast indexes on this computer. Shared folders can be "
-            "searched and played from every device in the house.")
+            page, "Library", "Library folders")
         add = Gtk.Button(label="Add folder…", valign=Gtk.Align.CENTER)
         add.add_css_class("suggested-action")
         add.connect("clicked", self._choose_folder)

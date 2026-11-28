@@ -36,6 +36,7 @@ def test_web_settings_map_tracks_desktop_preferences_pages_and_groups():
         for group, summary in groups:
             assert f'<strong>{escape(group)}</strong>' in web
             assert group in gtk_preferences
+            assert settings_catalog.group_description(page, group) == summary
             assert escape(summary) in web
     assert "__SC_SETTINGS_CATALOG__" not in web
     assert "managed on the computer running SmoothCast" in web

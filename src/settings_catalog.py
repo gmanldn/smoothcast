@@ -21,6 +21,7 @@ class HostControl(TypedDict):
 PREFERENCES = (
     ("Playback", (
         ("Picture and delivery", "Changes to encoding take effect on the next cast or transcode restart."),
+        ("Colour adjustments", "Optional FFmpeg adjustments for transcoded output. A change applies to the selected film; with no film selected it becomes the default. Neutral settings preserve the source and keep direct play available."),
         ("Queue behaviour", "These options control what happens when the current film finishes."),
         ("Shared room", "Give this hosted room a recognisable name. Joining links and playback stay unchanged."),
         ("Playback alerts", "Alerts stay inside SmoothCast and never add a counter to the OS dock."),
@@ -38,6 +39,17 @@ PREFERENCES = (
         ("Library folders", "Folders SmoothCast indexes on this computer. Shared folders can be searched and played from every device in the house."),
     )),
 )
+
+
+def group_description(page: str, group: str) -> str:
+    """Return the single shared description used by GTK and web Preferences."""
+    for page_name, groups in PREFERENCES:
+        if page_name == page:
+            for group_name, description in groups:
+                if group_name == group:
+                    return description
+            break
+    raise KeyError(f"Unknown Preferences group: {page}/{group}")
 
 HOST_CONTROLS: dict[str, HostControl] = {
     "quality": {
