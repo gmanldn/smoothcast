@@ -8,11 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c85e1321b54b20b59bcd7bd64e8d76151b4cbd24 -->
+<!-- sc-changelog-through: bc22a4096f3346598b503e1fd8b2a2d02e016abe -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **01:57:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:04:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:04:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bc22a4096f33`](https://github.com/gmanldn/smoothcast/commit/bc22a4096f3346598b503e1fd8b2a2d02e016abe)
+
+- 🟪 **02:04:09 · Tests** — test(join-slate): follow the switch wiring into preferences\_room\_ui (stale since #706 split) · [`a2f06c36f740`](https://github.com/gmanldn/smoothcast/commit/a2f06c36f740b6b7f15868c3581fb2d6aaa74a8a)
+
+- 🟪 **02:02:28 · Tests** — test(gui): keep the demo target cache from leaking between tests (Refs #449) · [`5d84fa6a9d63`](https://github.com/gmanldn/smoothcast/commit/5d84fa6a9d63778f453b2924eee2ba382ba45545)
+
+- ⬜ **02:02:28 · Maintenance** — chore(budget): complexity baseline for the demo cast helper (+37 lines), demo\_mode target caching and castctl demo routing · [`36a7ff959803`](https://github.com/gmanldn/smoothcast/commit/36a7ff9598032a6038c536d02adda4b9256eaf43)
+
+- 🟪 **02:02:28 · Tests** — test(gui): scripted open→cast→pause→seek→stop journey against the loopback demo receiver; demo cast helper replaces catt in demo mode, fake receiver mirrors status to other senders (Refs #449, #524) · [`e5d34a3c9fd8`](https://github.com/gmanldn/smoothcast/commit/e5d34a3c9fd8a790238424ca596575577d7de3e7)
 
 - ⬜ **01:57:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c85e1321b54b`](https://github.com/gmanldn/smoothcast/commit/c85e1321b54b20b59bcd7bd64e8d76151b4cbd24)
 
@@ -27,6 +37,8 @@ A provisional entry describes the current publication before its own SHA exists;
 - 🟩 **01:57:27 · Feature** — feat(diagnostics): every encoder start keeps its own attempt folder; fix GUI test harness imports (settings, QueueComponent) (Refs #698, #693, #691) · [`c9355796ae08`](https://github.com/gmanldn/smoothcast/commit/c9355796ae0838289d8e53d9366dc9669fa3e588)
 
 - 🟩 **01:57:27 · Feature** — feat(diagnostics): every encoder start keeps its own attempt folder (argv, plan, ffmpeg stderr, outcome); start errors name the plan (Refs #698) · [`6e983d0dc183`](https://github.com/gmanldn/smoothcast/commit/6e983d0dc183d63ffecb8322270953624bbb56c2)
+
+- ⬜ **01:57:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a7b82343f60f`](https://github.com/gmanldn/smoothcast/commit/a7b82343f60f2b52538f375436a5a68a80f72216)
 
 - ⬜ **01:54:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4a0a1274230e`](https://github.com/gmanldn/smoothcast/commit/4a0a1274230ec44ec90204af23e356ffa2a92d7f)
 
