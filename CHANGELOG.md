@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4569fc7397f6d0ab4d28e59c8c173689f0a7724a -->
+<!-- sc-changelog-through: 082fc6f03099c998ff8d6485d815cb6383bbf476 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:14:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:16:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:16:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`082fc6f03099`](https://github.com/gmanldn/smoothcast/commit/082fc6f03099c998ff8d6485d815cb6383bbf476)
+
+- 🟥 **05:15:50 · Fix** — fix: preserve FFmpeg error codes during startup (Refs #207) · [`e3d40bf9a9ad`](https://github.com/gmanldn/smoothcast/commit/e3d40bf9a9ade6b639a04a5c883222618dbfb420)
+
+- ⬜ **05:14:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`fd61182c9894`](https://github.com/gmanldn/smoothcast/commit/fd61182c989479e9afe5f3a37e1a8b37cf0e1763)
 
 - ⬜ **05:14:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4569fc7397f6`](https://github.com/gmanldn/smoothcast/commit/4569fc7397f6d0ab4d28e59c8c173689f0a7724a)
 
