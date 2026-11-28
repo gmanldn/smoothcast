@@ -113,6 +113,34 @@ check(link.attrs["aria-label"]==="Up Next: Quiet Film, 2 more waiting. Open queu
                    text=True, check=True, timeout=10)
 
 
+def test_home_glance_names_online_people_and_omits_offline_guests():
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for live Home people summary check")
+    html = portal._HTML
+    start = html.index("function renderGlance(room){")
+    end = html.index("\nfunction renderGlanceQueue", start)
+    function = html[start:end]
+    harness = r"""
+const elements={glanceTitle:{textContent:""},glanceWhere:{textContent:""},glanceWho:{textContent:""},title:{textContent:"Movie"},receiver:{textContent:"Playing on: Lounge TV"}};
+const $=id=>elements[id]||null;
+const check=(ok,message)=>{if(!ok)throw Error(message)};
+"""
+    checks = r"""
+renderGlance({me:{id:"me"},participants:[
+  {id:"me",name:"Ari",online:true},{id:"sam",name:"Sam",online:true},
+  {id:"jo",name:"Jo",online:true},{id:"alex",name:"Alex",online:false},
+  {id:"lee",name:"Lee",online:true}
+]});
+check(elements.glanceTitle.textContent==="Movie","current title is shown");
+check(elements.glanceWhere.textContent==="Lounge TV","selected target is shown");
+check(elements.glanceWho.textContent==="You, Sam, Jo +1 more","online people are named and offline people omitted");
+renderGlance({me:{id:"me"},participants:[{id:"me",name:"Ari",online:true}]});
+check(elements.glanceWho.textContent==="Just you","empty room is clear");
+"""
+    subprocess.run(["node", "-"], input=harness + function + checks,
+                   text=True, check=True, timeout=10)
+
+
 def test_home_embeds_the_cast_entry_and_drops_the_old_welcome_block():
     page = _page()
     assert page.parent["castEntry"] == "homePanel"

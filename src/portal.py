@@ -3274,8 +3274,11 @@ function renderGlance(room){
   const where=(receiver&&receiver.textContent||"").replace(/^Playing on:\s*/,"").trim();
   set("glanceWhere",where&&where!=="—"?where:"No TV or speaker yet");
   const people=Array.isArray(room&&room.participants)?room.participants:[];
-  const online=people.filter(p=>p.online).length;
-  set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
+  const me=room&&room.me&&room.me.id;
+  const names=people.filter(p=>p.online&&p.id!==me).map(p=>typeof p.name==="string"?p.name.trim():"").filter(Boolean);
+  let who=names.length?"You, "+names.slice(0,2).join(", "):"Just you";
+  if(names.length>2)who+=` +${names.length-2} more`;
+  set("glanceWho",who);
 }
 function renderGlanceQueue(items){
   const link=$("glanceQueue");if(!link)return;
