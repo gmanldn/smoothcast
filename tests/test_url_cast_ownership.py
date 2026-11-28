@@ -11,6 +11,8 @@ import time
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from gui_source import main_window_methods
 import castctl
 import idle_slate
@@ -117,6 +119,70 @@ def test_failed_url_cast_does_not_claim_ownership():
     assert w._url_cast_url is None
     w._cast_failed.assert_called_once()
     w.local_playback.stop.assert_not_called()
+
+
+@pytest.mark.parametrize("order", [("success", "failure"), ("failure", "success")])
+def test_stale_url_callbacks_cannot_override_a_replacement_cast(order):
+    w, jobs = window("_cast_remote_url")
+    previous = mock.Mock()
+    w.session = previous
+    w._cast_remote_url(URL)
+    _stale_work, stale_done, stale_failed = jobs.pop()
+
+    # A newer action has taken ownership and selected a different target.
+    w.busy = False
+    w.cfg["device"] = "Bedroom TV"
+    w._cast_remote_url(OTHER)
+    current_work, current_done, _ = jobs.pop()
+    assert w.busy is True
+
+    callbacks = {"success": lambda: stale_done((True, "old URL loaded")),
+                 "failure": lambda: stale_failed("old URL failed")}
+    with mock.patch.object(castctl, "command", return_value=(True, "old URL loaded")):
+        assert _stale_work() == (True, "old URL loaded")
+    previous.stop.assert_not_called()
+    for event in order:
+        callbacks[event]()
+
+    assert w.busy is True
+    assert w.session is previous
+    previous.stop.assert_not_called()
+    w._stop_monitor.assert_not_called()
+    w._unload_local_video.assert_not_called()
+    w.local_playback.stop.assert_not_called()
+    w._cast_failed.assert_not_called()
+
+    with mock.patch.object(castctl, "command", return_value=(True, "ok")):
+        current_result = current_work()
+    current_done(current_result)
+    assert w.busy is False
+    assert w._url_cast_url == OTHER
+    assert w.session is None
+    previous.stop.assert_called_once_with("Bedroom TV", send_stop=False)
+
+
+def test_url_cast_callbacks_after_close_do_not_write_to_the_window():
+    w, jobs = window("_cast_remote_url")
+    w._cast_remote_url(URL)
+    _work, done, failed = jobs.pop()
+    for name in ("_refresh_controls", "_poll_device", "_stop_monitor",
+                 "_unload_local_video", "_console", "toast", "_cast_failed"):
+        getattr(w, name).reset_mock()
+    w._closing = True
+
+    done((True, "late success"))
+    failed("late failure")
+
+    assert w.busy is True
+    assert w._url_cast_url is None
+    w._refresh_controls.assert_not_called()
+    w._poll_device.assert_not_called()
+    w._stop_monitor.assert_not_called()
+    w._unload_local_video.assert_not_called()
+    w.local_playback.stop.assert_not_called()
+    w.toast.assert_not_called()
+    w._console.assert_not_called()
+    w._cast_failed.assert_not_called()
 
 
 def test_sleep_timer_stops_our_url_cast():

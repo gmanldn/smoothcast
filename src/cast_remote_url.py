@@ -28,6 +28,14 @@ class RemoteUrlCastMixin:
             self.toast("Hold on — finishing the last command")
             return
         device = self._device()
+        generation = getattr(self, "_remote_url_cast_generation", 0) + 1
+        self._remote_url_cast_generation = generation
+
+        def current() -> bool:
+            return (not getattr(self, "_closing", False)
+                    and getattr(self, "_remote_url_cast_generation", None) == generation
+                    and self._device() == device)
+
         # The old session keeps serving the receiver until the replacement is
         # confirmed: a rejected or unconfirmed LOAD must not strand the TV.
         previous = self.session
@@ -41,11 +49,13 @@ class RemoteUrlCastMixin:
             if not ok and message == castctl.COMMAND_TIMEOUT_MESSAGE:
                 # Ambiguous: reconcile observed content before deciding.
                 ok = playback_state.url_cast_matches(castctl.info(device), url)
-            if ok and previous is not None:
+            if ok and previous is not None and current():
                 previous.stop(device, send_stop=False)  # never a speculative remote Stop
             return ok, message
 
         def done(result):
+            if not current():
+                return
             ok, message = result
             self.busy = False
             if not ok:
@@ -71,7 +81,11 @@ class RemoteUrlCastMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
+        def failed(message):
+            if current():
+                self._cast_failed(message)
+
+        Async.run(work, done=done, failed=failed, domain="transport")
 
     def _open_url(self) -> None:
         dialog = Adw.AlertDialog.new("Open URL", "Paste a stream URL")
