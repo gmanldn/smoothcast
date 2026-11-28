@@ -230,8 +230,6 @@ class PyChromecastBackend:
             if not owner:
                 while not attempt.done and not self._closed:
                     self._changed.wait()
-                if self._closed and not attempt.done:
-                    raise CastError("Cast backend is closed")
                 if attempt.error is not None:
                     raise CastError(attempt.error)
                 if attempt.device is not None:
@@ -266,10 +264,8 @@ class PyChromecastBackend:
             if self._manual_connects.get(endpoint) is attempt:
                 self._manual_connects.pop(endpoint, None)
             self._changed.notify_all()
-            if attempt.error is not None:
-                raise CastError(attempt.error)
-            if device is None:
-                raise CastError("Cast receiver was not registered")
+            if attempt.error is not None or device is None:
+                raise CastError(attempt.error or "Cast receiver was not registered")
             return device
 
     def _resolve(self, target: str, *, allow_connect: bool = True) -> tuple[str | None, str | None]:
