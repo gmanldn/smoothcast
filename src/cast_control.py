@@ -54,14 +54,15 @@ from cast_lifecycle import LifecycleMixin
 from cast_ui_timers import UiTimerMixin
 from find_ui import FindMixin
 from cast_subtitles import SubtitleMixin
-from cast_audio_sync import AudioSyncMixin
+from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._adjust_audio_delay = AudioSyncController(self).adjust  # lip-sync nudge (#113, #691)
         self._retry_action = self._retry.action  # (label, callback) | None (#13, #691)
         self.app = app
         self.cfg = load_config()

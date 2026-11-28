@@ -211,7 +211,10 @@ def test_dlna_start_does_not_play_a_file_as_is_when_a_delay_is_set():
 
 def adjust_window(session=None, *, media=None, preview="", busy=False):
     jobs: list = []
-    w, _jobs, saves = window("_adjust_audio_delay", "_restart_at")
+    w, _jobs, saves = window("_restart_at")
+    import cast_audio_sync
+    w._adjust_audio_delay = cast_audio_sync.AudioSyncController(
+        w, save=lambda cfg: saves.append(dict(cfg))).adjust
     w.jobs, w.saves = jobs, saves
     w.session, w.busy, w.media, w._preview_path = session, busy, media, preview
     w._restart_at = mock.Mock()
@@ -326,7 +329,7 @@ def test_menu_actions_and_shortcuts_exist():
     control = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
     for direction, action in ((-1, "audio-earlier"), (1, "audio-later"), (0, "audio-reset")):
         assert f'simple("{action}", lambda *a: self._window()._adjust_audio_delay({direction}))' in control
-    assert "AudioSyncMixin" in control
+    assert "AudioSyncController" in control and "AudioSyncMixin" not in control
     toml = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     for name in ('"audio_delay"', '"cast_audio_sync"', "src/audio_delay.py"):
         assert name in toml
