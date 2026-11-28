@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2694c98e9162af2db2a949d99457ed5b1cc35046 -->
+<!-- sc-changelog-through: 29c3c8b3c55b9032a7c74278b03d08240aabefee -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:06:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **04:10:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **04:10:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`29c3c8b3c55b`](https://github.com/gmanldn/smoothcast/commit/29c3c8b3c55b9032a7c74278b03d08240aabefee)
+
+- 🟥 **04:10:14 · Fix** — fix: explain media without playable tracks (Refs #207) · [`87abdfa1aa0d`](https://github.com/gmanldn/smoothcast/commit/87abdfa1aa0d83098fd8c5e4afdeef651ece063f)
 
 - ⬜ **04:06:54 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2694c98e9162`](https://github.com/gmanldn/smoothcast/commit/2694c98e9162af2db2a949d99457ed5b1cc35046)
+
+- ⬜ **04:06:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`692fc3bf33f4`](https://github.com/gmanldn/smoothcast/commit/692fc3bf33f4dc1089e9b4b17a1d6340985ce0b8)
 
 - 🟪 **04:06:51 · Tests** — test: cover Cast status connection startup cleanup race (Refs #202) · [`cd024fd77456`](https://github.com/gmanldn/smoothcast/commit/cd024fd7745659162476bef1d319d5c8a1e3a6fb)
 
