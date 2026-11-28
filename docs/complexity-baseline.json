@@ -45,7 +45,7 @@
   "cast_queue.py": 425,
   "cast_recovery.py": 208,
   "cast_remote_url.py": 114,
-  "cast_retry_ui.py": 52,
+  "cast_retry_ui.py": 80,
   "cast_session.py": 1245,
   "cast_settings.py": 215,
   "cast_subtitle_files.py": 170,
