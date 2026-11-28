@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 89ae42174b18a6982b91cf02f953a24583cf4867 -->
+<!-- sc-changelog-through: 145e7daf14929a219da703231d3c064bd9e83985 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:56:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **02:56:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:56:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`145e7daf1492`](https://github.com/gmanldn/smoothcast/commit/145e7daf14929a219da703231d3c064bd9e83985)
+
+- 🟩 **02:56:52 · Feature** — feat: show room people in network map (Refs #710) · [`8e4db8da9518`](https://github.com/gmanldn/smoothcast/commit/8e4db8da95189a9141a51b5e42a0da5980be87d5)
 
 - ⬜ **02:56:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`89ae42174b18`](https://github.com/gmanldn/smoothcast/commit/89ae42174b18a6982b91cf02f953a24583cf4867)
+
+- ⬜ **02:56:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`187e84097259`](https://github.com/gmanldn/smoothcast/commit/187e84097259f0fe9e6c7509da6689efacd86b0a)
 
 - 🟥 **02:56:36 · Fix** — fix: reject Windows reparse points when staging sources (Refs #580) · [`a7d7095a8943`](https://github.com/gmanldn/smoothcast/commit/a7d7095a8943c74493245f18ef9a991d59c32576)
 
