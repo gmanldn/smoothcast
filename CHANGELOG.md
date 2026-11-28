@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ca7b40a82a28adbd152929d81e219dc8c4f0a773 -->
+<!-- sc-changelog-through: 354118750bb537a60b7bdc19f5e28ac20abe5017 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **11:07:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **11:13:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **11:13:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`354118750bb5`](https://github.com/gmanldn/smoothcast/commit/354118750bb537a60b7bdc19f5e28ac20abe5017)
+
+- 🟨 **11:13:37 · Documentation** — docs(platform): hardware encoder port evidence table, native results UNVERIFIED (Refs #703) · [`4e19b7e3f01c`](https://github.com/gmanldn/smoothcast/commit/4e19b7e3f01c90e2d0a990bcdf7894053af239ba)
 
 - ⬜ **11:07:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ca7b40a82a28`](https://github.com/gmanldn/smoothcast/commit/ca7b40a82a28adbd152929d81e219dc8c4f0a773)
+
+- ⬜ **11:07:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5a9ce04359e3`](https://github.com/gmanldn/smoothcast/commit/5a9ce04359e3546edd3124db29abebd06a5c2f80)
 
 - 🟩 **11:07:09 · Feature** — feat(state): events carry command id so idempotency survives rejoin (Refs #695) · [`6b92e20dd1ba`](https://github.com/gmanldn/smoothcast/commit/6b92e20dd1baefd2bbc3080bbc2fab242fa6bcf2)
 
