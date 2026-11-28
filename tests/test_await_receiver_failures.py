@@ -48,14 +48,14 @@ def test_no_status_without_a_recorded_reason_keeps_the_plain_message(monkeypatch
 
 def test_status_without_player_state_is_not_called_offline(monkeypatch):
     error = _await(monkeypatch, [{"volume_level": 30, "app_id": "CC1AD845"}])
-    assert error.code == "cast.command_failed"
+    assert error.code == "cast.status_unavailable"
     assert "did not report playback state" in str(error)
 
 
 def test_other_media_is_not_confirmed(monkeypatch):
     other = {"player_state": "PLAYING", "content_id": "http://x/other", "title": "Film"}
     error = _await(monkeypatch, [other])
-    assert error.code == "cast.command_failed"
+    assert error.code == "cast.playback_unconfirmed"
     assert "did not confirm playback" in str(error)
 
 

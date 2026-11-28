@@ -263,6 +263,27 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Check that the receiver is on and on the same network.
   2. Retry the action.
 
+<a id="errors-cast-status-unavailable"></a>
+## `cast.status_unavailable`
+
+- Severity: error; retryable: yes
+- Message: The TV answered but did not report what it is playing. Wake the TV, then try again.
+- Try:
+  1. Wait a few seconds and try again; SmoothCast reconnects to the TV on retry.
+  2. Wake the TV and check that it is on its Cast input.
+  3. Switch the TV off and on again if it still reports nothing.
+  4. Use Copy diagnostics and include it in a bug report if this keeps happening.
+
+<a id="errors-cast-playback-unconfirmed"></a>
+## `cast.playback_unconfirmed`
+
+- Severity: error; retryable: yes
+- Message: The TV is reachable but did not confirm that it is playing this media.
+- Try:
+  1. Look at the TV: another app or cast may have taken over the screen.
+  2. Stop casting to this TV from other devices, then try again.
+  3. Try again once the TV shows its home screen.
+
 <a id="errors-cast-command-invalid"></a>
 ## `cast.command_invalid`
 

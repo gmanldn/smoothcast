@@ -2202,10 +2202,10 @@ class Session:
                        f"state={castctl.player_state(last_status)}, "
                        f"media_present={bool(last_status.get('content_id'))}; "
                        f"{self._caster_output('helper still running or no output')}",
-                code="cast.command_failed")
+                code="cast.status_unavailable")
         raise StreamPreparationError(
             "Receiver is reachable but did not confirm playback of this media. Check the TV.",
-            detail=self._caster_output("playback not confirmed"), code="cast.command_failed")
+            detail=self._caster_output("playback not confirmed"), code="cast.playback_unconfirmed")
 
     def _caster_output(self, fallback: str) -> str:
         """Best-effort catt output for an error; never block on a live catt."""
