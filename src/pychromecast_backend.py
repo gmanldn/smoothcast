@@ -182,6 +182,18 @@ class PyChromecastBackend:
                         pass
                 return identifier
 
+            endpoint_device = next(
+                (device for device in self._devices.values()
+                 if device.host == cast_info.host and device.port == cast_info.port),
+                None,
+            )
+            if endpoint_device is not None:
+                try:
+                    cast.disconnect(timeout=1)
+                except Exception:  # noqa: BLE001 - best-effort duplicate disconnect
+                    pass
+                return endpoint_device.uuid
+
             name = cast_info.friendly_name or cast_info.host
             self._casts[identifier] = cast
             self._devices[identifier] = Device(
@@ -244,7 +256,7 @@ class PyChromecastBackend:
                 tries=None,
                 retry_wait=5,
             )
-            self._register(cast)
+            registered_identifier = self._register(cast)
         except Exception as exc:  # noqa: BLE001 - third-party connect failure is re-raised as CastError
             failure = CastError(f"Cannot connect to Google Cast receiver {host}:{port}: {exc}")
             with self._changed:
@@ -256,7 +268,7 @@ class PyChromecastBackend:
             raise failure from exc
 
         with self._changed:
-            device = self._devices.get(str(identifier))
+            device = self._devices.get(registered_identifier)
             if self._closed or device is None:
                 attempt.error = "Cast backend is closed" if self._closed else "Cast receiver was not registered"
             else:
