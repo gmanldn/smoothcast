@@ -122,16 +122,31 @@ def install_network_guard() -> bool:
     return True
 
 
+TARGET_ENV = "SMOOTHCAST_DEMO_TARGET"
+
+
 def demo_target() -> tuple[str, int, str]:
-    """(host, port, name) of the profile's one fake receiver; loopback enforced."""
+    """(host, port, name) of the profile's one fake receiver; loopback enforced.
+
+    The first call reads the profile and records the target in the environment:
+    the app later normalises ``cast_targets`` away, yet the demo cast helper
+    subprocess (:mod:`demo_cast_helper`) must still find the receiver.
+    """
     import json
     import demo_runtime
+    cached = os.environ.get(TARGET_ENV)
+    if cached:
+        host, port, name = cached.split("\n", 2)
+        assert_loopback(host)
+        return host, int(port), name
     base = Path(os.environ.get("XDG_CONFIG_HOME") or "")
     config = json.loads((base / paths.APP_DIR / "config.json").read_text(encoding="utf-8"))
     for target in config.get("cast_targets") or []:
         host = str(target.get("host", ""))
         assert_loopback(host)
-        return host, int(target["port"]), str(target.get("name") or demo_runtime.DEMO_DEVICE_NAME)
+        name = str(target.get("name") or demo_runtime.DEMO_DEVICE_NAME)
+        os.environ[TARGET_ENV] = f"{host}\n{int(target['port'])}\n{name}"
+        return host, int(target["port"]), name
     raise DemoModeError("demo profile has no receiver")
 
 
@@ -153,6 +168,10 @@ def backend():
         import uuid
         cast = connect_from_host((host, port, uuid.uuid5(uuid.NAMESPACE_URL, f"demo:{host}:{port}"),
                                   "SmoothCast Demo", name), tries=1, retry_wait=0.1, timeout=5)
+        try:  # a fresh helper process must not command a half-open socket
+            cast.wait(timeout=5)
+        except Exception:  # noqa: BLE001 - connection state is reported by the backend
+            pass
         callback(cast)
         return type("Browser", (), {"stop_discovery": staticmethod(lambda: None)})()
 

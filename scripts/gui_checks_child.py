@@ -846,7 +846,54 @@ def aspect_override_preferences(_app, window) -> None:
           window.cfg["aspect_override"] == "original" and window.session is None)
 
 
-SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+def _settle(window, done, seconds: float) -> bool:
+    """Pump GTK, polling the receiver, until ``done()`` holds or the time is up."""
+    end = GLib.get_monotonic_time() + int(seconds * 1_000_000)
+    while GLib.get_monotonic_time() < end:
+        pump(0.1)
+        window._poll_device()
+        if done():
+            return True
+    return False
+
+
+def demo_journey(app, window) -> None:
+    """Open, cast, pause, seek and stop through the real window and the loopback fake receiver (#449/#524).
+
+    The runner owns the receiver and separately proves the wire order."""
+    clip = Path(os.environ["SMOOTHCAST_DEMO_MEDIA"]) / "demo-video.mp4"
+    check("demo receiver is the selected target", window._device() == "SmoothCast Demo TV", window._device())
+    window.open_paths([str(clip)])
+    pump(0.3)
+    check("open selects the demo clip", window.selected_index is not None and window.queue[:1] == [str(clip)])
+    import castctl
+    castctl.scan(timeout=8)  # the self-test app skips discovery; the demo backend finds only the loopback receiver
+    app.selftest = False  # the scripted cast needs the real session path, still on loopback only
+    try:
+        window.cast_selected()
+        _settle(window, lambda: window.session is not None and not window.busy, 60)
+    finally:
+        app.selftest = True
+    check("cast starts a session on the fake receiver", window.session is not None and not window.busy,
+          f"busy={window.busy} feedback={getattr(window, '_cast_feedback', None)}")
+    if window.session is None:
+        return
+    _settle(window, lambda: window.device_state == "PLAYING", 15)
+    check("receiver accepted the stream", window.device_state in ("PLAYING", "BUFFERING"), str(window.device_state))
+    window.toggle_play()
+    _settle(window, lambda: not window.busy and window.device_state == "PAUSED", 15)
+    check("pause reaches the receiver", window.device_state == "PAUSED", str(window.device_state))
+    window.seek_to(5.0)
+    _settle(window, lambda: not window.busy, 20)
+    pump(0.5)
+    check("seek finishes and the session survives", window.session is not None and not window.busy)
+    window.stop_stream()
+    _settle(window, lambda: window.session is None and not window.busy, 20)
+    check("stop ends the session", window.session is None and not window.busy)
+    check("Stop TV is disabled again", not window.stop_tv_button.get_sensitive())
+
+
+SCENARIOS = {"demo-journey": demo_journey, "network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
              "room-recovery": room_recovery,
              "picture-options": picture_options, "aspect-override": aspect_override_preferences, "accent": accent_choice,

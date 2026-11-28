@@ -326,6 +326,7 @@ class FakeCastReceiver:
             with self._lock:
                 self._app_id = str(data.get("appId") or DEFAULT_MEDIA_RECEIVER)
             self._send_receiver_status(client, request)
+            self._broadcast_receiver_status(client)
         elif message_type == "STOP":
             with self._lock:
                 self._app_id = None
@@ -340,6 +341,26 @@ class FakeCastReceiver:
             self._send_receiver_status(client, request)
         elif message_type == "GET_STATUS":
             self._send_receiver_status(client, request)
+
+    def _broadcast_receiver_status(self, origin: ssl.SSLSocket) -> None:
+        """Tell every other sender, as a real receiver does, that the app changed."""
+        with self._lock:
+            others = [other for other in self._clients if other is not origin]
+        notice = CastMessage()
+        notice.source_id = "*"
+        notice.destination_id = "receiver-0"
+        for other in others:
+            self._send_receiver_status(other, notice)
+
+    def _broadcast_media_status(self, origin: ssl.SSLSocket, status: dict[str, Any]) -> None:
+        """Mirror a media status to the other senders, as a real receiver does."""
+        with self._lock:
+            others = [other for other in self._clients if other is not origin]
+        notice = CastMessage()
+        notice.source_id = "*"
+        notice.destination_id = "fake-transport-1"
+        for other in others:
+            self._send(other, notice, NS_MEDIA, {"type": "MEDIA_STATUS", "status": [dict(status)]})
 
     def _send_receiver_status(self, client: ssl.SSLSocket, request: CastMessage) -> None:
         with self._lock:
@@ -431,6 +452,7 @@ class FakeCastReceiver:
             "type": "MEDIA_STATUS",
             "status": [status],
         })
+        self._broadcast_media_status(client, status)
         if fetch_hls:
             thread = threading.Thread(
                 target=self._fetch_media, args=(client, request, content_id),
@@ -467,10 +489,9 @@ class FakeCastReceiver:
             with self._lock:
                 self.media_fetch_results.append(result)
                 self._media_state = "IDLE" if result.ended else "PLAYING"
-            self._send(client, request, NS_MEDIA, {
-                "type": "MEDIA_STATUS",
-                "status": [self._media_status("FINISHED" if result.ended else None)],
-            })
+            status = self._media_status("FINISHED" if result.ended else None)
+            self._send(client, request, NS_MEDIA, {"type": "MEDIA_STATUS", "status": [status]})
+            self._broadcast_media_status(client, status)
         finally:
             with self._lock:
                 self._fetch_threads.discard(threading.current_thread())
@@ -481,10 +502,9 @@ class FakeCastReceiver:
         with self._lock:
             self._current_time = duration
             self._media_state = "PLAYING"
-        self._send(client, request, NS_MEDIA, {
-            "type": "MEDIA_STATUS",
-            "status": [self._media_status()],
-        })
+        status = self._media_status()
+        self._send(client, request, NS_MEDIA, {"type": "MEDIA_STATUS", "status": [status]})
+        self._broadcast_media_status(client, status)
 
     def _media_status(self, idle_reason: str | None = None) -> dict[str, Any]:
         with self._lock:

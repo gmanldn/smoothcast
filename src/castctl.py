@@ -105,6 +105,8 @@ def catt_command(args: list[str]) -> list[str]:
     # use the same receiver route. Keep the public/session identity unchanged.
     if len(args) >= 2 and args[0] == "-d" and isinstance(_backend, CattBackend):
         args = [args[0], _backend.receiver_route(args[1]), *args[2:]]
+    if args and demo_mode.active() and "cast" in args[:3]:
+        return [sys.executable, str(pathlib.Path(__file__).with_name("demo_cast_helper.py")), *args]
     return frozen_runtime.catt_command(str(CATT), args)
 
 
