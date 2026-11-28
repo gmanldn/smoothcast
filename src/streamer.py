@@ -1306,6 +1306,29 @@ def _ffmpeg_log_tail() -> bytes:
         return handle.read(size)
 
 
+class _ReceiverUpdates:
+    """Keep the latest push status and wake the confirmation worker."""
+
+    def __init__(self) -> None:
+        self._changed = threading.Condition()
+        self._latest: progress_model.ReceiverInfo | None = None
+
+    def publish(self, info: progress_model.ReceiverInfo) -> None:
+        with self._changed:
+            self._latest = info
+            self._changed.notify()
+
+    def take(self) -> progress_model.ReceiverInfo | None:
+        with self._changed:
+            status, self._latest = self._latest, None
+            return status
+
+    def wait(self, timeout: float) -> None:
+        with self._changed:
+            if self._latest is None:
+                self._changed.wait(timeout)
+
+
 class Session:
     """A live casting session: HLS transcode (or direct play) plus cast."""
 
@@ -2186,12 +2209,31 @@ class Session:
         """Confirm the receiver plays our media before a cast is treated as started.
 
         A fixed sleep cannot tell a successful cast from one that fails a moment
-        later. Poll the receiver's own state until it reports our content, or a
-        clear timeout; a catt process that exits non-zero fails immediately.
+        later. Observe receiver status until it reports our content or times
+        out. A catt process that exits non-zero fails immediately.
         """
         # catt itself allows up to 30 seconds for connection, plus discovery.
         # A 10-second confirmation deadline could kill a still-connecting load.
         deadline = time.monotonic() + timeout
+        if not castctl.supports_push_status():
+            self._confirm_receiver(device, matches, deadline, interval, None)
+            return
+        updates = _ReceiverUpdates()
+        watch = castctl.CastStatusWatch(updates.publish)
+        try:
+            try:
+                subscribed = watch.select(device, True)
+            except (castctl.CastError, OSError, ValueError):
+                subscribed = False
+            self._confirm_receiver(device, matches, deadline, interval,
+                                   updates if subscribed else None)
+        finally:
+            watch.close()
+
+    def _confirm_receiver(
+        self, device: str, matches: Callable[[dict | None], bool],
+        deadline: float, interval: float, updates: _ReceiverUpdates | None,
+    ) -> None:
         observed = False
         known_state = False
         last_status = {}
@@ -2205,10 +2247,16 @@ class Session:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            try:
-                info = castctl.info(device, timeout=min(8.0, remaining))
-            except (OSError, ValueError, TypeError):
-                info = None
+            info = updates.take() if updates is not None else None
+            if info is None:
+                try:
+                    info = castctl.info(device, timeout=min(8.0, remaining))
+                except (OSError, ValueError, TypeError):
+                    pass
+                if updates is not None:
+                    newer = updates.take()
+                    if newer is not None:
+                        info = newer
             if isinstance(info, dict) and info:
                 observed = True
                 last_status = info
@@ -2230,9 +2278,12 @@ class Session:
                         castctl.reset_status_route(device)
                     except Exception as exc:  # noqa: BLE001 - best-effort recovery only
                         castctl.log_backend_failure(f"status route reset failed: {exc}")
-            remaining = deadline - time.monotonic()
+            remaining = min(interval, deadline - time.monotonic())
             if remaining > 0:
-                time.sleep(min(interval, remaining))
+                if updates is None:
+                    time.sleep(remaining)
+                else:
+                    updates.wait(remaining)
         if not observed:
             raise StreamPreparationError(
                 "Receiver did not return status. Check its power, network and Cast connection.",

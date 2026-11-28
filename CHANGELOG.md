@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 6b53020d867b07232b87beae692b377f9b5cd670 -->
+<!-- sc-changelog-through: fc48ba4a2350b33c54adb64748847cb1a4234bde -->
 
 ## 2026-11-28 · UTC
 
-- 🟥 **07:46:05 · Fix** — fix(dlna): preserve playback state within a shared SOAP status budget (Refs #726) <!-- sc-changelog-pending -->
+- 🟦 **07:49:22 · Performance** — perf(cast): wake startup confirmation from receiver push status (Refs #728) <!-- sc-changelog-pending -->
+
+- 🟥 **07:46:14 · Fix** — fix(dlna): preserve playback state within a shared SOAP status budget (Refs #726) · [`fc48ba4a2350`](https://github.com/gmanldn/smoothcast/commit/fc48ba4a2350b33c54adb64748847cb1a4234bde)
 
 - ⬜ **07:44:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4f0adaeb45f4`](https://github.com/gmanldn/smoothcast/commit/4f0adaeb45f43c808224d7c1a2039323f3075f0c)
 

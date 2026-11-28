@@ -1,4 +1,7 @@
 """Receiver confirmation failures stay distinct and diagnosable (no real receiver)."""
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
 import pytest
 
 import castctl
@@ -77,3 +80,56 @@ def test_helper_exit_zero_without_match_ends_instead_of_hanging(monkeypatch):
 
     error = _await(monkeypatch, [None], caster=Done())
     assert error.code == "cast.receiver_offline"
+
+
+def test_matching_receiver_push_wakes_confirmation_without_a_poll_tick(monkeypatch):
+    listeners = []
+    polled = Event()
+    removed = []
+    calls = []
+
+    def subscribe(receiver, listen):
+        assert receiver == "TV"
+        listeners.append(listen)
+        return lambda: removed.append(receiver)
+
+    def status(receiver, timeout):
+        calls.append(receiver)
+        polled.set()
+        return None
+
+    monkeypatch.setattr(castctl, "supports_push_status", lambda: True)
+    monkeypatch.setattr(castctl, "subscribe", subscribe)
+    monkeypatch.setattr(castctl, "info", status)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            _session()._await_receiver, "TV",
+            lambda info: playback_state.hls_session_matches(info, URL, "Film"),
+            timeout=1.5, interval=5.0,
+        )
+        assert polled.wait(0.7)
+        assert len(listeners) == 1
+        listeners[0]({"player_state": "PLAYING", "content_id": URL + "?other"})
+        listeners[0]({"player_state": "PLAYING", "content_id": URL})
+        future.result(timeout=0.7)
+    assert calls == ["TV"]
+    assert removed == ["TV"]
+
+
+def test_unrelated_push_alone_times_out_and_unsubscribes(monkeypatch):
+    removed = []
+
+    def subscribe(receiver, listen):
+        listen({"player_state": "PLAYING", "content_id": URL + "?other"})
+        return lambda: removed.append(receiver)
+
+    monkeypatch.setattr(castctl, "supports_push_status", lambda: True)
+    monkeypatch.setattr(castctl, "subscribe", subscribe)
+    monkeypatch.setattr(castctl, "info", lambda *a, **kw: None)
+    with pytest.raises(streamer.StreamPreparationError) as error:
+        _session()._await_receiver(
+            "TV", lambda info: playback_state.hls_session_matches(info, URL, "Film"),
+            timeout=0.05, interval=0.2,
+        )
+    assert error.value.code == "cast.playback_unconfirmed"
+    assert removed == ["TV"]
