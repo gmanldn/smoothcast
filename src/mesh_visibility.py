@@ -15,6 +15,7 @@ bump the record revision every refresh. GTK-free. Design: docs/MESH_DESIGN.md.
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -97,6 +98,7 @@ class LocalObserver:
         self._tick_timer: TimerHandle | None = None
         self._edges: dict[str, mm.EdgeObservation] = {}
         self._probing: set[str] = set()
+        self._probe_after = ""
         self._unreachable: set[str] = set()
         self._last: tuple[Any, ...] = ()
         self.refreshes = 0
@@ -191,14 +193,20 @@ class LocalObserver:
     def _probe_round(self) -> None:
         if self._closed or self._prober is None:
             return
-        for item in self._source():
-            if item.probe is None or item.id in self._probing:
-                continue
-            if len(self._probing) >= PROBE_CONCURRENCY:
-                break
-            self._probing.add(item.id)
-            self.probes_started += 1
-            self._prober(item, self._probe_callback(item))
+        slots = PROBE_CONCURRENCY - len(self._probing)
+        if slots > 0:
+            eligible = {item.id: item for item in self._source()
+                        if item.probe is not None and item.id not in self._probing}
+            ids = sorted(eligible)
+            # Resume after the last dispatched ID even if discovery reordered
+            # the inventory or that receiver has since disappeared.
+            start = bisect_right(ids, self._probe_after)
+            for receiver_id in (ids[start:] + ids[:start])[:slots]:
+                self._probe_after = receiver_id
+                self._probing.add(receiver_id)
+                self.probes_started += 1
+                item = eligible[receiver_id]
+                self._prober(item, self._probe_callback(item))
         self._probe_timer = self._clock.call_later(
             PROBE_INTERVAL_S * (0.8 + 0.4 * self._rng.random()), self._probe_round)
 

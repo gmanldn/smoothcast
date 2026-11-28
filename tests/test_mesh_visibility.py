@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import random
 import sys
+
+import pytest
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -171,6 +174,46 @@ def test_probes_are_bounded_rate_limited_and_edges_capped():
     assert a.node.observer.probes_started <= (mv.PROBE_CONCURRENCY * 8) + 2
     assert len(a.node.state.own.edges) <= mm.MAX_EDGES
     assert len(a.node.state.own.targets) <= mm.MAX_TARGETS
+
+
+@pytest.mark.parametrize("slow_probe", [False, True])
+def test_probe_rounds_cover_the_inventory_within_the_slot_budget(slow_probe):
+    clock = ms.SimClock()
+
+    def receiver(index):
+        return mv.Discovered(f"tv-{index}", "cast", "TV", clock.monotonic(),
+                             probe=("192.168.1.99", 8009))
+
+    inventory = {item.id: item for item in map(receiver, range(7))}
+    pending = {}
+    started = []
+
+    def probe(item, done):
+        assert item.id not in pending
+        pending[item.id] = done
+        started.append(item.id)
+        assert len(pending) <= 2
+
+    observer = mv.LocalObserver(clock=clock, rng=random.Random(0),
+                                source=inventory.values, publish=lambda **_: None,
+                                prober=probe)
+    for index in range(7 if slow_probe else 4):
+        before = len(started)
+        observer._probe_round()
+        assert len(started) - before == (1 if slow_probe and index else 2)
+        for receiver_id in list(pending):
+            if not slow_probe or receiver_id != "tv-0":
+                pending.pop(receiver_id)((True, 7, ""))
+        if slow_probe and index == 0:
+            del inventory["tv-2"]
+            new_receiver = receiver(7)
+            inventory[new_receiver.id] = new_receiver
+
+    assert set(inventory) <= set(started)
+    if slow_probe:
+        assert started.count("tv-0") == 1
+        assert "tv-2" not in started
+    observer.close()
 
 
 def test_node_to_node_edges_are_published_quantised():
