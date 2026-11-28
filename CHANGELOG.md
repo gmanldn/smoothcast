@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 03ac84dd9f435a308edc4514588e5bdf6e1d1a9c -->
+<!-- sc-changelog-through: 2c2a4e40248e2d3896c8363b105a7c1ba8aee7ce -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:36:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:38:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:38:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2c2a4e40248e`](https://github.com/gmanldn/smoothcast/commit/2c2a4e40248e2d3896c8363b105a7c1ba8aee7ce)
+
+- 🟥 **05:38:10 · Fix** — fix: preserve HDR filter error codes (Refs #207) · [`110abd0f1516`](https://github.com/gmanldn/smoothcast/commit/110abd0f1516db3cc7ebbdf4f584f74bffca6b1f)
 
 - ⬜ **05:36:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`03ac84dd9f43`](https://github.com/gmanldn/smoothcast/commit/03ac84dd9f435a308edc4514588e5bdf6e1d1a9c)
+
+- ⬜ **05:36:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c1a6ebb8664f`](https://github.com/gmanldn/smoothcast/commit/c1a6ebb8664ff418963869c819a279dcbd585462)
 
 - 🟥 **05:36:38 · Fix** — fix(status): validate room playback measurements and codes (Refs #338) · [`e4e3693344a0`](https://github.com/gmanldn/smoothcast/commit/e4e3693344a00d2c078eb0b27abad90f9f22637e)
 
