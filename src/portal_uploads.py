@@ -62,14 +62,45 @@ _CONTENT_RANGE = re.compile(r"bytes ([0-9]{1,13})-([0-9]{1,13})/([0-9]{1,13})\Z"
 _UPLOAD_ID = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 
 
-def _mp4_index_state(path: Path) -> bool | None:
+@dataclass
+class _Mp4IndexCursor:
+    """Incremental front-index scan state for one growing upload."""
+    offset: int = 0
+    pending_end: int | None = None
+    pending_is_moov: bool = False
+    last_available: int = 0
+    headers_read: int = 0
+
+
+def _mp4_index_state(path: Path, cursor: _Mp4IndexCursor | None = None) -> bool | None:
     """True for complete front index, False for nonprogressive, None for pending bytes."""
     try:
         with open(path, "rb") as handle:
             available = os.fstat(handle.fileno()).st_size
-            scanned = 0
+            if cursor is None:
+                cursor = _Mp4IndexCursor()
+            # A failed append can truncate the partial back to its prior offset.
+            # Cached boundaries past that point are no longer trustworthy.
+            if available < cursor.last_available:
+                cursor.offset = 0
+                cursor.pending_end = None
+                cursor.pending_is_moov = False
+                cursor.headers_read = 0
+            cursor.last_available = available
+            if cursor.pending_end is not None:
+                if cursor.pending_end > available:
+                    return None
+                cursor.offset = cursor.pending_end
+                cursor.pending_end = None
+                if cursor.pending_is_moov:
+                    cursor.pending_is_moov = False
+                    return True
+                cursor.pending_is_moov = False
+            scanned = cursor.offset
+            handle.seek(scanned)
             while scanned < _MP4_SCAN_LIMIT:
                 header = handle.read(8)
+                cursor.headers_read += 1
                 if len(header) < 8:
                     return None
                 size = int.from_bytes(header[:4], "big")
@@ -79,6 +110,7 @@ def _mp4_index_state(path: Path) -> bool | None:
                     return False
                 if size == 1:
                     extended = handle.read(8)
+                    cursor.headers_read += 1
                     if len(extended) < 8:
                         return None
                     size = int.from_bytes(extended, "big")
@@ -86,11 +118,14 @@ def _mp4_index_state(path: Path) -> bool | None:
                 if size < header_len or scanned + size > _MP4_SCAN_LIMIT:
                     return False
                 if scanned + size > available:
+                    cursor.pending_end = scanned + size
+                    cursor.pending_is_moov = kind == b"moov"
                     return None
                 if kind == b"moov":
                     return True
                 handle.seek(size - header_len, os.SEEK_CUR)
                 scanned += size
+                cursor.offset = scanned
             return False
     except OSError:
         return False
@@ -210,6 +245,7 @@ class _Upload:
     # "idle" -> "requested" -> "active"/"declined"; early casting state.
     early_cast: str = "idle"
     early_retries: int = 0
+    mp4_index_cursor: _Mp4IndexCursor = field(default_factory=_Mp4IndexCursor)
     keep_partial: bool = False
     queue_only: bool = False
     audio_only: bool = False
@@ -814,7 +850,7 @@ class UploadManager:
                 or upload.received < self._early_cast_min_bytes
                 or upload.received >= upload.size):
             return False
-        ready = (_mp4_index_state(upload.partial_path)
+        ready = (_mp4_index_state(upload.partial_path, upload.mp4_index_cursor)
                  if upload.suffix in _INDEXED_SUFFIXES
                  else is_progressively_castable(upload.name, upload.partial_path))
         if ready is None:

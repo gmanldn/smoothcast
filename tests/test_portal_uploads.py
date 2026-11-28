@@ -222,6 +222,33 @@ def test_faststart_mp4_waits_for_complete_front_index_and_retries(tmp_path):
     uploads.close()
 
 
+def test_chunked_mp4_index_scan_resumes_from_verified_box_boundary(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    boxes = b"".join(_box(b"free", b"12345678") for _ in range(200))
+    moov = _box(b"moov", b"x" * (256 * 1024))
+    tail = _box(b"mdat", b"y" * (64 * 1024))
+    data = _box(b"ftyp", b"isom") + boxes + moov + tail
+    upload = uploads.create("owner", "many-boxes.mp4", len(data))
+    cursor = uploads._uploads[upload["id"]].mp4_index_cursor
+    offset = 0
+    ready_count = 0
+    chunk_size = 16 * 1024
+    while offset < len(data):
+        end = min(offset + chunk_size, len(data))
+        result = uploads.append(
+            "owner", upload["id"], f"bytes {offset}-{end - 1}/{len(data)}",
+            end - offset, BytesIO(data[offset:end]))
+        ready_count += result["ready_to_cast"]
+        offset = end
+
+    assert ready_count == 1
+    assert result["ready_to_cast"] is False  # Complete upload is never an early cast.
+    # ftyp + 200 free boxes + moov: each verified header is read once, including
+    # the large moov header while its payload arrives across many chunks.
+    assert cursor.headers_read == 202
+    uploads.close()
+
+
 def test_rear_index_mp4_never_starts_early_after_later_chunks(tmp_path):
     uploads = manager(tmp_path, early_cast_min_bytes=1)
     data = INDEXED_MP4
