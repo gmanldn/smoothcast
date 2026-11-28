@@ -395,7 +395,7 @@ class PyChromecastBackend:
                 options: dict[str, Any] = {"title": title, "stream_type": "BUFFERED"}
                 if media_info is not None:
                     options["media_info"] = media_info
-                media.play_media(url, content_type, **options)
+                _media_call(media.play_media, url, content_type, timeout=timeout, **options)
             else:
                 return False, f"Unsupported Google Cast command: {action}"
         except (TypeError, ValueError):
