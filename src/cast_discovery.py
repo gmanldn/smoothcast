@@ -408,7 +408,10 @@ class DeviceDiscoveryMixin:
             position = clock.value()
             self.seekbar.set_state(position, clock.duration, None, unknown_length=position is not None)
             if not getattr(self.seekbar, "scrubbing", False):
-                self.elapsed_label.set_text(fmt_time(position))
+                self.elapsed_label.set_text(
+                    f"{fmt_time(position)} / {fmt_time(clock.duration)}"
+                    if clock.duration else fmt_time(position)
+                )
                 self.remaining_label.set_text(
                     f"-{fmt_time(clock.duration - position)}"
                     if position is not None and clock.duration else "Live"
