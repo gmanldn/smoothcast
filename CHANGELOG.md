@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 53162a1a3197961d172f13179521d2018e55ce6a -->
+<!-- sc-changelog-through: a262964fd9d32932d09b8168d1326e4618b3e170 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **05:00:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:04:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:04:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a262964fd9d3`](https://github.com/gmanldn/smoothcast/commit/a262964fd9d32932d09b8168d1326e4618b3e170)
+
+- 🟦 **05:04:06 · Refactor** — refactor(ui): share room glance labels across GTK and web (Refs #708) · [`742f801664c4`](https://github.com/gmanldn/smoothcast/commit/742f801664c4da0c066fa80692652ef7a8738415)
 
 - ⬜ **05:00:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`53162a1a3197`](https://github.com/gmanldn/smoothcast/commit/53162a1a3197961d172f13179521d2018e55ce6a)
+
+- ⬜ **05:00:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c6364f006e7e`](https://github.com/gmanldn/smoothcast/commit/c6364f006e7e7e11c400bf9a3dbdbd31904b71a0)
 
 - 🟥 **05:00:35 · Fix** — fix: preserve options in Cast media timeout adapter (Refs #202) · [`7e4b4be1fee4`](https://github.com/gmanldn/smoothcast/commit/7e4b4be1fee4815079818f1f14fa52f51c563379)
 
