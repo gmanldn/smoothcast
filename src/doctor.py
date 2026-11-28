@@ -172,8 +172,13 @@ def main(argv: list[str] | None = None) -> int:
     checks: list[Callable[[], Result]] = [
         python_version, ffmpeg, lambda: disk_space(cache), temp_writable, listener,
         default_route, multicast, clock]
+    from doctor_firewall import firewall  # lazy: doctor_firewall imports this module
+    checks.append(firewall)
+    from doctor_ssdp import ssdp
+    checks.append(ssdp)
     if args.receiver:
-        checks.append(lambda: receiver(args.receiver))
+        from doctor_vpn import receiver_checks
+        checks.extend(receiver_checks(args.receiver))
     results = run(checks)
     if args.json:
         print(to_json(results))

@@ -287,7 +287,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._fail(command, exc.status, exc.message)
         except cli_control.CliError as exc:
             self._fail(command, _HTTP_FOR_EXIT.get(exc.code, 502), exc.message)
-        except Exception:  # never leak internals or crash the server thread
+        except Exception:  # never leak internals or crash the server thread  # noqa: BLE001 - never leak internals or crash the server thread
             self._fail(command, 500, "internal error")
         else:
             self._send(200, {"ok": True, "command": command, **result})

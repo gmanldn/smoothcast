@@ -8,6 +8,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk
 import castctl
 import gui_link_add
+import playback_state
 import url_control
 from cast_widgets import Async
 
@@ -27,17 +28,22 @@ class RemoteUrlCastMixin:
             self.toast("Hold on — finishing the last command")
             return
         device = self._device()
+        # The old session keeps serving the receiver until the replacement is
+        # confirmed: a rejected or unconfirmed LOAD must not strand the TV.
         previous = self.session
-        self.session = None
         self.busy = True
         self._refresh_controls()
         self.toast(f"Opening remote stream on {device}…")
 
         def work():
-            if previous is not None:
-                previous.stop(device, send_stop=False)
             # Don't send remote URLs through local-file ffprobe.
-            return castctl.command(device, "cast", "--no-subs", url, timeout=60)
+            ok, message = castctl.command(device, "cast", "--no-subs", url, timeout=60)
+            if not ok and message == castctl.COMMAND_TIMEOUT_MESSAGE:
+                # Ambiguous: reconcile observed content before deciding.
+                ok = playback_state.url_cast_matches(castctl.info(device), url)
+            if ok and previous is not None:
+                previous.stop(device, send_stop=False)  # never a speculative remote Stop
+            return ok, message
 
         def done(result):
             ok, message = result
@@ -45,6 +51,8 @@ class RemoteUrlCastMixin:
             if not ok:
                 self._cast_failed(message or "Remote cast failed")
                 return
+            if self.session is previous:
+                self.session = None
             self._stop_monitor()
             # Release local playback after handoff to prevent overlapping audio.
             self._unload_local_video()

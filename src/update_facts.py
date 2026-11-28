@@ -43,7 +43,7 @@ def check_now(cfg: dict, root) -> str:
     channel, verify = prefs.channel, prefs.verify_release
     try:
         found = update_control.find_candidate(root, enabled=True, verify=verify, channel=channel)
-    except Exception:
+    except Exception:  # noqa: BLE001 - a failed update check becomes a user-facing message
         return "The update check failed. Check your network connection and try again."
     if found is None:
         return NOT_FOUND

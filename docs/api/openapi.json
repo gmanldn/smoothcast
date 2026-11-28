@@ -117,6 +117,18 @@
         ],
         "type": "object"
       },
+      "RoomName": {
+        "properties": {
+          "name": {
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "UploadStart": {
         "properties": {
           "name": {
@@ -838,6 +850,50 @@
           }
         ],
         "summary": "Rename yourself in the room",
+        "tags": [
+          "room"
+        ]
+      }
+    },
+    "/api/room/rename": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomName"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "csrf": []
+          }
+        ],
+        "summary": "Rename the shared room from its host computer",
         "tags": [
           "room"
         ]

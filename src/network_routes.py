@@ -17,6 +17,7 @@ import sys
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
+import address_policy
 import castctl
 from server import HEALTH_BODY, HEALTH_PATH, PORT
 
@@ -146,7 +147,7 @@ def active_port() -> int:
         import streamer
         state = streamer.load_session()
         port = urlsplit(state.stream_url).port if state and state.stream_url else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - unreadable session falls back to the default port
         return PORT
     return port if port and 1024 <= port <= 65535 else PORT
 
@@ -192,6 +193,7 @@ def report(
         "selected_interface": name,
         "route_error": route_error,
         "vpn_interface_suspected": bool(_VPN_INTERFACE.match(name)) if name else None,
+        "route_warning": address_policy.route_warning(name) if name else None,
         "local_hls_health": local_health,
         "second_host_health_url": second_host_url,
         "inbound_hls_reachability": "not_verified_from_second_host",

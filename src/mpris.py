@@ -413,7 +413,7 @@ class WindowAdapter:
     def raise_window(self) -> None:
         try:
             self._window.present()
-        except Exception:
+        except Exception:  # noqa: BLE001 - raising the window is best-effort
             pass
 
     def quit_app(self) -> None:
@@ -438,5 +438,5 @@ def start(window, connection=None):
         service = MprisService(GioBus(connection), WindowAdapter(window))
         service.publish()
         return service
-    except Exception:
+    except Exception:  # noqa: BLE001 - MPRIS is optional; its absence is not an error
         return None

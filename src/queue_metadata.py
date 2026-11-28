@@ -83,7 +83,7 @@ def inspect_media(
             continue
         try:
             media = probe(path)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed probe is recorded as unknown
             results[path] = MediaProbe(fingerprint, None)
             continue
         if (cancelled is not None and cancelled.is_set()) or file_fingerprint(path) != fingerprint:
@@ -115,7 +115,7 @@ def inspect(paths: Iterable[str], probe: Callable[[str], float]) -> dict[str, fl
     for path in paths:
         try:
             durations[path] = probe(path)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a corrupt or missing film must not block the other items
             # A corrupt or missing film must not prevent the other queue items
             # from receiving a duration. Existing zero-duration semantics.
             durations[path] = 0.0

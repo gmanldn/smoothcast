@@ -75,3 +75,33 @@ def test_the_harness_declines_politely_on_other_platforms(monkeypatch, capsys):
         monkeypatch.setattr(gui_checks.sys, "platform", platform)
         assert gui_checks.main([]) == 2
         assert "Linux/Xvfb" in capsys.readouterr().err
+
+
+def test_journey_wire_checks_accept_seek_as_message_or_restart():
+    import gui_checks
+    call = lambda t: ("ns", {"type": t})  # noqa: E731
+    assert gui_checks.journey_wire_checks([call(t) for t in ("LOAD", "PAUSE", "SEEK", "STOP")])[0][2]
+    # A transcode seek is a fresh LOAD at the new offset.
+    assert gui_checks.journey_wire_checks(
+        [call(t) for t in ("PING", "LOAD", "PAUSE", "LOAD", "PAUSE", "STOP")])[0][2]
+    assert not gui_checks.journey_wire_checks([call(t) for t in ("LOAD", "PAUSE", "STOP")])[0][2]
+    assert not gui_checks.journey_wire_checks([call("LOAD"), call("PAUSE")])[0][2]
+    assert not gui_checks.journey_wire_checks([])[0][2]
+
+
+def test_demo_target_survives_config_normalisation(tmp_path, monkeypatch):
+    import json
+    import pytest
+    import demo_mode
+    cfg = tmp_path / "cast-control"
+    cfg.mkdir()
+    (cfg / "config.json").write_text(json.dumps(
+        {"cast_targets": [{"name": "SmoothCast Demo TV", "host": "127.0.0.1", "port": 4321}]}))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv(demo_mode.TARGET_ENV, "")  # registered, so the cache never leaks
+    assert demo_mode.demo_target() == ("127.0.0.1", 4321, "SmoothCast Demo TV")
+    (cfg / "config.json").write_text(json.dumps({"cast_targets": []}))  # the app rewrites it
+    assert demo_mode.demo_target() == ("127.0.0.1", 4321, "SmoothCast Demo TV")
+    monkeypatch.setenv(demo_mode.TARGET_ENV, "10.0.0.5\n8009\nLAN TV")
+    with pytest.raises(demo_mode.DemoModeError):
+        demo_mode.demo_target()

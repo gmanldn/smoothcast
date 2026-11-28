@@ -108,8 +108,9 @@ class FuzzGateTests(unittest.TestCase):
 class AgentHygieneTests(unittest.TestCase):
     def test_develop_only_rule_is_first_and_loud_in_agents_md(self):
         agents = read("AGENTS.md")
-        self.assertLess(agents.index("Only develop receives agent code"), agents.index("## Quality and safety"))
-        for needle in ("Main is manually promoted by the owner", "Never push/merge/promote/tag main",
+        self.assertLess(agents.index("Only `develop` receives agent changes"),
+                        agents.index("## Product and quality"))
+        for needle in ("`main` is owner-controlled", "auto-promote, tag or publish main",
                        "force-push", "private detached worktree", "agent.py start", "agent.py ship",
                        "agent.py finish", "workflow.md"):
             self.assertIn(needle, agents)

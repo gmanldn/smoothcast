@@ -61,7 +61,7 @@ def write_private_json_atomic(path: Path, data: Any) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(name, path)
-    except BaseException:
+    except BaseException:  # noqa: BLE001 - remove the temp file then re-raise
         # The original session remains untouched when serialization, fsync or
         # the atomic replacement fails. Never unlink the destination here.
         try:

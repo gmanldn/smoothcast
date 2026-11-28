@@ -34,6 +34,7 @@ import portal_commands
 import command_trace
 import demo_mode
 import design_tokens
+import ui_tokens
 import error_log
 import failure_boundary
 import peer_discovery
@@ -45,6 +46,7 @@ import portal_media
 import portal_mesh_http
 import portal_update_http
 import portal_mesh_panel
+import portal_routing
 import portal_screens_http
 import portal_uploads
 import link_acquisition
@@ -102,6 +104,7 @@ class _Session:
     csrf: str
     expiry: float
     participant_id: str
+    is_host: bool = False
 
 
 class PortalError(RuntimeError):
@@ -258,7 +261,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             result = self.dispatch(envelope.action, {"action": envelope.action, **envelope.payload})
         except PortalRequestError as exc:
             raise portal_commands.CommandError(exc.status, exc.message) from exc
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any dispatch failure becomes a 503 command error
             raise portal_commands.CommandError(
                 503, "SmoothCast could not accept that command") from exc
         session_id, revision, _owner = self.fence.rotate()
@@ -343,7 +346,34 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         with self._lock:
             if self.pin_required and not self.pin_allowed(client, pin):
                 raise PortalRequestError(401, "Incorrect PIN or too many attempts")
-            return self.create_session(name)
+            token, csrf, participant = self.create_session(name)
+            self._sessions[self._session_key(token)].is_host = self.is_host_client(client)
+            return token, csrf, participant
+
+    def is_host_client(self, client: str) -> bool:
+        """Only a browser connecting from this host's bound address is the host."""
+        try:
+            remote = ipaddress.ip_address(client.split("%", 1)[0])
+            bound = ipaddress.ip_address(str(self.server_address[0]).split("%", 1)[0])
+            if isinstance(remote, ipaddress.IPv6Address) and remote.ipv4_mapped:
+                remote = remote.ipv4_mapped
+            if isinstance(bound, ipaddress.IPv6Address) and bound.ipv4_mapped:
+                bound = bound.ipv4_mapped
+            return not bound.is_unspecified and remote == bound
+        except ValueError:
+            return False
+
+    def session_is_host(self, token: str | None) -> bool:
+        """Whether this live session was authenticated by a browser on this host."""
+        return self.session_key_is_host(self._session_key(token) if token else None)
+
+    def session_key_is_host(self, key: str | None) -> bool:
+        if not isinstance(key, str) or len(key) != 64:
+            return False
+        with self._lock:
+            self._expire_sessions(self.clock())
+            session = self._sessions.get(key)
+            return bool(session and session.is_host)
 
     def revoke_participant(self, participant_id: str) -> int:
         """Host-only: drop every session for one room identity, not playback."""
@@ -469,15 +499,18 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._sessions.move_to_end(key)
             return session.participant_id
 
-    def participant_capabilities(self, participant_id: str) -> set[str]:
+    def participant_capabilities(self, participant_id: str, *, host: bool = False) -> set[str]:
         """Every capability a participant holds.
 
-        On the trusted home LAN every authenticated participant holds every
-        capability. Return the declared capability set so a future role model
-        can restrict per-participant access without changing the caller.
+        Authenticated room participants share room controls. Host management is
+        restricted to sessions logged in from this server's bound address.
         """
-        del participant_id  # All participants hold all capabilities in this model.
-        return {cap for cap in api_spec.ROUTE_CAPABILITIES.values() if cap is not None}
+        del participant_id  # Room roles are shared; host authority comes from the local connection.
+        capabilities = {cap for cap in api_spec.ROUTE_CAPABILITIES.values()
+                        if cap is not None and cap != "room:host"}
+        if host:
+            capabilities.add("room:host")
+        return capabilities
 
     def resume_session(self, token: str | None) -> tuple[str, portal_room.Participant] | None:
         """Return the existing CSRF token and participant for a valid cookie."""
@@ -543,7 +576,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     status, result = 202, str(message or "Queue updated")
                 except PortalRequestError as exc:
                     status, result = exc.status, exc.message
-                except Exception:
+                except Exception:  # noqa: BLE001 - any queue edit failure becomes a 503
                     status, result = 503, "SmoothCast could not accept that queue edit"
                 if status >= 400:
                     command_trace.stage("rejected", code=status)
@@ -619,7 +652,7 @@ def _guarded(method):
             if not self._started:
                 return self._exception_error(exc)
             return None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - described by failure_boundary and answered below
             failure = failure_boundary.describe(exc)
         route = "/".join(self._path().split("/")[:3])
         if self.server.failures.allow(failure):
@@ -745,14 +778,14 @@ class _Handler(BaseHTTPRequestHandler):
         provider = getattr(self.server, "nodes_provider", None)
         try:
             nodes = list(provider()) if provider else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unavailable node provider shows no nodes
             nodes = []
         rows = "".join(
             f'<li><a href="{html.escape(str(n.get("url", "")), quote=True)}">'
             f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
             for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
         mine = html.escape(self.server.hostname_label or "This computer")
-        body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
+        body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())
                 .replace("__MINE__", mine).replace("__ROWS__", rows)
                 .replace("__SC_VERSION__", version.identity_label())
                 .replace("<!--SC_DEMO-->", _demo_badge()))
@@ -802,7 +835,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(404, "That library isn't available right now.")
         return self._send(200, result)
 
-    def _room_payload(self, participant_id: str) -> dict:
+    def _room_payload(self, participant_id: str, *, host: bool = False) -> dict:
         """The authenticated status document shared by /api/status and /api/events."""
         try:
             if self.server.status_snapshot is None:
@@ -811,7 +844,7 @@ class _Handler(BaseHTTPRequestHandler):
                 state = self.server.status_snapshot()
                 if state is None:
                     raise PortalRequestError(503, "Status snapshot is not ready")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any status failure becomes a 503 not-ready
             raise PortalRequestError(503, "SmoothCast is not ready to report playback state") from exc
         queue = state.get("queue") if isinstance(state.get("queue"), list) else []
         live_ids: set[str] = set()
@@ -835,6 +868,7 @@ class _Handler(BaseHTTPRequestHandler):
         uploads = self.server.uploads
         state["room_transfers"] = uploads.room_transfers() if uploads is not None else []
         state["room"] = self.server.room.snapshot(participant_id)
+        state["room"]["can_rename"] = host
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
         state["link_search_available"] = (jobs.search_available() if jobs is not None
@@ -887,7 +921,8 @@ class _Handler(BaseHTTPRequestHandler):
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
         if not self._authorized("/api/events", "GET"):
             return
-        participant_id = self.server.session_participant(self._cookie_token())
+        session_token = self._cookie_token()
+        participant_id = self.server.session_participant(session_token)
         if participant_id is None:
             return self._error(401, "Session expired")
         if not self.server.acquire_event_stream(participant_id):
@@ -895,7 +930,8 @@ class _Handler(BaseHTTPRequestHandler):
                                     "code": "room.rate_limited"}, extra_headers={"Retry-After": "5"})
         key = self._event_key()
         try:
-            first = self._room_payload(participant_id)
+            is_host = self.server.session_is_host(session_token)
+            first = self._room_payload(participant_id, host=is_host)
         except PortalRequestError as exc:
             self.server.release_event_stream(participant_id)
             return self._error(exc.status, exc.message)
@@ -935,7 +971,7 @@ class _Handler(BaseHTTPRequestHandler):
                 current = self._event_key()
                 if current != key or now - last_state >= EVENT_RESEND_SECONDS:
                     try:
-                        payload = self._room_payload(participant_id)
+                        payload = self._room_payload(participant_id, host=is_host)
                         key = current
                     except PortalRequestError:
                         pass
@@ -992,7 +1028,7 @@ class _Handler(BaseHTTPRequestHandler):
         cursor = (query.get("cursor") or [None])[0]
         try:
             return self._send(200, engine(text, limit, cursor))
-        except Exception:
+        except Exception:  # noqa: BLE001 - search failure becomes a 503
             return self._error(503, "Search is unavailable right now.")
 
     def _body(self) -> dict:
@@ -1059,7 +1095,8 @@ class _Handler(BaseHTTPRequestHandler):
             if participant is None:
                 self._session_rejected(csrf)
                 return False
-            if capability not in self.server.participant_capabilities(participant):
+            if capability not in self.server.participant_capabilities(
+                    participant, host=self.server.session_is_host(self._cookie_token())):
                 self._error(403, f"This action requires the {capability} capability",
                             code="portal.missing_capability")
                 return False
@@ -1107,65 +1144,84 @@ class _Handler(BaseHTTPRequestHandler):
         )
         return False
 
+    def _public_page(self) -> None:
+        page = _page(room_name=self.server.room.name, pin_required=self.server.pin_required)
+        return self._send(200, page, content_type="text/html; charset=utf-8")
+
+    def _public_config(self) -> None:
+        return self._send(200, {"pin_required": self.server.pin_required,
+                                "name": self.server.hostname_label})
+
+    _PUBLIC_GET = {
+        "page": _public_page,
+        "nodes_page": lambda self: self._nodes_page(),
+        "openapi": lambda self: self._send(200, api_spec.spec()),
+        "silence": lambda self: self._send(200, SILENT_WAV, content_type="audio/wav"),
+        "config": _public_config,
+    }
+
+    def _get_session(self) -> None:
+        resumed = self.server.resume_session(self._cookie_token())
+        if resumed is None:
+            return self._error(401, "Session expired")
+        if self._throttle("read"):
+            return
+        csrf, participant = resumed
+        return self._send(200, {
+            "ok": True, "csrf": csrf,
+            "participant": participant.public(self.server.clock()),
+            "room": {"name": self.server.room.name,
+                     "can_rename": self.server.session_is_host(self._cookie_token())},
+            "build": page_build(), "client_schema": CLIENT_SCHEMA,
+        })
+
+    def _get_status(self) -> None:
+        if not self._authorized("/api/status", "GET"):
+            return
+        if self._throttle("read"):
+            return
+        session_token = self._cookie_token()
+        participant_id = self.server.session_participant(session_token)
+        if participant_id is None:
+            return self._error(401, "Session expired")
+        try:
+            payload = self._room_payload(
+                participant_id, host=self.server.session_is_host(session_token))
+        except PortalRequestError as exc:
+            return self._error(exc.status, exc.message)
+        return self._send(200, payload)
+
+    _ROUTED_GET = {
+        "libraries": lambda self, path: self._libraries(),
+        "search_stream": lambda self, path: self._search_stream(),
+        "search": lambda self, path: self._search(),
+        "mesh_library": lambda self, path: self._mesh_library(path),
+        "mesh_file": lambda self, path: self._mesh_file(path, head=False),
+        "session": lambda self, path: self._get_session(),
+        "status": lambda self, path: self._get_status(),
+    }
+
     def do_GET(self) -> None:  # noqa: N802
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
-        if path == "/nodes":
-            return self._nodes_page()
-        if path == "/api/openapi.json":
-            return self._send(200, api_spec.spec())
-        if path == "/silence.wav":
-            return self._send(200, SILENT_WAV, content_type="audio/wav")
-        if path in {"/", "/index.html"}:
-            page = _page(room_name=self.server.room.name, pin_required=self.server.pin_required)
-            return self._send(200, page, content_type="text/html; charset=utf-8")
+        public = portal_routing.match("GET", path)
+        if public is not None and not public.auth and not public.prefix:
+            handler = self._PUBLIC_GET.get(public.handler)
+            if handler is not None:
+                return handler(self)
         if portal_screens_http.route(self, "GET", path):
             return
         if portal_update_http.route(self, "GET", path):
             return
         if portal_mesh_http.route(self, "GET", path):
             return
-        if path == "/api/libraries" or path.startswith("/api/libraries/"):
-            return self._libraries()
-        if path == "/api/search/stream":
-            return self._search_stream()
-        if path == "/api/search":
-            return self._search()
-        if path.startswith("/mesh/library/"):
-            return self._mesh_library(path)
-        if path.startswith("/mesh/file/"):
-            return self._mesh_file(path, head=False)
-        if path == "/api/config":
-            return self._send(200, {"pin_required": self.server.pin_required,
-                                    "name": self.server.hostname_label})
-        if path == "/api/session":
-            resumed = self.server.resume_session(self._cookie_token())
-            if resumed is None:
-                return self._error(401, "Session expired")
-            if self._throttle("read"):
-                return
-            csrf, participant = resumed
-            return self._send(200, {
-                "ok": True, "csrf": csrf,
-                "participant": participant.public(self.server.clock()),
-                "build": page_build(), "client_schema": CLIENT_SCHEMA,
-            })
+        route = portal_routing.match("GET", path)
+        handler = self._ROUTED_GET.get(route.handler) if route is not None else None
+        if handler is not None:
+            return handler(self, path)
         if path == "/api/events":
             return self._events()
-        if path == "/api/status":
-            if not self._authorized(path, "GET"):
-                return
-            if self._throttle("read"):
-                return
-            participant_id = self.server.session_participant(self._cookie_token())
-            if participant_id is None:
-                return self._error(401, "Session expired")
-            try:
-                payload = self._room_payload(participant_id)
-            except PortalRequestError as exc:
-                return self._error(exc.status, exc.message)
-            return self._send(200, payload)
         upload_id = self._upload_route(path)
         if upload_id:
             if not self._authorized(path, "GET"):
@@ -1185,11 +1241,11 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
-        if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
+        if (path in {"/api/login", "/api/action", "/api/profile", "/api/room/rename", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
-        if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
+        if (path in {"/api/action", "/api/profile", "/api/room/rename", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
             if not self._authorized(path, "POST", csrf=True):
@@ -1295,7 +1351,7 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.uploads.finish_dispatch(
                             self._cookie_token() or "", upload_id, accepted=False)
                         raise
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - undo the dispatch bookkeeping and answer 503
                         self.server.uploads.finish_dispatch(
                             self._cookie_token() or "", upload_id, accepted=False)
                         raise PortalRequestError(503, "SmoothCast could not start this upload") from exc
@@ -1338,9 +1394,29 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "ok": True, "csrf": csrf,
                 "participant": participant.public(self.server.clock()),
-                "room": self.server.room.snapshot(participant.id),
+                "room": {**self.server.room.snapshot(participant.id),
+                         "can_rename": self.server.session_is_host(token)},
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
+        if path == "/api/room/rename":
+            name = body.get("name")
+            if not isinstance(name, str) or len(name) > portal_room.MAX_NAME:
+                return self._error(400, "Room name must be 40 characters or fewer")
+            token = self._cookie_token()
+            participant_id = self.server.session_participant(token)
+            if participant_id is None:
+                return self._error(401, "Session expired")
+            try:
+                self.server.dispatch("room_rename", {
+                    "name": name, "_portal_auth_key": self.server._session_key(token or ""),
+                })
+            except (PortalRequestError, portal_room.RoomError) as exc:
+                return self._exception_error(exc)
+            except OSError:
+                return self._error(500, "Could not save the room name")
+            room = self.server.room.snapshot(participant_id)
+            room["can_rename"] = True
+            return self._send(200, {"ok": True, "room": room})
         if path == "/api/search/magnets":
             if not self._authorized("/api/search/magnets", "POST", csrf=True):
                 return
@@ -1470,7 +1546,7 @@ class _Handler(BaseHTTPRequestHandler):
                                 "reason": room_activity.reason_for_status(exc.status),
                             })
                             return self._exception_error(exc)
-                        except Exception:
+                        except Exception:  # noqa: BLE001 - record an uncertain outcome and answer an error
                             self.server.room.record(participant_id, "action", {
                                 "action": action, "outcome": "uncertain", "reason": "error",
                             })
@@ -1557,7 +1633,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
             accepted, transient = True, False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - early-cast failure is recorded as not accepted
             accepted = False
             transient = isinstance(exc, PortalRequestError) and exc.status in (409, 503)
         self.server.uploads.mark_early_cast(upload_id, accepted=accepted, transient=transient)
@@ -1708,7 +1784,7 @@ class Portal:
                 self.bind_ip, self.name, self.port, zeroconf=self._zeroconf,
             )
             self.peer_discovery_available = True
-        except Exception:
+        except Exception:  # noqa: BLE001 - peer discovery is optional; run without it
             self.peers = None
         self.server.peer_directory = self.peers
         self.thread = threading.Thread(target=self.server.serve_forever,
@@ -1753,11 +1829,11 @@ class Portal:
             )
             zeroconf = Zeroconf(interfaces=[self.bind_ip])
             zeroconf.register_service(info)
-        except Exception:
+        except Exception:  # noqa: BLE001 - service registration is optional; close what opened
             if zeroconf is not None:
                 try:
                     zeroconf.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort close
                     pass
             return
         self._zeroconf = zeroconf
@@ -1771,11 +1847,11 @@ class Portal:
         try:
             if info is not None:
                 zeroconf.unregister_service(info)
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort unregister
             pass
         try:
             zeroconf.close()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort close
             pass
 
     def stop(self) -> None:
@@ -1851,6 +1927,12 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 header{padding:16px 0;border-bottom:1px solid var(--header-line)}header h1{font-size:clamp(1.6rem,5vw,2.2rem);letter-spacing:-.04em}
 nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;background:var(--nav);color:var(--on-nav);text-decoration:none}nav a:hover{background:var(--nav-hover)}
 #login{max-width:30rem;margin:24px auto}#login button{width:100%}#pin{letter-spacing:.25em}button:not(.secondary):not(.vote){color:var(--on-accent)}
+.chip{display:inline-block;margin-top:4px;padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--line);color:inherit;white-space:nowrap}
+.queue-item.pinned{grid-template-columns:minmax(0,1fr) auto;position:relative}
+.queue-item.pinned progress{grid-column:1/-1;width:100%;height:6px}
+.queue-item.pinned .queue-actions{align-self:start}
+.queue-item.now .chip,.queue-item.incoming[data-stage="receiving"] .chip{background:var(--accent);color:var(--on-accent)}
+.queue-item.now{border-left:4px solid var(--accent);padding-left:10px}
 @media(max-width:480px){.queue-item{grid-template-columns:minmax(0,1fr)}.queue-actions{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
@@ -2012,8 +2094,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 /* Ticket 591 refresh: sticky app bar with a permanent Home control, rounded system
    type, a clear surface hierarchy and Now Playing as the room's focal "screen".
    Colours come only from the tested tokens above. */
-:root{--font:ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
-  --bar-h:64px;--r-lg:22px;--r-md:14px;--r-sm:10px;font-family:var(--font)}
+:root{--font:var(--sc-font-family);--bar-h:64px;--r-lg:var(--sc-radius-lg);--r-md:var(--sc-radius-md);--r-sm:var(--sc-radius-sm);font-family:var(--font)}
 body{font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   background:var(--bg);background-image:radial-gradient(120% 60% at 50% -10%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 60%);background-attachment:fixed}
 h1,h2,h3{color:var(--text);letter-spacing:-.018em;font-weight:720}
@@ -2129,6 +2210,8 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #dashboard nav a[aria-current="page"]{background:var(--input);border-color:var(--accent)}
 #homePanel{background:transparent;border:0;box-shadow:none;padding:0;min-width:0}
 #homePanel>.room-heading{margin:0 0 12px;flex-wrap:wrap;gap:6px}
+.home-room-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.home-room-title h2{margin:0}
 #homePanel .home-lead{font-size:.84rem;color:var(--muted);margin:0}
 #homePanel #quickCastCard{padding:14px 16px}
 #homePanel #quickCastHeading{font-size:1rem;margin:0 0 8px}
@@ -2137,6 +2220,10 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #playbackHeading{font-size:1rem}
 #homePanel #playback .actions button[data-action="play_pause"]{min-height:44px;flex-basis:auto;flex-grow:2}
 #homePanel .home-actions{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:6px;margin:10px 0}
+#homePanel #quickCastCard .primary-action{min-height:52px;font-size:1rem;font-weight:750}
+#homePanel #quickCastCard #homeChooseScreen{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--border);border-radius:var(--r-md);color:var(--text);font-weight:650;text-decoration:none}
+#advancedPanel .settings-scope-list{display:grid;gap:6px;padding:12px 12px 12px 30px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--input);color:var(--text)}
+#advancedPanel .settings-scope-list li{line-height:1.45}
 #homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
 #homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
 #homePanel .home-action span:not(.home-icon){display:none}
@@ -2152,7 +2239,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 #playback{padding:22px;background-image:linear-gradient(160deg,color-mix(in srgb,var(--accent) 10%,transparent),transparent 48%)}
 #playback #playbackHeading{color:var(--accent);font-size:.8rem;font-weight:800;letter-spacing:1px;text-transform:uppercase}
 #playback #state{font-size:.85rem;font-weight:700;border-radius:99px;padding:4px 10px;background:color-mix(in srgb,currentColor 9%,transparent)}
-#playback #title.big{font-size:1.65rem;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
+#playback #title.big{font-size:var(--sc-type-hero);font-weight:800;line-height:1.2;overflow-wrap:anywhere}
 #playback #receiver,#playback #nowDetails{font-size:.95rem}
 .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px}
 .glance-tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md,12px);padding:12px 14px;min-width:0}
@@ -2175,16 +2262,16 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
-<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
+<div class="room-heading"><div class="home-room-title"><h2 id="homeHeading" tabindex="-1">Your room</h2><a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a></div><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change my display name</a></span></div>
 <div id="glance" class="glance" role="group" aria-label="Room at a glance"><div class="glance-tile"><span class="glance-label">Now playing</span><strong id="glanceTitle">Nothing playing</strong></div><div class="glance-tile"><span class="glance-label">Playing on</span><strong id="glanceWhere">No TV or speaker yet</strong></div><div class="glance-tile"><span class="glance-label">In the room</span><strong id="glanceWho">Just you</strong></div></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
-<h2 id="quickCastHeading">Cast from this device</h2>
-<div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard" id="quickQueueUpload">Add to Up Next instead</a></div>
-<p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
+<h2 id="quickCastHeading">Start playing</h2>
+<div class="actions"><button id="uploadCastNow" class="primary-action" type="button" aria-describedby="quickCastStatus">Choose a file to cast</button><a href="#screensPanel" id="homeChooseScreen">Choose a TV or speaker</a><a href="#uploadCard" id="quickQueueUpload">Add media to Up Next</a></div>
+<p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">Choose a file first. SmoothCast asks you to confirm a screen before sending it.</p>
 </section>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
-<p id="title" class="big">Nothing playing</p><p id="nowDetails" class="muted" hidden></p><p id="receiver">Playing on: —</p>
+<p id="title" class="big">Nothing playing</p><p id="idleHint" class="field-hint">Nothing is playing yet. Choose something under Find something to play.</p><p id="nowDetails" class="muted" hidden></p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
 <label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking needs a connected TV or speaker and a known length.</p>
@@ -2208,7 +2295,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
 
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
-<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Up Next is empty. Find something to play and add it; everyone in the room will see it.</li></ul>
 <section id="queueIncomingPanel" aria-labelledby="queueIncomingHeading" hidden><h3 id="queueIncomingHeading">Incoming media</h3><ul id="queueIncomingRows" aria-label="Files arriving before queue acceptance"></ul><p class="field-hint">Files appear here immediately, then move into playback or Up Next when accepted.</p></section>
 <section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h3 id="uploadHeading" tabindex="-1">Add files from this device</h3>
@@ -2292,14 +2379,16 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <div id="people" class="participants"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
-<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
+<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>These settings are grouped by who they affect. Playback and queue controls are on Home; screen selection is under Screens; connection and transfer details are under Mesh.</p><ul class="settings-scope-list" aria-label="Settings and where they apply"><li><strong>Your profile:</strong> your display name in this room.</li><li><strong>This browser:</strong> lock-screen controls and keeping this display awake.</li><li><strong>Everyone in this room:</strong> audio normalisation.</li><li><strong>Room host only:</strong> rename the shared room from the host computer.</li></ul><p>House PIN, host policies and shared-library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">To rename the shared room, use Room → Rename on the computer running SmoothCast.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><p class="field-hint">Your display name is shown to people in this room. Changing it does not change the room name.</p><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" aria-describedby="profileStatus" required><button id="saveDisplayName" class="secondary" type="submit">Update name</button></div><p id="profileStatus" class="field-hint" role="status" aria-live="polite"></p></form></section>
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
 <p id="remoteDimHint" role="status" hidden>Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.</p>
 </section>
+<section aria-labelledby="roomNameHeading"><h3 id="roomNameHeading">Shared room</h3>
+<form id="roomNameForm" hidden><label for="roomNameInput">Room name</label><p class="field-hint">This name appears to everyone in the room. Rename is available only in a browser on the computer running SmoothCast.</p><div class="actions"><input id="roomNameInput" maxlength="40" autocomplete="off" aria-describedby="roomNameStatus" required><button id="saveRoomName" class="secondary" type="submit">Save room name</button></div><p id="roomNameStatus" class="field-hint" role="status" aria-live="polite"></p></form>
 <section aria-labelledby="musicHeading"><h3 id="musicHeading">Shared room audio</h3>
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
@@ -2350,7 +2439,7 @@ $("roomLinkCopy").addEventListener("click",async()=>{
 async function post(path,body){
   if(stalePage)throw Error("Reload required");
   // A missing action response must not indefinitely block every room control.
-  const controller=["/api/action","/api/profile"].includes(path)?new AbortController():null;
+  const controller=["/api/action","/api/profile","/api/room/rename"].includes(path)?new AbortController():null;
   const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
   try{
     const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
@@ -2360,7 +2449,7 @@ async function post(path,body){
     if(!r.ok)throw Error(d.error||"Request failed");
     return d;
   }catch(error){
-    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":path==="/api/room/rename"?"Room rename timed out; check the displayed room name before retrying.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
     throw error;
   }finally{if(deadline!==null)clearTimeout(deadline)}
 }
@@ -2466,6 +2555,7 @@ function expireSession(){
   stopPlayhead();playhead=null;
   csrf="";
   resetProfileEdit();
+  resetRoomNameEdit();
   roomEvents.stop();
   void syncRemoteWakeLock();
   shortcutState=null;
@@ -2494,7 +2584,7 @@ function schedulePlayhead(){
   playheadTimer=setTimeout(()=>{playheadTimer=null;if(document.hidden||!csrf||stalePage)return;paintPlayhead();schedulePlayhead()},200);
 }
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
-function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;if(dur>0||playhead.s.state!=="PLAYING")$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[],queueLimit=100;
 const queueElement=$("queue");
 function queueAction(button){
@@ -2554,7 +2644,7 @@ function renderQueue(items,revision=queueRevision){
   if(!rows.length){
     const empty=document.createElement("li");
     empty.className="empty";
-    empty.textContent="Nothing in Up Next yet";
+    empty.textContent="Up Next is empty. Find something to play and add it; everyone in the room will see it.";
     nodes.push(empty);
   }else rows.slice(0,queueLimit).forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
@@ -2567,6 +2657,7 @@ function renderQueue(items,revision=queueRevision){
       const text=document.createElement("div");
       text.append(document.createElement("strong"),document.createElement("div"));
       text.children[1].className="muted";
+      const chip=document.createElement("span");chip.className="chip";text.append(chip);
       const actions=document.createElement("div");
       actions.className="queue-actions";
       for(const action of ["vote","play","move-earlier","move-later","next","remove"]){
@@ -2584,6 +2675,7 @@ function renderQueue(items,revision=queueRevision){
       +(item.duration?" · "+clock(item.duration):"")
       +" · "+(item.contributor?"Added by "+item.contributor:"Contributor not recorded")
       +({upload:" · File upload",library:" · Shared library",link:" · Link download",local:" · Local media"}[item.source_kind]||"");
+    li.children[0].children[2].textContent=index===0?"Up next":"Queued";
     const buttons=li.children[1].children;
     const labels=[
       (item.voted?"Remove vote for":"Vote for")+" "+itemTitle,
@@ -2622,6 +2714,7 @@ function renderQueue(items,revision=queueRevision){
     nodes.push(more);
   }
   queue.replaceChildren(...nodes);
+  paintIncoming();
   if(focusTarget){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
     const target=row&&Array.from(row.children[1].children)
@@ -2921,40 +3014,77 @@ function renderLibraryCopies(state){
     li.append(title,detail);return li;
   }));
 }
-let roomTransferSignature=null;
+let roomTransferSignature=null,serverTransfers=[],localUploads=[],localUploadIndex=0,nowRow=null,incomingPaint=0;
+const INCOMING_CHIPS={waiting:"Waiting",receiving:"Uploading",buffering:"Starting playback",verifying:"Checking",submitting:"Queuing",awaiting_acceptance:"Queuing"};
+const NOW_CHIPS={PLAYING:"Playing",PAUSED:"Paused",BUFFERING:"Buffering",IDLE:"Preparing"};
 function renderRoomTransfers(state){
   const rows=Array.isArray(state.room_transfers)?state.room_transfers.slice(0,24):[];
   const signature=JSON.stringify(rows);
-  if(signature===roomTransferSignature)return;roomTransferSignature=signature;
-  const labels={waiting:"Waiting in batch",receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
-  for(const [panelId,listId] of [["queueIncomingPanel","queueIncomingRows"]]){
-    const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
-    if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
-    // Reuse stable rows so chunk ACKs do not rebuild the entire list,
-    // interrupt assistive technology or disturb the user's scroll position.
-    const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
-    rows.forEach((row,index)=>{
-      const id=String(row.id);
-      let li=previous.get(id);
-      if(!li){
-        li=document.createElement("li");li.dataset.transferId=id;
-        const detail=document.createElement("p");detail.className="field-hint";
-        li.append(document.createElement("strong"),detail,document.createElement("progress"));
-      }
-      previous.delete(id);
-      const [title,detail,meter]=li.children;
-      const name=row.title||"Incoming media";
-      const description=[row.batch_total>1?"File "+row.batch_index+" of "+row.batch_total:"",mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
-      if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
-      if(detail.textContent!==description)detail.textContent=description;
-      const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
-      if(meter.max!==total)meter.max=total;
-      if(meter.value!==received)meter.value=received;
-      const current=list.children[index]||null;
-      if(current!==li)list.insertBefore(li,current);
-    });
-    for(const li of previous.values())li.remove();
-  }
+  if(signature!==roomTransferSignature){roomTransferSignature=signature;serverTransfers=rows}
+  const active=state.active||state.preparing;
+  const key=active?[state.title,state.state,state.receiver,state.preparing].join("|"):"";
+  nowRow=active?{id:"now",cls:"now",title:state.title||"Preparing playback…",
+    stage:state.preparing&&!state.active?"IDLE":String(state.state||"PLAYING"),
+    note:state.receiver?"Playing on "+state.receiver:"",pos:Number(state.position)||0,dur:Number(state.duration)||0,key}:null;
+  paintIncomingSoon();
+}
+function setLocalUploads(files){
+  localUploads=Array.from(files||[],f=>({name:f.name,size:f.size,received:0,stage:"waiting"}));
+  localUploadIndex=0;paintIncomingSoon();
+}
+function localUploadProgress(phase,received,total,note){
+  if(!localUploads.length)return;
+  if(phase==="choose"){if(!(total>0)){localUploads=[];paintIncomingSoon()}return}
+  const m=/^File (\d+) of/.exec(note||"");
+  if(m)localUploadIndex=Math.max(0,Number(m[1])-1);
+  const row=localUploads[localUploadIndex];if(!row)return;
+  row.stage={prepare:"waiting",transfer:"receiving",verify:"verifying",deliver:"submitting"}[phase]||row.stage;
+  row.received=Number(received)||0;row.size=Number(total)||row.size;
+  paintIncomingSoon();
+}
+function paintIncomingSoon(){
+  if(incomingPaint)return;
+  incomingPaint=requestAnimationFrame(()=>{incomingPaint=0;paintIncoming()});
+}
+function paintIncoming(){
+  const q=queueElement;if(!q)return;
+  const names=new Set(serverTransfers.map(r=>r.title));
+  const rows=[];
+  if(nowRow)rows.push(nowRow);
+  for(const r of serverTransfers)rows.push({id:"s"+r.id,cls:"incoming",title:r.title||"Incoming media",stage:r.stage,
+    received:Number(r.received)||0,size:Number(r.size)||0,
+    note:[r.batch_total>1?"File "+r.batch_index+" of "+r.batch_total:"",r.intent==="queue"?"Up Next":"Play now"].filter(Boolean).join(" · ")});
+  localUploads.forEach((l,i)=>{if(!names.has(l.name))rows.push({id:"l"+i+"|"+l.name,cls:"incoming",title:l.name,stage:l.stage,
+    received:l.received,size:l.size,note:"From this device"})});
+  const old=new Map(Array.from(q.querySelectorAll(":scope > li.pinned"),li=>[li.dataset.incomingId,li]));
+  const empty=q.querySelector(":scope > li.empty");
+  if(empty&&empty.hidden!==rows.length>0)empty.hidden=rows.length>0;
+  rows.forEach((row,index)=>{
+    let li=old.get(row.id);
+    if(!li){
+      li=document.createElement("li");li.className="queue-item pinned "+row.cls;li.dataset.incomingId=row.id;
+      const text=document.createElement("div"),detail=document.createElement("div"),chip=document.createElement("span");
+      text.append(document.createElement("strong"),detail);detail.className="muted";chip.className="chip";
+      const side=document.createElement("div");side.className="queue-actions";side.append(chip);
+      li.append(text,side,document.createElement("progress"));
+    }
+    old.delete(row.id);
+    const [text,side,meter]=li.children,chip=side.firstChild;
+    const upload=row.cls==="incoming",pct=row.size>0?Math.floor(row.received*100/row.size):0;
+    const label=upload?(INCOMING_CHIPS[row.stage]||"Waiting")+(row.stage==="receiving"&&row.size>0?" "+pct+"%":""):(NOW_CHIPS[row.stage]||"Playing");
+    if(text.children[0].textContent!==row.title)text.children[0].textContent=row.title;
+    const detail=[row.note,upload&&row.stage==="receiving"&&row.size>0?fileUnits(row.received)+" / "+fileUnits(row.size):""].filter(Boolean).join(" · ");
+    if(text.children[1].textContent!==detail)text.children[1].textContent=detail;
+    if(chip.textContent!==label)chip.textContent=label;
+    if(li.dataset.stage!==row.stage)li.dataset.stage=row.stage;
+    li.setAttribute("aria-label",row.title+": "+label);
+    const total=upload?(row.stage==="receiving"?row.size:1):row.dur,value=upload?(row.stage==="receiving"?row.received:(row.stage==="waiting"?0:1)):row.pos;
+    meter.hidden=!(total>0);
+    if(total>0){if(meter.max!==total)meter.max=total;if(meter.value!==value)meter.value=value}
+    const current=q.children[index]||null;
+    if(current!==li)q.insertBefore(li,current);
+  });
+  for(const li of old.values())li.remove();
 }
 function playbackFeedback(state){
   const feedback=state.cast_feedback;
@@ -2966,8 +3096,8 @@ function playbackFeedback(state){
   return "";
 }
 function quickCastDestinationCopy(receiver){
-  return receiver?"Selected receiver: "+receiver+". SmoothCast checks availability before sending any file.":
-    "No room receiver selected. You can still add media to Up Next.";
+  return receiver?"Selected screen: "+receiver+". SmoothCast checks availability before sending any file.":
+    "No screen selected. Choose one before casting, or add your file to Up Next instead.";
 }
 function renderQueueDestination(state){
   const quickStatus=$("quickCastStatus"),quickCopy=quickCastDestinationCopy(state.receiver);
@@ -3015,11 +3145,12 @@ function applyStatus(d){
     });
     monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
     monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
+    {const h=$("idleHint");if(h)h.hidden=!!(s.active||s.preparing)||["OFFLINE","ERROR","UNKNOWN","EXTERNAL"].includes(String(s.state||"").toUpperCase())}
     {const d=$("nowDetails"),t=s.active&&typeof s.media_details==="string"?s.media_details:"";if(d){d.textContent=t;d.hidden=!t}}
     monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
-const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=duration>0?clock(duration):(s.active?"length not reported":"—");{const pr=$("progress");if(s.active&&!(duration>0)&&s.state==="PLAYING")pr.removeAttribute("value");}trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);
 window.scRenderScreens&&window.scRenderScreens(s);
@@ -3081,11 +3212,18 @@ function renderGlance(room){
   set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
 }
 function renderRoomIdentity(room){
+  const canRename=room?.can_rename===true;
+  const renameLink=$("roomRenameLink"),renameForm=$("roomNameForm"),renameInput=$("roomNameInput");
+  if(renameLink)renameLink.hidden=!canRename;
+  if(renameForm)renameForm.hidden=!canRename;
   if(typeof room?.name!=="string"||!room.name.trim())return;
   const name=room.name;
   const title=name==="Your room"?"Join the house":"Join "+name;
+  const heading=$("homeHeading");
+  if(heading&&heading.textContent!==name)heading.textContent=name;
   const join=$("joinTitle");
   if(join&&join.textContent!==title)join.textContent=title;
+  if(renameInput&&document.activeElement!==renameInput&&renameInput.value!==name)renameInput.value=name;
 }
 function renderRoom(room){lastRoom=room;renderRoomIdentity(room);renderGlance(room);if(window.updateTick)window.updateTick();renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
@@ -3096,7 +3234,7 @@ function renderPeers(peers,available){
   const entries=available&&Array.isArray(peers)?peers:[];
   const focused=document.activeElement;
   if(!entries.length){
-    const message=available?"No other SmoothCast computers found":"Peer discovery is unavailable on this network";
+    const message=available?"No other SmoothCast computers found on this network yet.":"Nearby-computer discovery is unavailable on this network. This room still works.";
     if(list.firstElementChild?.className==="empty"&&list.firstElementChild.textContent===message)return;
     const empty=document.createElement("li");
     empty.className="empty";
@@ -3372,6 +3510,14 @@ function resetProfileEdit(){
   $("saveDisplayName").disabled=false;
   $("profileStatus").textContent="";
 }
+function resetRoomNameEdit(){
+  roomRenameEdit=null;
+  const button=$("saveRoomName"),feedback=$("roomNameStatus"),link=$("roomRenameLink"),form=$("roomNameForm");
+  if(button)button.disabled=false;
+  if(feedback)feedback.textContent="";
+  if(link)link.hidden=true;
+  if(form)form.hidden=true;
+}
 async function saveProfileName(event){
   event.preventDefault();
   if(!csrf||stalePage||profileEdit?.session===csrf)return;
@@ -3394,6 +3540,27 @@ async function saveProfileName(event){
   finally{if(profileEdit===request){profileEdit=null;button.disabled=false}}
 }
 $("nameForm").addEventListener("submit",saveProfileName);
+let roomRenameEdit=null;
+async function saveRoomName(event){
+  event.preventDefault();
+  if(!csrf||stalePage||roomRenameEdit?.session===csrf)return;
+  const input=$("roomNameInput"),button=$("saveRoomName"),feedback=$("roomNameStatus");
+  const submitted=input.value.trim(),request={session:csrf};
+  if(!submitted){feedback.textContent="Enter a room name.";input.focus();return}
+  roomRenameEdit=request;button.disabled=true;feedback.textContent="Saving room name…";
+  const current=()=>roomRenameEdit===request&&csrf===request.session&&!stalePage;
+  try{
+    const data=await post("/api/room/rename",{name:submitted});
+    if(!current())return;
+    if(data.room?.can_rename!==true||typeof data.room.name!=="string")throw Error("The host did not confirm the room name.");
+    if(input.value.trim()===submitted)input.value=data.room.name;
+    renderRoomIdentity(data.room);
+    feedback.textContent="Room name updated for everyone in this room.";
+    refresh();
+  }catch(error){if(current())feedback.textContent=error.message||"Could not rename this room. Try again."}
+  finally{if(roomRenameEdit===request){roomRenameEdit=null;button.disabled=false}}
+}
+$("roomNameForm").addEventListener("submit",saveRoomName);
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.
@@ -3629,6 +3796,7 @@ function fileUnits(bytes){
   return size.toFixed(size<10?1:0)+" "+units[index];
 }
 function transferView(phase,received=0,total=0,note="",queueOnly=$("uploadQueue").checked){
+  localUploadProgress(phase,received,total,note);
   const stage=TRANSFER_STAGES.includes(phase)?phase:"choose";
   const index=TRANSFER_STAGES.indexOf(stage);
   for(const item of ($("transferSteps")?.children||[])){
@@ -4030,6 +4198,7 @@ $("videoFile").addEventListener("change",()=>{
     $("uploadQueue").checked=false;
   }
   updateUploadControls();
+  if(file)setLocalUploads($("videoFile").files);
   if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));
   if(quick&&file&&!$("uploadButton").disabled)$("uploadButton").click();
 });
@@ -4486,4 +4655,4 @@ function syncMediaSession(s){
   window.updateTick=function(){const n=Date.now();if(n-last<60000)return;last=n;load()};
 })();
 </script></body></html>"""
-_HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())
+_HTML = _HTML.replace("/*TOKENS*/", design_tokens.css() + ui_tokens.web_css())

@@ -10,13 +10,14 @@ import guest_messages
 import hashlib
 import os
 import pathlib
-import stat
 import secrets
+import stat
 
 import settings
 import portal
 import portal_uploads
 import queue_metadata
+import media_source
 
 
 def portal_queue_id(path: str) -> str:
@@ -117,14 +118,10 @@ class PortalQueueMixin:
         root = getattr(upload_root, "root", None)
         if root is None:
             raise portal.PortalRequestError(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
-        path = pathlib.Path(payload.get("path", ""))
         try:
-            info = path.lstat()
-            path.relative_to(root)
-        except (OSError, ValueError):
+            path = media_source.resolve_under(root, payload.get("path", ""))
+        except media_source.SourceError:
             raise portal.PortalRequestError(400, "Uploaded media is unavailable") from None
-        if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
-            raise portal.PortalRequestError(400, "Uploaded media is unavailable")
         return path
 
     def _portal_library_path(self, key: object) -> pathlib.Path:
@@ -136,7 +133,10 @@ class PortalQueueMixin:
         path = indexer.resolve_path(key)
         if path is None:
             raise portal.PortalRequestError(404, "That file is no longer available.")
-        return path
+        try:
+            return media_source.library_source(indexer.shared_roots(), path)
+        except media_source.SourceError:
+            raise portal.PortalRequestError(404, "That file is no longer available.") from None
 
     def _portal_run_async(self, work, done, failed) -> None:
         from cast_widgets import Async
@@ -198,7 +198,7 @@ class PortalQueueMixin:
                 self._portal_queue_display_names[str(path)] = title
                 self._portal_enqueue_contributed(str(path), contributor, "library")
                 receipt["stage"] = "ready" if str(path) in self.queue else "failed"
-            except Exception:
+            except Exception:  # noqa: BLE001 - queue acceptance unconfirmed is reported as uncertain
                 receipt["stage"] = "uncertain"
                 self.toast("Library copy finished but queue acceptance could not be confirmed.", error=True)
 
@@ -210,7 +210,7 @@ class PortalQueueMixin:
 
         try:
             self._portal_run_async(work, done, failed)
-        except Exception:
+        except Exception:  # noqa: BLE001 - mark the fetch failed then re-raise
             pending.discard(key)
             receipt["stage"] = "failed"
             raise

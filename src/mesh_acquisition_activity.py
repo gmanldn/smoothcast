@@ -125,7 +125,7 @@ class AcquisitionActivity:
             return None
         try:
             rows = clean_jobs(self.local_jobs())
-        except Exception:
+        except Exception:  # noqa: BLE001 - unavailable is reported as None
             return None  # unavailable is not an empty successful observation
         return {"hello": self.hello.wire(), "node": own.node_id,
                 "boot": own.boot_id, "jobs": rows}
@@ -203,7 +203,7 @@ class AcquisitionActivity:
 
         try:
             self.rpc.call(row.endpoint, RPC_KIND, body, replied, timeout=2.0)
-        except Exception:
+        except Exception:  # noqa: BLE001 - transport failure is reported through the reply callback
             replied(None, "transport")
 
     def _publish(self, eligible, now):

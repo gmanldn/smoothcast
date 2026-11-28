@@ -53,6 +53,14 @@ def test_record_round_trips_through_canonical_bytes():
     assert mm.encode_record(decoded) == mm.encode_record(original)
 
 
+def test_platform_round_trips_and_defaults_for_older_records():
+    rec = record(platform="Linux")
+    assert mm.parse_record(rec.to_wire()).platform == "Linux"
+    old = rec.to_wire()
+    old.pop("platform")
+    assert mm.parse_record(old).platform == ""
+
+
 def test_digest_is_order_independent_and_changes_with_content():
     a = full()
     shuffled = record(
@@ -103,6 +111,7 @@ def mutated(**changes):
     {"name": ""}, {"name": " padded "}, {"name": "x" * (mm.MAX_NAME + 1)},
     {"name": "bell\x07"}, {"name": "line\nbreak"}, {"name": "sep "},
     {"version": "1.2"}, {"version": "v1.2.0"},
+    {"platform": "x" * 33}, {"platform": "bad\x07platform"},
     {"incarnation": -1}, {"incarnation": 2.0}, {"incarnation": True},
     {"rev": 2 ** 60}, {"boot_epoch": float("nan")},
     {"protocols": []}, {"protocols": ["1"]}, {"protocols": list(range(1, 20))},

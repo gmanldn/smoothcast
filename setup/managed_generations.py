@@ -22,6 +22,7 @@ MAX_TOTAL_BYTES = 4 << 30
 BUFFER = 1 << 20
 BUILD_MARKER = "src/.smoothcast-build"
 _COMMIT = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_DISPLAY_DATE = re.compile(r"\d{4}-\d{2}-\d{2} \d{4}\Z")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -153,11 +154,14 @@ def _sync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object) -> Path:
+def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object,
+                         commit_date: str | None = None) -> Path:
     """Stage a locally supplied candidate; NEVER switch the active generation.
 
     The manifest/signature trust decision belongs to the future downloader.
     The returned path is a checksum-verified, non-activated release directory.
+    ``commit_date`` ("YYYY-MM-DD HHMM") is recorded beside the SHA so the running
+    app can show the commit time; anything malformed is dropped, never invented.
     """
     # Do not silently weaken race-resistant source handles on Windows.
     # Win32 FILE_FLAG_OPEN_REPARSE_POINT verification is a later #580 gate.
@@ -199,7 +203,8 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
         # exact commit it loaded (src/version.py reads this same marker).
         if BUILD_MARKER in payload:
             raise StageError("Candidate supplies the reserved build marker")
-        marker = (commit + "\n").encode("ascii")
+        stamp = commit_date if isinstance(commit_date, str) and _DISPLAY_DATE.fullmatch(commit_date) else None
+        marker = (commit + "\n" + (stamp + "\n" if stamp else "")).encode("ascii")
         marker_path = temporary / BUILD_MARKER
         marker_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         # The build marker is part of the verified generation, not just

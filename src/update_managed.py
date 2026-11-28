@@ -19,7 +19,7 @@ def managed_facts(app_root) -> tuple[str | None, str | None, str | None]:
         ref = ma.read_active(install)
         journal = ma._load_journal(install)
         return ref["current"], ref["previous"], journal["state"] if journal else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - unreadable journal means unknown state
         return None, None, None
 
 
@@ -35,7 +35,7 @@ def _load_setup_module(setup, name: str, *deps: str):
         sys.modules[mod] = module
         try:
             spec.loader.exec_module(module)
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - drop the half-loaded module then re-raise
             sys.modules.pop(mod, None)
             raise
     return sys.modules[name]

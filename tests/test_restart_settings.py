@@ -23,6 +23,7 @@ import streamer
 import subtitle_delay
 import subtitle_style
 import subtitle_restart
+import settings
 
 DEFAULTS = {"audio_gain": 0.0}
 
@@ -38,6 +39,7 @@ def extracted(*names, async_runs, saves):
         "subtitle_delay": subtitle_delay,
         "subtitle_style": subtitle_style,
         "subtitle_restart": subtitle_restart,
+        "settings": settings,
         "playback_state": playback_state,
         "castctl": castctl,
         "pathlib": pathlib,

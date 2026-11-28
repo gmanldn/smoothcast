@@ -396,7 +396,7 @@ class CommandDispatcher:
                 entry.completed = True
                 entry.event.set()
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any dispatch failure becomes a 503 command error
             error = CommandError(503, "SmoothCast could not accept that command",
                                  revision=self.fence.snapshot()[1])
             with self._lock:

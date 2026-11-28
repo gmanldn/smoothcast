@@ -89,6 +89,11 @@ class Store:
             except OSError as exc:
                 self.last_error = classify_error(exc)
                 try:
+                    import errors
+                    errors.record("app.save_failed", {"file": self.path.name, "reason": self.last_error})
+                except Exception:  # noqa: BLE001 - diagnostics must never turn a failed save into a crash
+                    pass
+                try:
                     tmp.unlink()
                 except OSError:
                     pass

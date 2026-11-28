@@ -86,7 +86,7 @@ def _installed_root(target: str) -> Path | None:
     return None
 
 
-def _launch_installed(root: Path, args: list[str]) -> int:
+def _launch_installed(root: Path, args: list[str], *, updated: bool = False) -> int:
     """Hand off once, preserving caller cwd, args and the installed runtime."""
     script = root / "sc.py"
     if not script.is_file():
@@ -98,8 +98,10 @@ def _launch_installed(root: Path, args: list[str]) -> int:
     print(f"SmoothCast: using installed application at {root}", file=sys.stderr, flush=True)
     try:
         # Mark the hand-off so two launchers can never bounce between each other.
-        return subprocess.call([sys.executable, str(script), *args],
-                               env={**os.environ, "SMOOTHCAST_HANDOFF": "1"})
+        env = {**os.environ, "SMOOTHCAST_HANDOFF": "1"}
+        if updated:
+            env["SMOOTHCAST_UPDATE_APPLIED"] = "1"
+        return subprocess.call([sys.executable, str(script), *args], env=env)
     except OSError as exc:
         print(f"SmoothCast could not start installed application: {exc}", file=sys.stderr)
         return 1
@@ -171,53 +173,37 @@ def _main(argv: list[str] | None = None) -> int:
             # under a live GUI. A process that cannot be stopped aborts the launch.
             if not fresh_start.reset(launch.gui_instances(all_installations=True), ROOT / "src"):
                 return 1
-        if target is not None and not portable and not os.environ.get("SMOOTHCAST_HANDOFF"):
+        if target is not None and not portable:
             installed = _installed_root(target)
+            if os.environ.get("SMOOTHCAST_HANDOFF") and installed != ROOT.resolve():
+                installed = None
     except (OSError, ValueError) as exc:
         print(f"SmoothCast: installation unavailable: {exc}", file=sys.stderr)
         return 1
-    if target is not None and not portable:
-        if installed is not None and installed != ROOT.resolve():
-            if not _headless(args):
-                import checkout_refresh
-
-                code = checkout_refresh.refresh(
-                    ROOT, installed, target,
-                    lambda: launch.gui_instances(all_installations=True),
-                )
-                if code:
-                    return code
-            return _launch_installed(installed, args)
+    if installed is not None and installed != ROOT.resolve():
+        return _launch_installed(installed, args)
     if _headless(args):
         return launch.main(args)
 
     if target is None:
         print("SmoothCast supports Linux, macOS and Windows 10/11 x64.", file=sys.stderr)
         return 1
-    if not portable and installed == ROOT.resolve():
-        # Native shortcuts start inside the copied install. Consult the same
-        # local source provenance as checkout launches before activating GTK.
-        import checkout_refresh
-
-        source = checkout_refresh.installed_source(ROOT)
-        if source is not None:
-            before = checkout_refresh.installed_revision(ROOT)
-            code = checkout_refresh.refresh(
-                source, ROOT, target,
-                lambda: launch.gui_instances(all_installations=True),
-            )
-            if code:
-                return code
-            if checkout_refresh.installed_revision(ROOT) != before:
-                # The install was replaced: never continue with old imported
-                # launcher/bootstrap modules. Start the newly copied entry.
-                return _launch_installed(ROOT, args)
     # Activating the already-running primary must not wait for dependency
     # probes, bootstrap, installs or desktop registration (#540).
     guarded = launch.ensure_single_instance(
         args, reclaim=lambda pids: fresh_start.reset(pids, ROOT / "src", keep_streaming=True))
     if guarded is not None:
         return guarded
+    if installed == ROOT.resolve() and not os.environ.pop("SMOOTHCAST_UPDATE_APPLIED", None):
+        import checkout_refresh
+        import installed_update
+
+        before = checkout_refresh.installed_revision(ROOT)
+        code = installed_update.refresh(ROOT, target, lambda: launch.gui_instances(all_installations=True))
+        if code:
+            return code
+        if checkout_refresh.installed_revision(ROOT) != before:
+            return _launch_installed(ROOT, args, updated=True)
     if not launch.runtime_ready():
         if portable:
             code = _bootstrap(target, portable=True)

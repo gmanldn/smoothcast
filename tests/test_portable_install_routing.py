@@ -28,8 +28,9 @@ def entry(monkeypatch):
     refresher.refresh.return_value = 0
     refresher.read_version.return_value = (2, 0, 5)
     refresher.installed_revision.return_value = "a" * 40
-    refresher.installed_source.return_value = None
     monkeypatch.setitem(sys.modules, "checkout_refresh", refresher)
+    monkeypatch.setitem(sys.modules, "installed_update", mock.Mock())
+    sys.modules["installed_update"].refresh.return_value = 0
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
     monkeypatch.setattr(module, "_target", lambda: "linux")
@@ -168,16 +169,14 @@ def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch
     assert actual._installed_root("linux") == (tmp_path / expected if expected else None)
 
 
-def test_stale_install_refresh_failure_prevents_handoff(entry, tmp_path):
+def test_checkout_hands_off_without_using_its_local_source(entry, tmp_path):
     module, runtime = entry
     module._installed_root.return_value = tmp_path
-    refresher = sys.modules["checkout_refresh"]
-    refresher.refresh.return_value = 3
-    assert module.main([]) == 3
-    refresher.refresh.assert_called_once()
-    module._launch_installed.assert_not_called()
+    assert module.main([]) == 0
+    sys.modules["checkout_refresh"].refresh.assert_not_called()
+    sys.modules["installed_update"].refresh.assert_not_called()
+    module._launch_installed.assert_called_once_with(tmp_path, [])
     runtime.main.assert_not_called()
-
 
 def test_version_query_never_refreshes_installed_files(entry, tmp_path):
     module, _runtime = entry
@@ -221,28 +220,35 @@ def test_compatibility_wrapper_delegates_all_arguments(monkeypatch):
     canonical.main.assert_called_once_with()
 
 
-def test_installed_shortcut_rechecks_source_before_activating(entry, tmp_path):
+def test_running_primary_is_activated_before_remote_check(entry):
     module, runtime = entry
     module._installed_root.return_value = ROOT
-    refresher = sys.modules["checkout_refresh"]
-    refresher.installed_source.return_value = tmp_path
-    refresher.refresh.return_value = 3
-    assert module.main([]) == 3
-    refresher.refresh.assert_called_once()
-    runtime.ensure_single_instance.assert_not_called()
+    runtime.ensure_single_instance.return_value = 0
+    assert module.main([]) == 0
+    sys.modules["installed_update"].refresh.assert_not_called()
     runtime.main.assert_not_called()
 
 
-def test_refreshed_shortcut_restarts_new_launcher(entry, tmp_path):
+def test_refreshed_shortcut_restarts_new_launcher(entry, tmp_path, monkeypatch):
     module, runtime = entry
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SMOOTHCAST_HANDOFF", "1")
     module._installed_root.return_value = ROOT
     refresher = sys.modules["checkout_refresh"]
-    refresher.installed_source.return_value = tmp_path
     refresher.installed_revision.side_effect = ["a" * 40, "b" * 40]
     assert module.main(["film.mkv"]) == 0
-    module._launch_installed.assert_called_once_with(ROOT, ["film.mkv"])
+    sys.modules["installed_update"].refresh.assert_called_once()
+    module._launch_installed.assert_called_once_with(ROOT, ["film.mkv"], updated=True)
     runtime.main.assert_not_called()
 
+
+def test_relaunched_build_does_not_repeat_remote_check(entry, monkeypatch):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    monkeypatch.setenv("SMOOTHCAST_UPDATE_APPLIED", "1")
+    assert module.main([]) == 0
+    sys.modules["installed_update"].refresh.assert_not_called()
+    runtime.main.assert_called_once_with([], prechecked=True)
 
 def _real_sc():
     loader = importlib.machinery.SourceFileLoader("sc_real_launcher", str(ROOT / "sc.py"))

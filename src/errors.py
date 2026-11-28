@@ -44,6 +44,10 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
           "Check that the receiver is switched on.",
           "Check that it is on the same network as this computer.",
           "Choose the receiver again from the list."),
+    _spec("app.save_failed", "error", True,
+          "SmoothCast could not save a settings file. Free disk space or check folder permissions.",
+          "Free some disk space.", "Check that your user can write to the SmoothCast config folder.",
+          "Retry the change."),
     _spec("cast.command_in_progress", "info", True,
           "SmoothCast is finishing another command. Wait a moment, then retry.",
           "Wait a few seconds.", "Retry the action."),
@@ -127,6 +131,17 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
           "The receiver command failed. Check the receiver connection and try again.",
           "Check that the receiver is on and on the same network.",
           "Retry the action."),
+    _spec("cast.status_unavailable", "error", True,
+          "The TV answered but did not report what it is playing. Wake the TV, then try again.",
+          "Wait a few seconds and try again; SmoothCast reconnects to the TV on retry.",
+          "Wake the TV and check that it is on its Cast input.",
+          "Switch the TV off and on again if it still reports nothing.",
+          "Use Copy diagnostics and include it in a bug report if this keeps happening."),
+    _spec("cast.playback_unconfirmed", "error", True,
+          "The TV is reachable but did not confirm that it is playing this media.",
+          "Look at the TV: another app or cast may have taken over the screen.",
+          "Stop casting to this TV from other devices, then try again.",
+          "Try again once the TV shows its home screen."),
     _spec("cast.command_invalid", "warning", False,
           "The receiver command has invalid settings. Check the values and try again.",
           "Reset the setting you just changed.", "Retry the action."),
@@ -207,7 +222,7 @@ def record(code: str, context: object = None) -> None:
     canonical = code if type(code) is str and code in CATALOGUE else FALLBACK.code
     try:
         facts = _bounded_context(context)
-    except Exception:
+    except Exception:  # noqa: BLE001 - unbounded context is dropped, never raised
         facts = {}
     entry = (time.time(), canonical, facts)
     with _RECENT_LOCK:
@@ -264,6 +279,6 @@ def describe(exc: object) -> ErrorSpec:
             # Do not trust arbitrary messages or remediation supplied by an
             # exception; the catalogue is the sole authority for public copy.
             return CATALOGUE.get(spec.code, FALLBACK)
-    except Exception:
+    except Exception:  # noqa: BLE001 - an untrusted exception falls back to the catalogue default
         pass
     return FALLBACK

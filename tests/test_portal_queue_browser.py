@@ -134,8 +134,8 @@ def test_two_browsers_see_each_others_moves_and_stale_move_recovers():
             started = time.monotonic()
             ann.locator("#queue .queue-item").nth(1).get_by_role("button", name="later in Up Next").first.click()
             ben.wait_for_function(
-                "(first) => document.querySelector('#queue .queue-item').parentElement.children[1].textContent !== first",
-                arg=ben.locator("#queue .queue-item").nth(1).text_content(), timeout=8000)
+                "(previous) => JSON.stringify([...document.querySelectorAll('#queue .queue-item')].map(e=>e.querySelector('.queue-title,strong,span').textContent.trim())) !== JSON.stringify(previous)",
+                arg=before, timeout=8000)
             after_ben = titles(ben)
             assert time.monotonic() - started < 1.0, "owner budget is 0.5s p95; 1s guards flakes"
             assert after_ben != before and after_ben == titles(ann), (before, after_ben, titles(ann))

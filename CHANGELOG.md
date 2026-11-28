@@ -8,13 +8,737 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 1c408ddef26a3285c6662a000bf5fc0423634d2a -->
+<!-- sc-changelog-through: b94b18f086475557bd2743a176e9b46701e984ae -->
+
+## 2026-11-28 · UTC
+
+- ⬜ **02:50:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **02:50:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b94b18f08647`](https://github.com/gmanldn/smoothcast/commit/b94b18f086475557bd2743a176e9b46701e984ae)
+
+- 🟥 **02:50:26 · Fix** — fix(cast): serialize status mirror connection teardown per receiver (Refs #202) · [`7ba24a007d6a`](https://github.com/gmanldn/smoothcast/commit/7ba24a007d6a1b2759b032784142ac050810d797)
+
+- ⬜ **02:47:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a3b8fe9548ad`](https://github.com/gmanldn/smoothcast/commit/a3b8fe9548adbf441da8836c7459758287cc2e73)
+
+- ⬜ **02:47:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2bc1f8957063`](https://github.com/gmanldn/smoothcast/commit/2bc1f8957063a3b2e7382f98933872815b9e07e1)
+
+- 🟥 **02:46:53 · Fix** — fix(errors): distinct codes for TV status-unavailable and playback-unconfirmed (#207) · [`326d9cb47be5`](https://github.com/gmanldn/smoothcast/commit/326d9cb47be5bc03c029a75aab2c51694c369f9a)
+
+- 🟥 **02:46:53 · Fix** — fix(errors): distinct codes for TV status-unavailable and playback-unconfirmed (#207) · [`7ef343a99c0e`](https://github.com/gmanldn/smoothcast/commit/7ef343a99c0eb6cba81dcc76c814f34c709ce6bf)
+
+- ⬜ **02:44:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4a30fac827e8`](https://github.com/gmanldn/smoothcast/commit/4a30fac827e8be060c7013dfb835d2eb9a1c2b6b)
+
+- ⬜ **02:44:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`29d7c98e86d9`](https://github.com/gmanldn/smoothcast/commit/29d7c98e86d97d4168b54f5372cff4cf828df4d3)
+
+- 🟥 **02:44:15 · Fix** — fix: declare demo\_cast\_helper in the wheel module manifest (Refs #706) · [`77a16b611ce1`](https://github.com/gmanldn/smoothcast/commit/77a16b611ce1e0abfba3bf56e54a1819201e7a64)
+
+- ⬜ **02:42:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0dac5fcabf78`](https://github.com/gmanldn/smoothcast/commit/0dac5fcabf7870e4ffa3c875bf3df11c1e2a68f5)
+
+- 🟥 **02:42:30 · Fix** — fix(cast): keep the existing stream alive until a remote URL handoff is confirmed (Refs #746) · [`c403a59c6913`](https://github.com/gmanldn/smoothcast/commit/c403a59c6913cb9dfb2d0bf2478a0d7b1f17c034)
+
+- ⬜ **02:42:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4055693df29e`](https://github.com/gmanldn/smoothcast/commit/4055693df29e80c080723ef68e0dadf16b75eb8e)
+
+- ⬜ **02:41:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`17725f6c2cdf`](https://github.com/gmanldn/smoothcast/commit/17725f6c2cdf58ba4b6f815b4c1f4c5d46e7433c)
+
+- ⬜ **02:41:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0718a1aa6ad`](https://github.com/gmanldn/smoothcast/commit/f0718a1aa6ad01e28844d6fb028b5a5c51dbcbe6)
+
+- 🟥 **02:41:43 · Fix** — fix(ui,tests): mirror the real card/chip spacing in density; skip GTK tests without PyGObject · [`4889bab99138`](https://github.com/gmanldn/smoothcast/commit/4889bab991384ee97bde373e8be63be1b6efa7ec)
+
+- ⬜ **02:40:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b0b031d597bd`](https://github.com/gmanldn/smoothcast/commit/b0b031d597bd95355d09ecc30bf9d6535f3f0d04)
+
+- ⬜ **02:40:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`72f3ce9eea92`](https://github.com/gmanldn/smoothcast/commit/72f3ce9eea92a5c70d0a5cd65cbee13c5c176acd)
+
+- 🟥 **02:40:43 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`914d57ad7406`](https://github.com/gmanldn/smoothcast/commit/914d57ad740637b0f74062ceea36499b47f99bae)
+
+- 🟥 **02:39:57 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`2835e75cbe0c`](https://github.com/gmanldn/smoothcast/commit/2835e75cbe0c459a76dd0177bbc6aab60de0febc)
+
+- 🟥 **02:39:46 · Fix** — fix(node-targets): fence delayed releases to the exact node/session/epoch claim (Refs #738) · [`c47836ad40cc`](https://github.com/gmanldn/smoothcast/commit/c47836ad40cca0a1e26345f81c36f0710f7e284e)
+
+- ⬜ **02:08:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cfae34f502f8`](https://github.com/gmanldn/smoothcast/commit/cfae34f502f8f5a5034e156dcde13298b0aa854b)
+
+- 🟥 **02:08:03 · Fix** — fix(tests): repair test harnesses and assertions that drifted after refactors · [`72c1836e076b`](https://github.com/gmanldn/smoothcast/commit/72c1836e076b163274e2813e15fcdd78a242b515)
+
+- ⬜ **02:08:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1abaa1ba1faa`](https://github.com/gmanldn/smoothcast/commit/1abaa1ba1faa200e3dd4f373f664a69ba9791ac8)
+
+- ⬜ **02:06:00 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`75ffd8e19f20`](https://github.com/gmanldn/smoothcast/commit/75ffd8e19f20fce80e09958ccfe83ca15fc410cf)
+
+- ⬜ **02:06:00 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`04ecee0024d6`](https://github.com/gmanldn/smoothcast/commit/04ecee0024d64c1fc0f90faf53199d82b844c84c)
+
+- 🟥 **02:05:52 · Fix** — fix: record the commit time in staged generation markers so both UIs show 'vX - date time - Codename' (Refs #580) · [`4cda66959625`](https://github.com/gmanldn/smoothcast/commit/4cda669596253e7784335cc5842420d8d025d9d2)
+
+- ⬜ **02:04:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bc22a4096f33`](https://github.com/gmanldn/smoothcast/commit/bc22a4096f3346598b503e1fd8b2a2d02e016abe)
+
+- ⬜ **02:04:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`125500ceb482`](https://github.com/gmanldn/smoothcast/commit/125500ceb482268e2d80077261eb899b1494cc6f)
+
+- 🟪 **02:04:09 · Tests** — test(join-slate): follow the switch wiring into preferences\_room\_ui (stale since #706 split) · [`a2f06c36f740`](https://github.com/gmanldn/smoothcast/commit/a2f06c36f740b6b7f15868c3581fb2d6aaa74a8a)
+
+- 🟪 **02:02:28 · Tests** — test(gui): keep the demo target cache from leaking between tests (Refs #449) · [`5d84fa6a9d63`](https://github.com/gmanldn/smoothcast/commit/5d84fa6a9d63778f453b2924eee2ba382ba45545)
+
+- ⬜ **02:02:28 · Maintenance** — chore(budget): complexity baseline for the demo cast helper (+37 lines), demo\_mode target caching and castctl demo routing · [`36a7ff959803`](https://github.com/gmanldn/smoothcast/commit/36a7ff9598032a6038c536d02adda4b9256eaf43)
+
+- 🟪 **02:02:28 · Tests** — test(gui): scripted open→cast→pause→seek→stop journey against the loopback demo receiver; demo cast helper replaces catt in demo mode, fake receiver mirrors status to other senders (Refs #449, #524) · [`e5d34a3c9fd8`](https://github.com/gmanldn/smoothcast/commit/e5d34a3c9fd8a790238424ca596575577d7de3e7)
+
+- ⬜ **01:57:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c85e1321b54b`](https://github.com/gmanldn/smoothcast/commit/c85e1321b54b20b59bcd7bd64e8d76151b4cbd24)
+
+- 🟪 **01:57:27 · Tests** — test: de-flake retry-push SHA assertion; make fake scan hermetic (Refs #698) · [`ec77ca9c1883`](https://github.com/gmanldn/smoothcast/commit/ec77ca9c188357c9661ad7fb197f2e88b3418932)
+
+- 🟪 **01:57:27 · Tests** — test: skip GTK-only warmup test when PyGObject is unusable (Refs #698) · [`28abd3991111`](https://github.com/gmanldn/smoothcast/commit/28abd39911119b975ccf12cc11b762dfd9822bee)
+
+- 🟥 **01:57:27 · Fix** — fix(ship): discard generated PATCH/changelog commits when a gate stops the push (Refs #700, #698) · [`9ddf1070c122`](https://github.com/gmanldn/smoothcast/commit/9ddf1070c12272987aac14ee08ac2b29292c2afb)
+
+- 🟪 **01:57:27 · Tests** — test: supply settings to the preview-meter harness (Refs #698, #693) · [`3dc4cc6e2156`](https://github.com/gmanldn/smoothcast/commit/3dc4cc6e21566c8d07073ad761b3d600882f908b)
+
+- 🟩 **01:57:27 · Feature** — feat(diagnostics): every encoder start keeps its own attempt folder; fix GUI test harness imports (settings, QueueComponent) (Refs #698, #693, #691) · [`c9355796ae08`](https://github.com/gmanldn/smoothcast/commit/c9355796ae0838289d8e53d9366dc9669fa3e588)
+
+- 🟩 **01:57:27 · Feature** — feat(diagnostics): every encoder start keeps its own attempt folder (argv, plan, ffmpeg stderr, outcome); start errors name the plan (Refs #698) · [`6e983d0dc183`](https://github.com/gmanldn/smoothcast/commit/6e983d0dc183d63ffecb8322270953624bbb56c2)
+
+- ⬜ **01:57:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a7b82343f60f`](https://github.com/gmanldn/smoothcast/commit/a7b82343f60f2b52538f375436a5a68a80f72216)
+
+- ⬜ **01:54:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4a0a1274230e`](https://github.com/gmanldn/smoothcast/commit/4a0a1274230ec44ec90204af23e356ffa2a92d7f)
+
+- ⬜ **01:54:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`6144a258a7fc`](https://github.com/gmanldn/smoothcast/commit/6144a258a7fcbff375dd1037b04eb36076cac3b0)
+
+- 🟥 **01:54:32 · Fix** — fix: stale Chromecast status link; instant, ordered scrub preview · [`622f5c9627d0`](https://github.com/gmanldn/smoothcast/commit/622f5c9627d08c9c5a46175fc797eedf729d3ceb)
+
+- ⬜ **01:42:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e198c5a2a7ff`](https://github.com/gmanldn/smoothcast/commit/e198c5a2a7fff544a93b3e27831b7b39907f036d)
+
+- ⬜ **01:42:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`940ad47b3530`](https://github.com/gmanldn/smoothcast/commit/940ad47b3530f056352e8826d25d5ad1301b4b9a)
+
+- 🟥 **01:42:06 · Fix** — fix: persist latency stats via store.Store; restore docs wording and stale known\_nodes test expectation (Refs #706) · [`ddaa8b10ec99`](https://github.com/gmanldn/smoothcast/commit/ddaa8b10ec9974a955edad5474aa8ee028a82361)
+
+- ⬜ **01:37:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ea51015d177d`](https://github.com/gmanldn/smoothcast/commit/ea51015d177da1b0185866846d678784666f401b)
+
+- ⬜ **01:37:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`29c19a04f88a`](https://github.com/gmanldn/smoothcast/commit/29c19a04f88a719240e1cd84f9c439aa1314893e)
+
+- 🟥 **01:36:56 · Fix** — fix(tests): repair stale portal test harnesses that were red on develop · [`0a723171d78d`](https://github.com/gmanldn/smoothcast/commit/0a723171d78d03a67b1686811586cc1b6e8f3b5c)
+
+- ⬜ **01:35:49 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ab3c72b5db51`](https://github.com/gmanldn/smoothcast/commit/ab3c72b5db516d1fecbc8fa2b34d013614636bf8)
+
+- ⬜ **01:35:49 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a9e8f6f2f2dc`](https://github.com/gmanldn/smoothcast/commit/a9e8f6f2f2dc59bc730e575cf494104f1a8d3ac2)
+
+- 🟥 **01:35:43 · Fix** — fix(agent): version.py is a release lane; a feature lease can no longer block or be blocked by a shipment's PATCH bump (Refs #700) · [`1e32671a4dea`](https://github.com/gmanldn/smoothcast/commit/1e32671a4dea875161e21454b07ad36550be5fb7)
+
+- ⬜ **01:34:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`25a17f1d6d64`](https://github.com/gmanldn/smoothcast/commit/25a17f1d6d6434946ebe94ffd33478ce56ee07a4)
+
+- ⬜ **01:34:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c6db5e134ba7`](https://github.com/gmanldn/smoothcast/commit/c6db5e134ba7b0c8e2fa1c12c5764f38dc64ac7f)
+
+- 🟪 **01:34:29 · Tests** — test(agent): repair 7 stale lifecycle tests for scope check and per-shipment PATCH; drop their quarantine entries (Refs #700) · [`fd0ab522d431`](https://github.com/gmanldn/smoothcast/commit/fd0ab522d4311a86e2ba3ebdd45a2e24a2ed022f)
+
+- 🟩 **01:22:24 · Feature** — feat(portal): say what to do next in empty room screens · [`fd9cd4205530`](https://github.com/gmanldn/smoothcast/commit/fd9cd4205530065026883ba1d15103523082e0d8)
+
+- ⬜ **01:19:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`aac4685e9b73`](https://github.com/gmanldn/smoothcast/commit/aac4685e9b7382d70ccb58537924b533c139cb15)
+
+- ⬜ **01:19:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ebeea3a2639d`](https://github.com/gmanldn/smoothcast/commit/ebeea3a2639d0fab91621eed7f1b1eac9dc117c8)
+
+- 🟥 **01:19:18 · Fix** — fix(tests): quarantine GUI size ratchet to #706 with owner/expiry; skip GTK settings test without a usable PyGObject (Refs #700) · [`95271e5cc427`](https://github.com/gmanldn/smoothcast/commit/95271e5cc42782979ee1022d423e649f32078b7b)
+
+- 🟥 **01:19:18 · Fix** — fix(ci): ship stops on unowned pre-existing red; quarantine entries need owner, ticket and live expiry (Refs #700) · [`25d7cee07bc5`](https://github.com/gmanldn/smoothcast/commit/25d7cee07bc51ac4050d09b21938bd6ae099080d)
+
+- ⬜ **00:28:35 · Maintenance** — Merge branch 'develop' of https://github.com/gmanldn/smoothcast into develop · [`c7914ca82b25`](https://github.com/gmanldn/smoothcast/commit/c7914ca82b2519c319bbf4dca2eb092a4795b008)
+
+- ⬜ **00:28:14 · Maintenance** — 1 · [`ad3fbb284d57`](https://github.com/gmanldn/smoothcast/commit/ad3fbb284d57744b95640c894cff50677ac1bba6)
+
+- ⬜ **00:09:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a02430cbc51d`](https://github.com/gmanldn/smoothcast/commit/a02430cbc51d75465211433f05ebf2079f681f56)
+
+- ⬜ **00:09:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a50944c94891`](https://github.com/gmanldn/smoothcast/commit/a50944c9489135fd29f2ea922c822821c9bd7c22)
+
+- 🟩 **00:09:23 · Feature** — feat(ui): show elapsed / total on external-stream label (Refs #588) · [`b0e5992e1ed9`](https://github.com/gmanldn/smoothcast/commit/b0e5992e1ed966150bf9e6b9e71e23acacccae39)
+
+---
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:14:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:27:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`7d50c4558f71`](https://github.com/gmanldn/smoothcast/commit/7d50c4558f712b65b5f14ad16be3d13d9ee18b8e)
+
+- ⬜ **21:27:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`767b5a35a55b`](https://github.com/gmanldn/smoothcast/commit/767b5a35a55b27ac113c4cb6a00dd9d44ee21569)
+
+- 🟦 **21:27:16 · Refactor** — refactor(portal): dispatch session and status GET routes through the route table (Refs #689) · [`46034fb11be8`](https://github.com/gmanldn/smoothcast/commit/46034fb11be8394f714787565907edde1373aafe)
+
+- ⬜ **21:26:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`92c71549aa6b`](https://github.com/gmanldn/smoothcast/commit/92c71549aa6b7fbdd86c15ce9920d498379d0207)
+
+- ⬜ **21:26:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b698e0f841a8`](https://github.com/gmanldn/smoothcast/commit/b698e0f841a83ac6b08883be2b0a552de6697b98)
+
+- 🟦 **21:26:12 · Refactor** — refactor(portal): dispatch library, search and mesh GET routes through the route table (Refs #689) · [`7fc3c52273ee`](https://github.com/gmanldn/smoothcast/commit/7fc3c52273ee4d11c37f417fdb4385d2f2243ebd)
+
+- ⬜ **21:24:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5f787ef9cb3d`](https://github.com/gmanldn/smoothcast/commit/5f787ef9cb3de7820b10d49d38b1bb982b8d4104)
+
+- ⬜ **21:24:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`957cca08d6b8`](https://github.com/gmanldn/smoothcast/commit/957cca08d6b8de23cc0039a724ae685497373bb4)
+
+- 🟦 **21:24:40 · Refactor** — refactor(portal): serve the public GET routes through the route table (Refs #689) · [`82673d65062c`](https://github.com/gmanldn/smoothcast/commit/82673d65062c8058feee97bacb10835a5ac2b9aa)
+
+- 🟨 **21:23:24 · Documentation** — docs(ports): per-OS evidence table for the platform ports, stating which are not yet wired (Refs #703) · [`93a465723d96`](https://github.com/gmanldn/smoothcast/commit/93a465723d96b12670d8585fdc33d8bb93210f25)
+
+- ⬜ **21:23:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dcb9ac8c4535`](https://github.com/gmanldn/smoothcast/commit/dcb9ac8c45359f42af796174a83936aa8ac9eda3)
+
+- ⬜ **21:23:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d1ebb3e08e48`](https://github.com/gmanldn/smoothcast/commit/d1ebb3e08e486bd1f0df07b4415a512bd991832e)
+
+- 🟪 **21:22:58 · Tests** — test(portal): pin the anonymous-caller auth gate for every authenticated route (Refs #689) · [`7240539ef1f1`](https://github.com/gmanldn/smoothcast/commit/7240539ef1f1d3ecb8adb5fea9894f942a0eeaef)
+
+- 🟪 **21:22:08 · Tests** — test(room): property tests for replay, retry idempotence, no duplicates, rejoin convergence and gap refusal (Refs #695) · [`796dbb1214a4`](https://github.com/gmanldn/smoothcast/commit/796dbb1214a43c1b23426047c0ad2d4e5c65e637)
+
+- ⬜ **21:21:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a375d32cca4`](https://github.com/gmanldn/smoothcast/commit/3a375d32cca42d647528bcec875287fe2c1f151f)
+
+- 🟩 **21:21:19 · Feature** — feat(doctor): SSDP self-test check (Refs #211) · [`be44db5dfb80`](https://github.com/gmanldn/smoothcast/commit/be44db5dfb80ec98686a5d9ee3a002ebd86a37f7)
+
+- ⬜ **21:21:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b8045ac4cc30`](https://github.com/gmanldn/smoothcast/commit/b8045ac4cc30d7e2fde47383799f22675909c385)
+
+- ⬜ **21:21:04 · Maintenance** — chore(ci): rebaseline complexity for design\_tokens, ffmpeg\_compat, latency\_stats, ui\_tokens (Refs #700) · [`ed530e9cb9d9`](https://github.com/gmanldn/smoothcast/commit/ed530e9cb9d992a18eff208b30961fcfae61e2da)
+
+- ⬜ **21:20:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ad3ac76ddf7b`](https://github.com/gmanldn/smoothcast/commit/ad3ac76ddf7b2f5cf38a74df2a79814a232302ed)
+
+- ⬜ **21:20:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`88cd9a2a9390`](https://github.com/gmanldn/smoothcast/commit/88cd9a2a93906177c01dd0a6fce56cf7a82692c7)
+
+- 🟩 **21:20:13 · Feature** — feat(doctor): run the firewall check in smoothcast doctor (Refs #211) · [`105201d5f863`](https://github.com/gmanldn/smoothcast/commit/105201d5f863b87a8929eb4b1b1febc1cca233ac)
+
+- 🟩 **21:19:33 · Feature** — feat(diagnostics): shutdown total and per-step timings accumulate in latency.json (Refs #698) · [`c9c0340a5532`](https://github.com/gmanldn/smoothcast/commit/c9c0340a5532f82d07e921e05c57dbf6a37fbe63)
+
+- ⬜ **21:18:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e9db5fe14e5d`](https://github.com/gmanldn/smoothcast/commit/e9db5fe14e5d8f575f3d37c4f183552ffaf979bf)
+
+- ⬜ **21:18:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`89d6ba2be641`](https://github.com/gmanldn/smoothcast/commit/89d6ba2be641c222bf0f63052d498ef5e93021d6)
+
+- 🟦 **21:18:06 · Refactor** — refactor(errors): justify boundary catches in fifteen freed modules (Refs #694) · [`5a1bab5dda9d`](https://github.com/gmanldn/smoothcast/commit/5a1bab5dda9dcbbb8438e676911ad69b3328f6b1)
+
+- ⬜ **21:18:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a32a77297f58`](https://github.com/gmanldn/smoothcast/commit/a32a77297f580ce98ebbfb6abbfeff407a847795)
+
+- 🟪 **21:18:01 · Tests** — test(link): real-process worker crash, quota, deadline, cancel and no-residual-child coverage (Refs #588) · [`0687dca1152d`](https://github.com/gmanldn/smoothcast/commit/0687dca1152deed0125b2be3fb2ebf07cd9057cc)
+
+- ⬜ **21:18:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`af265caf986b`](https://github.com/gmanldn/smoothcast/commit/af265caf986b35d676a946a7f0964e7af88c34b9)
+
+- ⬜ **21:17:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55bf2c6ed0a8`](https://github.com/gmanldn/smoothcast/commit/55bf2c6ed0a86411fbd4a792526ad2eddbe0ce50)
+
+- 🟦 **21:17:50 · Performance** — perf(stream): casts start sooner - the first 10 s encode at full speed (-readrate\_initial\_burst, FFmpeg 6.1+) instead of 8 s of real-time reading before the first two segments; guest uploads that may still be arriving keep plain -readrate (Refs #686) · [`0988c0ee3133`](https://github.com/gmanldn/smoothcast/commit/0988c0ee31335b0791cfa8791a84175150240eba)
+
+- ⬜ **21:17:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7d81743fdd11`](https://github.com/gmanldn/smoothcast/commit/7d81743fdd11bfbe5581a32f0c178dc263e79850)
+
+- 🟩 **21:17:25 · Feature** — feat(ui): mesh joins the shared room layout model with a web/GTK parity check (Refs #708) · [`18cc6a4a2716`](https://github.com/gmanldn/smoothcast/commit/18cc6a4a271685c1ae9f196cd3a5d86691ece512)
+
+- 🟩 **21:16:09 · Feature** — feat(ui): GTK padding and margins snap onto the shared spacing scale, with a parity test (Refs #708) · [`16e210790bfe`](https://github.com/gmanldn/smoothcast/commit/16e210790bfeeff81076762b0a105e98d08c78f5)
+
+- 🟥 **21:15:44 · Fix** — fix(diag): the jank\_watchdog preference was never read (and stripped on load); wire it through so UI stall data can be collected without an env var (Refs #442) · [`4ca5bb23adee`](https://github.com/gmanldn/smoothcast/commit/4ca5bb23adeefccb430c6ef1b8135cefbf6eda1b)
+
+- ⬜ **21:14:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`71ec1ab1513f`](https://github.com/gmanldn/smoothcast/commit/71ec1ab1513f5387c455a17fc9d547b2f5eb2570)
+
+- 🟩 **21:14:19 · Feature** — feat(web): one unified queue — uploads, now-playing and queued items share rows with live status chips · [`effdb22384d9`](https://github.com/gmanldn/smoothcast/commit/effdb22384d957e1536bdb3db2c53094499813e9)
+
+- 🟦 **21:11:44 · Refactor** — refactor(arch): GTK-free QueueComponent owns queue add/remove/selection rules; QueueMixin uses it (Refs #691) · [`4f79d8f5eff8`](https://github.com/gmanldn/smoothcast/commit/4f79d8f5eff8fecc3520a65d110e08fb7076a510)
+
+- ⬜ **19:42:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0a2d173d275`](https://github.com/gmanldn/smoothcast/commit/f0a2d173d275fd962d4ceba6e856758596dd5d6d)
+
+- 🟥 **19:42:25 · Fix** — fix: publish external cast length labels (Refs #704) · [`15595858c540`](https://github.com/gmanldn/smoothcast/commit/15595858c540de0469be9b7310d060f8a46cecd9)
+
+- ⬜ **19:42:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c1572cd83883`](https://github.com/gmanldn/smoothcast/commit/c1572cd8388396cca84d1fca3a36160b2a331cea)
+
+- ⬜ **19:40:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`13557b1a572e`](https://github.com/gmanldn/smoothcast/commit/13557b1a572eea6c3a78f9b21b37eacca8b74811)
+
+- 🟪 **19:40:06 · Tests** — test: cover concurrent guest queue contributions (Refs #325) · [`1dffa2c7e84d`](https://github.com/gmanldn/smoothcast/commit/1dffa2c7e84d3a8955c860f36b24eb26475a6db5)
+
+- ⬜ **19:40:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1dddab208c84`](https://github.com/gmanldn/smoothcast/commit/1dddab208c841a02ef2068eaeccd28278f9df0ba)
+
+- ⬜ **19:39:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4e4fe6709c43`](https://github.com/gmanldn/smoothcast/commit/4e4fe6709c433880434803d47eead660feef2ffa)
+
+- 🟥 **19:39:42 · Fix** — fix(update): report saved playback handoff deferral clearly (Refs #626) · [`afc2b4dd3a58`](https://github.com/gmanldn/smoothcast/commit/afc2b4dd3a5810372fa7a8b34b5da1169159f68c)
+
+- ⬜ **19:39:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7e9004f414d0`](https://github.com/gmanldn/smoothcast/commit/7e9004f414d0aed74757562f37b6f9f6e4d68eba)
+
+- ⬜ **19:36:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`29a911f88aae`](https://github.com/gmanldn/smoothcast/commit/29a911f88aaea4d705320cddc209ef6d53316566)
+
+- ⬜ **19:36:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08fbeb200f0f`](https://github.com/gmanldn/smoothcast/commit/08fbeb200f0f18190bbf73381823923e81ffdb55)
+
+- 🟩 **19:36:06 · Feature** — feat: clarify web room home and settings (Refs #709) · [`554bf68dfc57`](https://github.com/gmanldn/smoothcast/commit/554bf68dfc57d48457e0de55f1bdb1f5c3409ba7)
+
+- ⬜ **19:35:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b11c02fdd4a9`](https://github.com/gmanldn/smoothcast/commit/b11c02fdd4a906d67710cb172cbfe74ba2f83574)
+
+- ⬜ **19:35:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5c81d07319a0`](https://github.com/gmanldn/smoothcast/commit/5c81d07319a0671eedb7e302cda03d55b07d106b)
+
+- 🟥 **19:35:03 · Fix** — fix(update): defer bounce when a saved playback session exists (Refs #626) · [`e3c710b938d1`](https://github.com/gmanldn/smoothcast/commit/e3c710b938d1079dfded5421e52895250d643005)
+
+- ⬜ **19:28:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`99f203f663d9`](https://github.com/gmanldn/smoothcast/commit/99f203f663d90b4d3f131653c6238713fc0a30bf)
+
+- 🟩 **19:28:40 · Feature** — feat: share visual tokens between gtk and web (Refs #708) · [`6deffbec7d29`](https://github.com/gmanldn/smoothcast/commit/6deffbec7d2937323a425ea8a3eee9752dd9e1d0)
+
+- ⬜ **19:28:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bff51b906ced`](https://github.com/gmanldn/smoothcast/commit/bff51b906ced2f32c474a3f5cb6b7c709ca76311)
+
+- ⬜ **19:24:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`736fa00815b9`](https://github.com/gmanldn/smoothcast/commit/736fa00815b902783f74b2835aedd3f9b4303179)
+
+- ⬜ **19:24:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ea5be954f74e`](https://github.com/gmanldn/smoothcast/commit/ea5be954f74e0e68531b85a1840fce98d9f2497e)
+
+- 🟥 **19:24:18 · Fix** — fix: resolve portal media through MediaSource (Refs #702) · [`e65202c14210`](https://github.com/gmanldn/smoothcast/commit/e65202c142101b004ce34cd3caca67e5282a4b10)
+
+- ⬜ **19:20:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`06c65e1fcac2`](https://github.com/gmanldn/smoothcast/commit/06c65e1fcac2797ee007888ba1706aaf8c2ee8e9)
+
+- ⬜ **19:20:02 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bf2f07d57000`](https://github.com/gmanldn/smoothcast/commit/bf2f07d5700007981cecc2d720c88c3a2cbad436)
+
+- 🟩 **19:20:01 · Feature** — feat: add host-authorized room rename to web dashboard (Refs #709) · [`017c1fd321ab`](https://github.com/gmanldn/smoothcast/commit/017c1fd321ab5b405036b62058668ee8b524fadd)
+
+- ⬜ **19:17:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`028b23cc1604`](https://github.com/gmanldn/smoothcast/commit/028b23cc16045b0e0db5e26cf043cc15e84f342f)
+
+- 🟩 **19:17:41 · Feature** — feat: persist headless CLI latency (Refs #698) · [`f90451d2c34c`](https://github.com/gmanldn/smoothcast/commit/f90451d2c34cd3064a4574eb510a6fc4bb8937f3)
+
+- ⬜ **19:17:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`39723f41b4d1`](https://github.com/gmanldn/smoothcast/commit/39723f41b4d1ec901024e9911696df6bc5070805)
+
+- ⬜ **19:15:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e759cdf4f1c5`](https://github.com/gmanldn/smoothcast/commit/e759cdf4f1c5101e66fb4ec3b297139a2f3be790)
+
+- ⬜ **19:15:05 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`00d33f189408`](https://github.com/gmanldn/smoothcast/commit/00d33f189408eb0b4e2583ae9a8a19e381e1a0d7)
+
+- 🟪 **19:14:59 · Tests** — test: cover upload symlink escape rejection (Refs #325) · [`fab3f44a31a6`](https://github.com/gmanldn/smoothcast/commit/fab3f44a31a63decde9177ff90e2a9b90e37284b)
+
+- ⬜ **19:11:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e91814dc3ae8`](https://github.com/gmanldn/smoothcast/commit/e91814dc3ae84225165da47904305a8623f1ce24)
+
+- ⬜ **19:11:06 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`40e9108ff19d`](https://github.com/gmanldn/smoothcast/commit/40e9108ff19d98ac04026fc25e52be01351cd696)
+
+- 🟥 **19:10:47 · Fix** — fix: contain guest uploads within the upload root (Refs #325) · [`fa85e55d8986`](https://github.com/gmanldn/smoothcast/commit/fa85e55d89861a77aafaa7c1dc9009cb313b2978)
+
+- ⬜ **19:06:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`29e8a55217fa`](https://github.com/gmanldn/smoothcast/commit/29e8a55217fa177caf0ea69cc387282b708ab928)
+
+- 🟥 **19:06:15 · Fix** — fix: honor deferred bootstrap interrupt before success (Refs #580) · [`6aa2138844b0`](https://github.com/gmanldn/smoothcast/commit/6aa2138844b0b32b5558dd6236a0c1d4b8c8f206)
+
+- ⬜ **19:06:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`4886a238aba1`](https://github.com/gmanldn/smoothcast/commit/4886a238aba1dac3326ebacfce59d983be10b0a4)
+
+- ⬜ **19:03:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`15e385f85a87`](https://github.com/gmanldn/smoothcast/commit/15e385f85a87cea4177b7e77023ac608c450033c)
+
+- ⬜ **19:03:57 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d8c8b51eb17a`](https://github.com/gmanldn/smoothcast/commit/d8c8b51eb17a243b268ec39eed5f7fea91245bfe)
+
+- 🟪 **19:03:57 · CI** — ci: publish nightly develop health verdict (Refs #700) · [`07e2a292bb7c`](https://github.com/gmanldn/smoothcast/commit/07e2a292bb7ce847eba0b48fcf1b519b879d863a)
+
+- ⬜ **18:59:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`17679752624c`](https://github.com/gmanldn/smoothcast/commit/17679752624cfd36d8cbce07f08630afee5dd70e)
+
+- ⬜ **18:59:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`6dc79432597a`](https://github.com/gmanldn/smoothcast/commit/6dc79432597ad05b22be7c44aead1dbcefbe3e0d)
+
+- 🟥 **18:58:58 · Fix** — fix: roll back upload offsets after checkpoint failure (Refs #568) · [`dd08800bb76a`](https://github.com/gmanldn/smoothcast/commit/dd08800bb76ade8fb9264d7f3004291b8617438e)
+
+- ⬜ **18:56:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`23164a23cdbc`](https://github.com/gmanldn/smoothcast/commit/23164a23cdbc71e5f984f4eb212c7259b31d37cb)
+
+- 🟥 **18:56:41 · Fix** — fix: defer bootstrap interrupts until rollback-safe points (Refs #580) · [`3ed049c33e0b`](https://github.com/gmanldn/smoothcast/commit/3ed049c33e0b8eb118f19ec7fd82d9d6ecef94f3)
+
+- ⬜ **18:56:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`009ae0a95ddb`](https://github.com/gmanldn/smoothcast/commit/009ae0a95ddb07bf05c0bec542cb01b324d70920)
+
+- ⬜ **18:53:48 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2e1080c9e393`](https://github.com/gmanldn/smoothcast/commit/2e1080c9e393daaf8faa3effc4c11f98f3cc4d65)
+
+- ⬜ **18:53:47 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`399b729ae092`](https://github.com/gmanldn/smoothcast/commit/399b729ae092cc59d8bd12b7a30baddfc212a717)
+
+- 🟩 **18:53:47 · Feature** — feat: show complete mesh node details in web panel (Refs #710) · [`8ca8d693c851`](https://github.com/gmanldn/smoothcast/commit/8ca8d693c851b28e0dcc5e75dd47eb941b01b2f8)
+
+- ⬜ **18:52:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f3220e3822ac`](https://github.com/gmanldn/smoothcast/commit/f3220e3822ac46351e73dac6922eb6778a1f3a34)
+
+- 🟪 **18:52:23 · Tests** — test: assert shared queue order in browser sync (Refs #324) · [`0664c5244c8e`](https://github.com/gmanldn/smoothcast/commit/0664c5244c8e90c3119d3c67933aba422a65d2b7)
+
+- ⬜ **18:52:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`faac3947d537`](https://github.com/gmanldn/smoothcast/commit/faac3947d537e3fe2050a4bcf2fcb83317fe869b)
+
+- ⬜ **18:48:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3132d2016be0`](https://github.com/gmanldn/smoothcast/commit/3132d2016be0cbbeeb3e7b61ca66995277981f8c)
+
+- 🟩 **18:48:01 · Feature** — feat: include platform in mesh node profiles (Refs #710) · [`5d06db71f813`](https://github.com/gmanldn/smoothcast/commit/5d06db71f8135eb402551b9cd3a4759d81e86249)
+
+- 🟩 **18:48:01 · Feature** — feat: include platform in mesh node profiles (Refs #710) · [`ea9a0ceb0293`](https://github.com/gmanldn/smoothcast/commit/ea9a0ceb0293ee6ad1df0878ae5b87ee5e7a89aa)
+
+- ⬜ **18:48:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`207c576a1fdd`](https://github.com/gmanldn/smoothcast/commit/207c576a1fdd9d59c48add3f8c7d5852598cad65)
+
+- ⬜ **18:47:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4fa6f60f40bb`](https://github.com/gmanldn/smoothcast/commit/4fa6f60f40bbea766d739137c14f5188746e0b39)
+
+- 🟪 **18:47:43 · Tests** — test: align browser upload assertion with waiting playback state (Refs #570) · [`61e04e388cde`](https://github.com/gmanldn/smoothcast/commit/61e04e388cde2f5430c8cc70c5a9b7d00441c090)
+
+- ⬜ **18:47:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`714edc6d17ee`](https://github.com/gmanldn/smoothcast/commit/714edc6d17ee774e7b96f24b41a17ce51f5a7a87)
+
+- ⬜ **18:47:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`872a150c673e`](https://github.com/gmanldn/smoothcast/commit/872a150c673e78ed5b8a99f537e3c360eb2668ac)
+
+- ⬜ **18:47:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2a6f2ea268e2`](https://github.com/gmanldn/smoothcast/commit/2a6f2ea268e27174bdcc53875dff9650bb3a71fe)
+
+- 🟦 **18:43:13 · Refactor** — refactor: use typed settings in cast restart paths (Refs #693) · [`eb959cac72a1`](https://github.com/gmanldn/smoothcast/commit/eb959cac72a1fd19b00c7386d4db4a9001a29e73)
+
+- 🟦 **18:42:48 · Refactor** — refactor: use typed settings in cast restart paths (Refs #693) · [`92cc27cf8abb`](https://github.com/gmanldn/smoothcast/commit/92cc27cf8abb87b4291b487421a5613ddda3ff44)
+
+- ⬜ **18:42:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`201031415e47`](https://github.com/gmanldn/smoothcast/commit/201031415e4773a5f4e7bdfc49f3551438b53888)
+
+- ⬜ **18:42:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b033372cde54`](https://github.com/gmanldn/smoothcast/commit/b033372cde5472a14a291e8452d280a956132e72)
+
+- 🟪 **18:42:00 · CI** — ci: archive scheduled mesh transfer benchmark reports (Refs #573) · [`665c6ad8b06b`](https://github.com/gmanldn/smoothcast/commit/665c6ad8b06b4c0f38fa9ac47045e39d54497147)
+
+- ⬜ **18:40:38 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4c20fe536570`](https://github.com/gmanldn/smoothcast/commit/4c20fe5365705eb648823dbaf28dfa8910962f53)
+
+- ⬜ **18:40:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bb0aee60f37a`](https://github.com/gmanldn/smoothcast/commit/bb0aee60f37a5971c2c00a964ee2ed15da063d8d)
+
+- 🟪 **18:40:33 · Tests** — test: inject transfer disconnect and verify retry recovery (Refs #573) · [`7cfc6261d0f1`](https://github.com/gmanldn/smoothcast/commit/7cfc6261d0f13e361ba24236c2f3f43644dfa293)
+
+- ⬜ **18:38:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`cab53e513dcb`](https://github.com/gmanldn/smoothcast/commit/cab53e513dcb0304ff14a35d387b0ba65d2a2780)
+
+- ⬜ **18:38:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e6b98c99a21b`](https://github.com/gmanldn/smoothcast/commit/e6b98c99a21b4b11542aa6bcb426a9dbc0241faf)
+
+- 🟩 **18:38:47 · Feature** — feat: add shaped transfer benchmarks and baseline comparison (Refs #573) · [`e4ff2c93fdd4`](https://github.com/gmanldn/smoothcast/commit/e4ff2c93fdd4ff3158ff7c1a0bee553765206704)
+
+- ⬜ **18:37:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1323f00931c2`](https://github.com/gmanldn/smoothcast/commit/1323f00931c2ce197e916939646511cdbc547955)
+
+- ⬜ **18:37:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d33cb3359ccd`](https://github.com/gmanldn/smoothcast/commit/d33cb3359ccd4f09524fd9c45e8c9fd8ffacdf7b)
+
+- 🟩 **18:37:16 · Feature** — feat: add deterministic mesh transfer benchmark scenarios (Refs #573) · [`2f4577df3fb5`](https://github.com/gmanldn/smoothcast/commit/2f4577df3fb539b4a968c42a6a8863458abadd4b)
+
+- ⬜ **18:33:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1b1bb66257a3`](https://github.com/gmanldn/smoothcast/commit/1b1bb66257a3203fa02e30dfaa1026987428becf)
+
+- ⬜ **18:33:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d183b42e58a7`](https://github.com/gmanldn/smoothcast/commit/d183b42e58a70352e041e0c3c2e841cc9a750eb0)
+
+- 🟪 **18:33:25 · Tests** — test: remove converted shortcut tests from text baseline (Refs #695) · [`2c5e9fa79ed4`](https://github.com/gmanldn/smoothcast/commit/2c5e9fa79ed429179efe2e50d6ee25e337a2fafa)
+
+- ⬜ **18:31:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2277764c04e1`](https://github.com/gmanldn/smoothcast/commit/2277764c04e11bd29007524f7e70e8961465885c)
+
+- ⬜ **18:31:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`38b5b75b76fe`](https://github.com/gmanldn/smoothcast/commit/38b5b75b76fed8fe3879b8952d0bae887de34a0d)
+
+- 🟥 **18:31:15 · Fix** — fix: show exact running build identity in updates (Refs #582) · [`35a9c1ad2a2a`](https://github.com/gmanldn/smoothcast/commit/35a9c1ad2a2af0c1b10c5d004325d3c5f05c5a37)
+
+- ⬜ **18:31:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`710b64549cc8`](https://github.com/gmanldn/smoothcast/commit/710b64549cc8342c4bd2b4eb8b806f172ea097ae)
+
+- ⬜ **18:31:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`69e6782698c8`](https://github.com/gmanldn/smoothcast/commit/69e6782698c8ffad4a65eaeda3f494e8110068c0)
+
+- 🟥 **18:30:53 · Fix** — fix(errors): preserve cast startup failure during cleanup (Refs #694) · [`75a03407e462`](https://github.com/gmanldn/smoothcast/commit/75a03407e462d5e5c797dfcc043dfc406188065b)
+
+- ⬜ **18:26:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d247e56053f7`](https://github.com/gmanldn/smoothcast/commit/d247e56053f7e75c0b87affc01f3e40fec99f9bd)
+
+- ⬜ **18:26:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`87d06f7cf6b1`](https://github.com/gmanldn/smoothcast/commit/87d06f7cf6b14f52abcc616f99ef149931f137d7)
+
+- 🟨 **18:25:57 · Documentation** — docs(security): link portal threat model from handbook (Refs #702) · [`abd18926cd5d`](https://github.com/gmanldn/smoothcast/commit/abd18926cd5d60089a0cdc45976fcb7c4508a127)
+
+- ⬜ **18:22:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9eb28b06e0b5`](https://github.com/gmanldn/smoothcast/commit/9eb28b06e0b5c54ba73150ee88904cb0f288a993)
+
+- ⬜ **18:22:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`fa0b90e6105e`](https://github.com/gmanldn/smoothcast/commit/fa0b90e6105e6fb9eac2ed977f7bef91a13d8962)
+
+- 🟪 **18:22:13 · Tests** — test: exercise installed shortcuts behaviorally (Refs #699) · [`9bf3fcc4dbd4`](https://github.com/gmanldn/smoothcast/commit/9bf3fcc4dbd47f44022c608671f12a072f9ab60d)
+
+- ⬜ **18:14:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a31538a4a49`](https://github.com/gmanldn/smoothcast/commit/3a31538a4a494b10a318c29bec09a14b12ce8a88)
+
+- 🟥 **18:14:40 · Fix** — fix: check official develop when restarting installed SmoothCast (Refs #579) · [`4e88d9063820`](https://github.com/gmanldn/smoothcast/commit/4e88d90638201b0000e08f446a3cf7f1764a9d3c)
+
+- ⬜ **18:14:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7f93af38790a`](https://github.com/gmanldn/smoothcast/commit/7f93af38790a7b59c4adefe2578c8044d3a73316)
+
+- ⬜ **18:13:18 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3d21204b8e28`](https://github.com/gmanldn/smoothcast/commit/3d21204b8e28bac06f24af287c4d9d5b1bdf7413)
+
+- ⬜ **18:13:18 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e0621343c48c`](https://github.com/gmanldn/smoothcast/commit/e0621343c48ceaa489ab29aee6140939c03895ba)
+
+- 🟥 **18:13:14 · Fix** — fix: keep Network profiles usable when uptime is unavailable (Refs #710) · [`0da01f9349ae`](https://github.com/gmanldn/smoothcast/commit/0da01f9349aeb30c9513348c645323272012d88d)
+
+- ⬜ **18:10:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fea1b3442501`](https://github.com/gmanldn/smoothcast/commit/fea1b3442501d277cd7a02a339b6e6212a3dcccb)
+
+- ⬜ **18:10:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a74b6f88725c`](https://github.com/gmanldn/smoothcast/commit/a74b6f88725c3b20de94873bdea00c6966376f45)
+
+- ⬜ **18:10:50 · Maintenance** — style: polish the web Home player and quick actions (Refs #709) · [`064ecfe85539`](https://github.com/gmanldn/smoothcast/commit/064ecfe8553991ab7c82b5557f230363941b6660)
+
+- ⬜ **18:06:41 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`13fc306185b3`](https://github.com/gmanldn/smoothcast/commit/13fc306185b3c2b2268ff7525ca59e0faf0f4354)
+
+- 🟪 **18:06:41 · Tests** — test: recover browser upload checkpoint coverage (Refs #568) · [`31723d987d76`](https://github.com/gmanldn/smoothcast/commit/31723d987d76cba7dd7f4231896b9bee7db9c5de)
+
+- ⬜ **18:06:41 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e0670a3c9e36`](https://github.com/gmanldn/smoothcast/commit/e0670a3c9e366a784c2eaf7566c912b6def2cf7e)
+
+- ⬜ **18:05:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8899446c7667`](https://github.com/gmanldn/smoothcast/commit/8899446c76672a869ef5be32088472755a1b1ef8)
+
+- 🟪 **18:05:14 · Tests** — test(agents): align hygiene gate with current develop-only policy (Refs #700) · [`20199530b869`](https://github.com/gmanldn/smoothcast/commit/20199530b869f3013fff0af9dc1dea94742c7f40)
+
+- ⬜ **18:05:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`bcec07b92944`](https://github.com/gmanldn/smoothcast/commit/bcec07b929441b5969e304801b8197f01da8c227)
+
+- ⬜ **18:03:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a18ebbff3625`](https://github.com/gmanldn/smoothcast/commit/a18ebbff36259773a4db58c59da21b10fa896a1c)
+
+- ⬜ **18:03:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a1eb001dc594`](https://github.com/gmanldn/smoothcast/commit/a1eb001dc594ed6a77fbee8d0cd9c307aa70c0ab)
+
+- 🟨 **18:03:42 · Documentation** — docs: measure upload checkpoints and clarify restart recovery (Refs #568) · [`ff46ce5ba397`](https://github.com/gmanldn/smoothcast/commit/ff46ce5ba397dca361266f65d3bf3e12ccf66250)
+
+- ⬜ **18:03:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5e89c097913c`](https://github.com/gmanldn/smoothcast/commit/5e89c097913cff34f319b5acf6218f9eec92e83f)
+
+- ⬜ **18:03:07 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`e107c71a3caf`](https://github.com/gmanldn/smoothcast/commit/e107c71a3cafb3ece00d9f98ec52074fab3cf89d)
+
+- 🟥 **18:03:06 · Fix** — fix(ci): restore agent control-plane checks (Refs #700) · [`a648b36632cc`](https://github.com/gmanldn/smoothcast/commit/a648b36632cc88eacaa057c5dab4c9f88e9581f8)
+
+- ⬜ **18:02:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a6a60f0781cb`](https://github.com/gmanldn/smoothcast/commit/a6a60f0781cbd4db8502e2aa82bdefb1b58f4918)
+
+- 🟥 **18:02:13 · Fix** — fix: close SmoothCast cleanly on terminal Ctrl+C (Refs #717) · [`dd256b09bc66`](https://github.com/gmanldn/smoothcast/commit/dd256b09bc663c865e27431d3b27067b0c66372c)
+
+- ⬜ **18:02:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`89afbdbd774d`](https://github.com/gmanldn/smoothcast/commit/89afbdbd774d68a61de54bc11cba5519ddca5339)
+
+- ⬜ **18:01:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08f1567163d0`](https://github.com/gmanldn/smoothcast/commit/08f1567163d04a1ffd7c7b7149208901cf8fae79)
+
+- ⬜ **18:01:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`3175bba88354`](https://github.com/gmanldn/smoothcast/commit/3175bba883540d3eedf7690f68795e14767fbfed)
+
+- 🟪 **18:01:34 · Tests** — test: restore sparse preview coverage after typed video settings (Refs #40) · [`064cf508c856`](https://github.com/gmanldn/smoothcast/commit/064cf508c856f10ab5ec054fec6a7464d9c69482)
+
+- ⬜ **17:59:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2c848fe00e9b`](https://github.com/gmanldn/smoothcast/commit/2c848fe00e9bd7670db176bc46a5c75db6354543)
+
+- ⬜ **17:59:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`98afff3d68c8`](https://github.com/gmanldn/smoothcast/commit/98afff3d68c813fd7f2765dde45440c025d6f071)
+
+- 🟪 **17:59:16 · Tests** — test: measure portal quit with overlapping mDNS goodbyes (Refs #705) · [`9dcdf679427a`](https://github.com/gmanldn/smoothcast/commit/9dcdf679427a49dc616583fd39c56b94abcff529)
+
+- ⬜ **17:55:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55762ff9e79d`](https://github.com/gmanldn/smoothcast/commit/55762ff9e79d0045330ecfb0120d71a18982b533)
+
+- ⬜ **17:55:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`800b12e32422`](https://github.com/gmanldn/smoothcast/commit/800b12e324227bee908194743c8643bd7d79d9ca)
+
+- 🟪 **17:55:38 · Tests** — test(agents): verify scope narrowing and changelog shipment recovery (Refs #715) · [`f44aafb27e8a`](https://github.com/gmanldn/smoothcast/commit/f44aafb27e8a1403505592ff37952c3eccb183b5)
+
+- ⬜ **17:47:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`81ef38363e98`](https://github.com/gmanldn/smoothcast/commit/81ef38363e98d7411f65c7d3348bfb6a0cb34e57)
+
+- ⬜ **17:47:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2b9b67563a1d`](https://github.com/gmanldn/smoothcast/commit/2b9b67563a1d559975a9b371ffb28496ffa008d2)
+
+- 🟥 **17:47:05 · Fix** — fix(stream): the live cast encoder runs at normal priority so a busy host no longer starves it below real time (0.52x observed at nice 10); background conversions stay low (Refs #686) (Refs #247) · [`00c82e3c414e`](https://github.com/gmanldn/smoothcast/commit/00c82e3c414e90d378ba1db970419d29cc8f1b84)
+
+- 🟩 **17:45:09 · Feature** — feat(arch): supervisor.bounded() for deadline-limited closes, reused by Supervisor.stop (Refs #692) · [`9ca270116fc8`](https://github.com/gmanldn/smoothcast/commit/9ca270116fc83ce275ed35d8d38615dd8f72799f)
+
+- 🟦 **17:43:48 · Refactor** — refactor(settings): typed VideoSettings group for quality, rotation, aspect and cover art; cast\_av reads it (Refs #693) · [`3c01805dae92`](https://github.com/gmanldn/smoothcast/commit/3c01805dae926970d94df3d7fb0565555f7c7684)
+
+- 🟩 **17:42:16 · Feature** — feat(network): node profiles show uptime from the announced boot epoch, in the headline, GTK popover and web panel (Refs #710) · [`04965f6e2ae0`](https://github.com/gmanldn/smoothcast/commit/04965f6e2ae0277de0151a958b29c24df3c985d0)
+
+- ⬜ **17:41:24 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4c9361b1e77f`](https://github.com/gmanldn/smoothcast/commit/4c9361b1e77f19e53d8b68a66962cc3e0aa8b557)
+
+- ⬜ **17:41:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0651d1fb673d`](https://github.com/gmanldn/smoothcast/commit/0651d1fb673dc57831dd85562c879673f5e628c9)
+
+- 🟦 **17:41:20 · Refactor** — refactor(errors): justify castctl boundary catches (Refs #694) · [`221c8aef1d00`](https://github.com/gmanldn/smoothcast/commit/221c8aef1d0058f3a141f8e01e52487d4f102881)
+
+- ⬜ **17:39:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dfae87c9bc00`](https://github.com/gmanldn/smoothcast/commit/dfae87c9bc0057079a975426b483683c703f4551)
+
+- 🟦 **17:39:23 · Refactor** — refactor(errors): justify cli\_control boundary catch (Refs #694) · [`524dc74b2f87`](https://github.com/gmanldn/smoothcast/commit/524dc74b2f8779e1332270d79e9bbf004e355582)
+
+- ⬜ **17:39:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8423dc30e54a`](https://github.com/gmanldn/smoothcast/commit/8423dc30e54a66b91cdab09c06d91c8ebb62a9b2)
+
+- 🟪 **17:38:58 · Tests** — test(update): settings test checks UpdateSettings behaviour instead of source text that moved; baseline shrinks (Refs #711) · [`27d8766e9cb1`](https://github.com/gmanldn/smoothcast/commit/27d8766e9cb1e497feea39d1f340ddfb2623ca9f)
+
+- ⬜ **17:37:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`849548861772`](https://github.com/gmanldn/smoothcast/commit/8495488617729b1a8ac2e35d67ba5bc06487844a)
+
+- 🟦 **17:37:29 · Refactor** — refactor(errors): justify boundary catches across eighteen more modules (Refs #694) · [`4a8a9c32de39`](https://github.com/gmanldn/smoothcast/commit/4a8a9c32de39b6daf2fde65617fbc4a66593ac89)
+
+- ⬜ **17:37:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`def14edfa392`](https://github.com/gmanldn/smoothcast/commit/def14edfa3924ff2496e1944ba091490753c7296)
+
+- 🟪 **17:35:54 · Tests** — test(gui): frame-step test drives the real mixin methods and installed shortcuts via a new gui\_shortcuts helper; baseline shrinks (Refs #699) · [`ba8b6d36a67d`](https://github.com/gmanldn/smoothcast/commit/ba8b6d36a67debdc88f57f56ab0c438f4deda463)
+
+- ⬜ **17:34:28 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`2edf2a4667ef`](https://github.com/gmanldn/smoothcast/commit/2edf2a4667efcfd9939e994a6c1608cef6b540b5)
+
+- ⬜ **17:34:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4b96ee7e3208`](https://github.com/gmanldn/smoothcast/commit/4b96ee7e320808b709477ea9681c556150a57336)
+
+- 🟦 **17:34:27 · Refactor** — refactor(errors): justify boundary catches across fifteen more modules (Refs #694) · [`ef6cbef75ad1`](https://github.com/gmanldn/smoothcast/commit/ef6cbef75ad1ab8f760a746c8b5fa4fe964354ee)
+
+- 🟪 **17:34:03 · Tests** — test(cast): warmup test calls the window timer start with fakes instead of reading source text; unblocks the source-text ratchet (Refs #699) · [`e9084c5e65d8`](https://github.com/gmanldn/smoothcast/commit/e9084c5e65d855ac10bde7948bb708f299463daa)
+
+- 🟩 **17:31:59 · Feature** — feat(room): RoomService JSON facade over queue and playback with payload validation and one lock, shared by portal, GTK and mesh adapters (Refs #695) · [`c26872fa944c`](https://github.com/gmanldn/smoothcast/commit/c26872fa944c7531758e414f0d39d3a8a02baea3)
+
+- 🟦 **17:30:02 · Refactor** — refactor(arch): drop duplicate power\_backends module; power\_port is the single sleep-inhibit port (Refs #703) · [`ba7f0ed6eef8`](https://github.com/gmanldn/smoothcast/commit/ba7f0ed6eef898d484308789d8a385323024e329)
+
+- ⬜ **17:29:56 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f202a8c07bc5`](https://github.com/gmanldn/smoothcast/commit/f202a8c07bc585d75efc0b88f7b69dc6e21c257e)
+
+- ⬜ **17:29:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e9a7f8b73d18`](https://github.com/gmanldn/smoothcast/commit/e9a7f8b73d181d77101aef17449e68bb3fd4c258)
+
+- 🟦 **17:29:55 · Refactor** — refactor(errors): justify boundary catches across eleven more modules (Refs #694) · [`ef476a643720`](https://github.com/gmanldn/smoothcast/commit/ef476a643720e6f9e2e75c3154eb065fe560e078)
+
+- 🟥 **17:29:17 · Fix** — fix(agents): run ship checks at nice 19/ionice idle so pytest -n auto never starves a live cast's encoder on the owner's desktop (Refs #686) · [`84b813c02047`](https://github.com/gmanldn/smoothcast/commit/84b813c02047a3a88416b8136ab475744eb4cb68)
+
+- 🟩 **17:28:15 · Feature** — feat(diagnostics): shared latency Stats with atomic save/load; the CLI diagnostics command bundles saved latency (Refs #698) · [`f63150530922`](https://github.com/gmanldn/smoothcast/commit/f6315053092277f399939e137a0647fcf84a69ec)
+
+- ⬜ **17:27:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`97a4169032d7`](https://github.com/gmanldn/smoothcast/commit/97a4169032d751c30af0d0fa5e1edbfe595ba628)
+
+- ⬜ **17:27:03 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2e1e1d1ae6fd`](https://github.com/gmanldn/smoothcast/commit/2e1e1d1ae6fdc96b56a88b6cdf0785d42eacf66b)
+
+- 🟦 **17:27:03 · Refactor** — refactor(errors): justify 21 boundary catches across nine modules (Refs #694) · [`d95f0b281989`](https://github.com/gmanldn/smoothcast/commit/d95f0b281989862282543002601107b01d28dc4a)
+
+- 🟩 **17:25:46 · Feature** — feat(diagnostics): bundle carries latency percentiles and buckets when a Stats is supplied (Refs #698) · [`dd0c4cefd543`](https://github.com/gmanldn/smoothcast/commit/dd0c4cefd54382c808f4e20cc5241663c9d4c4fb)
+
+- 🟦 **17:24:14 · Refactor** — refactor(runtime): sc\_core loop runs under spawn\_daemon keeping its thread name; allowance removed (Refs #696) · [`4dea2bedca9d`](https://github.com/gmanldn/smoothcast/commit/4dea2bedca9d0c8e4b1d8846b70fa4518e42236e)
+
+- ⬜ **17:23:30 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7670fadf573b`](https://github.com/gmanldn/smoothcast/commit/7670fadf573b406a4975ac08265cec9ce2be811d)
+
+- ⬜ **17:23:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8dfe02001d53`](https://github.com/gmanldn/smoothcast/commit/8dfe02001d536ad2f479b8967e4da8c210e5579a)
+
+- 🟦 **17:23:28 · Refactor** — refactor(errors): justify 13 boundary catches in portal\_screens\_http, config\_control, mesh\_ui (Refs #694) · [`e3544c342b58`](https://github.com/gmanldn/smoothcast/commit/e3544c342b5842e4dc3da5c19d1846b2965b4724)
+
+- 🟦 **17:22:02 · Refactor** — refactor(runtime): library indexer runs under spawn\_daemon, observes scope cancel within 1s; allowance removed (Refs #696) · [`4f4cad12d3d7`](https://github.com/gmanldn/smoothcast/commit/4f4cad12d3d703b280134b1c995d4b0beaf22f86)
+
+- ⬜ **17:19:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`573414ba54bb`](https://github.com/gmanldn/smoothcast/commit/573414ba54bbe9bbfda9576bb8b1b6d6d9ad8b95)
+
+- 🟥 **17:19:31 · Fix** — fix(preferences): split shared-room group into preferences\_room\_ui to restore size budget (Refs #706) · [`2e6ceb1f2ee8`](https://github.com/gmanldn/smoothcast/commit/2e6ceb1f2ee8fc23d1b539313be264ebd0668b40)
+
+- ⬜ **17:19:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`97137c817b12`](https://github.com/gmanldn/smoothcast/commit/97137c817b12dcc0dbd0744cb121243228dabae7)
+
+- 🟦 **17:18:41 · Refactor** — refactor(runtime): mesh heartbeat runs under spawn\_daemon keeping its thread name; allowance removed (Refs #696) · [`162792480f21`](https://github.com/gmanldn/smoothcast/commit/162792480f214e6553de940f99459feda2341021)
+
+- 🟦 **17:16:06 · Refactor** — refactor(runtime): mesh loop thread runs under spawn\_daemon keeping its smoothcast-mesh name; spawn\_daemon takes thread\_name; allowance removed (Refs #696) · [`bed11997289d`](https://github.com/gmanldn/smoothcast/commit/bed11997289d10de103203c8fcf11b2a72742442)
+
+- ⬜ **17:15:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b7ddc57afc19`](https://github.com/gmanldn/smoothcast/commit/b7ddc57afc19ec1238a1babd9aae429ad2446341)
+
+- ⬜ **17:15:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c0ce904d6497`](https://github.com/gmanldn/smoothcast/commit/c0ce904d649703eb77d1a3862f0e196fa03b2556)
+
+- 🟦 **17:15:26 · Performance** — perf(cast): warm the FFmpeg version check off-thread at window start so the first cast skips a ~4.6 s stall · [`322bffa0ae7b`](https://github.com/gmanldn/smoothcast/commit/322bffa0ae7b1caf3153708d054944adacea4c83)
+
+- ⬜ **17:14:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`aee6c1cdc19a`](https://github.com/gmanldn/smoothcast/commit/aee6c1cdc19ad8f1bc3cb96b95f62069830fa25a)
+
+- ⬜ **17:14:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c2b391a9adf5`](https://github.com/gmanldn/smoothcast/commit/c2b391a9adf5872788e94b877e42ded6ef897d1f)
+
+- 🟦 **17:14:50 · Refactor** — refactor(errors): justify 16 boundary catches across five small modules (Refs #694) · [`f4ef2a6e2b28`](https://github.com/gmanldn/smoothcast/commit/f4ef2a6e2b289ea6ff1bbb15b1a8ac78e06aef3c)
+
+- ⬜ **17:11:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`15887829be0d`](https://github.com/gmanldn/smoothcast/commit/15887829be0d5d45e02947d137497556e8bd9a99)
+
+- ⬜ **17:11:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`de83a1486d92`](https://github.com/gmanldn/smoothcast/commit/de83a1486d9254ca7dda989748929448f1bfc627)
+
+- 🟦 **17:11:38 · Refactor** — refactor(errors): justify the 12 boundary catches in pychromecast\_backend (Refs #694) · [`0322ab5aaf0e`](https://github.com/gmanldn/smoothcast/commit/0322ab5aaf0ebcdb7370eaf94bd6e574b3ef06c3)
+
+- 🟦 **17:11:13 · Refactor** — refactor(runtime): egress proxy accept loop and per-connection tunnels run under task\_runtime.spawn\_daemon; close cancels the scope; raw-thread allowance removed (Refs #696) · [`6dca7bb93473`](https://github.com/gmanldn/smoothcast/commit/6dca7bb9347315aa4c4277a33748fecea7fa2a9b)
+
+- ⬜ **17:09:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d466985106c2`](https://github.com/gmanldn/smoothcast/commit/d466985106c2f20757847cd759819b7889712287)
+
+- ⬜ **17:09:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7119d92eeffd`](https://github.com/gmanldn/smoothcast/commit/7119d92eeffdb9c3990a834cd5346759cf21daa2)
+
+- 🟦 **17:09:39 · Refactor** — refactor(errors): justify boundary catches in sc\_core and cast\_mesh (Refs #694) · [`bfe21937f4ee`](https://github.com/gmanldn/smoothcast/commit/bfe21937f4ee24287c7ac1414cccb831a7918388)
+
+- 🟦 **17:07:38 · Refactor** — refactor(runtime): replica\_manager loop runs under task\_runtime.spawn\_daemon; Scope.wait wakes on cancel; raw-thread allowance lowered (Refs #696) · [`1070bda004fe`](https://github.com/gmanldn/smoothcast/commit/1070bda004fe69caeea826e8e47408a1f5540a1e)
+
+- ⬜ **17:06:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`45e9c8f0178d`](https://github.com/gmanldn/smoothcast/commit/45e9c8f0178d75b952ecc355b4108076017f21fb)
+
+- ⬜ **17:06:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`04cd4cc9cda8`](https://github.com/gmanldn/smoothcast/commit/04cd4cc9cda82512300e58f182d067e34830e57b)
+
+- 🟦 **17:06:09 · Refactor** — refactor(errors): justify boundary catches in desktop\_failure\_notice and peer\_discovery (Refs #694) · [`aef743601af5`](https://github.com/gmanldn/smoothcast/commit/aef743601af586be02ae29cb8aea137743f75e65)
+
+- 🟩 **17:05:45 · Feature** — feat(runtime): spawn\_daemon owns long-lived loops (named, counted, cancelled and joined at shutdown, errors recorded), unblocking migration of accept loops and heartbeats (Refs #696) · [`bdd45e8d4338`](https://github.com/gmanldn/smoothcast/commit/bdd45e8d4338aef07b92910c86efb731cf6b444a)
+
+- ⬜ **17:03:56 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`99e349a4ee76`](https://github.com/gmanldn/smoothcast/commit/99e349a4ee760f3d2b85bb8bb567ed694c15188b)
+
+- ⬜ **17:03:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a97e6feb27ff`](https://github.com/gmanldn/smoothcast/commit/a97e6feb27ff2f6027cb3884a7d1d99034130a7a)
+
+- 🟦 **17:03:55 · Refactor** — refactor(errors): justify the five zeroconf boundary catches in entry\_name; ratchet drops (Refs #694) · [`4790db4c2860`](https://github.com/gmanldn/smoothcast/commit/4790db4c286085b48e445182e8766db6aa875bb6)
+
+- 🟥 **17:03:01 · Fix** — fix(room): a rejected playback command key stays rejected on retry, same rule as room\_store (Refs #695) · [`3be92d035431`](https://github.com/gmanldn/smoothcast/commit/3be92d035431123c14cc5ffc0c0c3f3fe267e06e)
+
+- ⬜ **17:01:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c6b3227d6b14`](https://github.com/gmanldn/smoothcast/commit/c6b3227d6b14c7512caf33a5a1f5aa5d63d94873)
+
+- ⬜ **17:01:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`df934baf8584`](https://github.com/gmanldn/smoothcast/commit/df934baf8584b6e7fd8fe57d1e18973c36ffa51e)
+
+- 🟨 **17:01:49 · Documentation** — docs(uploads): document received/committed offsets and coalesced checkpoint contract (Refs #568) · [`4b0f53310ff3`](https://github.com/gmanldn/smoothcast/commit/4b0f53310ff3c0da6adc797feccad9845d803ca4)
+
+- 🟥 **17:01:34 · Fix** — fix(room): a rejected command key stays rejected on retry (found by property test); add events\_since and Replica for rejoin (Refs #695) · [`542303d8244e`](https://github.com/gmanldn/smoothcast/commit/542303d8244e711ed8350d205fc5e4f2462ab60a)
+
+- ⬜ **16:58:34 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`33faac9b7327`](https://github.com/gmanldn/smoothcast/commit/33faac9b73270af1359eaf6dc28b04be4f9dacf1)
+
+- ⬜ **16:58:34 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`82409d5e5e34`](https://github.com/gmanldn/smoothcast/commit/82409d5e5e342b5b84dc2492c627cbdbe183c73d)
+
+- 🟥 **16:58:33 · Fix** — fix(portal): repair syntax error in route table from previous patch (Refs #689) · [`0791e010c417`](https://github.com/gmanldn/smoothcast/commit/0791e010c417d76a7103bcb2083317772cd4ade9)
+
+- 🟩 **16:57:55 · Feature** — feat(arch): power-inhibit backends (logind, caffeinate, Windows) and fake behind one contract test, injected OS calls, unwired (Refs #703) · [`ffc427c93124`](https://github.com/gmanldn/smoothcast/commit/ffc427c93124aacda52e3d6350a61b3820e99bfc)
+
+- ⬜ **16:57:29 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`805574cdd94a`](https://github.com/gmanldn/smoothcast/commit/805574cdd94a70d8abe4185ec203be7870a23e37)
+
+- ⬜ **16:57:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`886305779283`](https://github.com/gmanldn/smoothcast/commit/886305779283cbf4f771fbd939957b9e25bfd257)
+
+- 🟩 **16:57:28 · Feature** — feat(doctor): warn when the receiver route runs through a VPN; doctor.py baseline 187-&gt;188 for the one-line hook into doctor\_vpn (Refs #211, #210) (Refs #325) · [`41c5a1f878d1`](https://github.com/gmanldn/smoothcast/commit/41c5a1f878d10988b454c7ebe4cd5545ecc8f405)
+
+- ⬜ **16:55:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d369e2dc030f`](https://github.com/gmanldn/smoothcast/commit/d369e2dc030f7bfb43616ec838e6eb09cc243431)
+
+- ⬜ **16:55:07 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a0a11de7f67e`](https://github.com/gmanldn/smoothcast/commit/a0a11de7f67e12aef5cb05e002a912847de5865a)
+
+- 🟪 **16:54:44 · Tests** — test(portal): route table must match api\_spec auth/csrf; fix /api/session policy (Refs #689) · [`eaba79dd45cd`](https://github.com/gmanldn/smoothcast/commit/eaba79dd45cd97e8cf14a98e5871303bafdd2022)
+
+- 🟩 **16:52:44 · Feature** — feat(ci): pure time-to-red measure with the 15-minute budget (Refs #700) · [`e8084a33647a`](https://github.com/gmanldn/smoothcast/commit/e8084a33647a66ee5b951a876aa188d6d4eefc42)
+
+- ⬜ **16:52:20 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8ae1b7f5931a`](https://github.com/gmanldn/smoothcast/commit/8ae1b7f5931ac86a826d66ac1a2087fae00f29a0)
+
+- ⬜ **16:52:20 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b8a56d56579b`](https://github.com/gmanldn/smoothcast/commit/b8a56d56579b493fcfe92a118cc92a5e6a5a8f89)
+
+- 🟪 **16:52:11 · Tests** — test(arch): ratchet against new two-way imports; one known cycle frozen (Refs #690) · [`ac557b5e4e98`](https://github.com/gmanldn/smoothcast/commit/ac557b5e4e9869a8b244d6e17cfb46254351b62d)
+
+- 🟪 **16:50:41 · CI** — ci(security): portal-security job also runs the parser fuzz, egress policy and capability gate tests (Refs #702) · [`83c9705bda1e`](https://github.com/gmanldn/smoothcast/commit/83c9705bda1e2bcb2d0b4addc697634238992eb8)
+
+- ⬜ **16:49:51 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`78ff032502ba`](https://github.com/gmanldn/smoothcast/commit/78ff032502ba04929b943ebe111c835bb9704c9e)
+
+- ⬜ **16:49:51 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`120a3d50564a`](https://github.com/gmanldn/smoothcast/commit/120a3d50564ac99daddecdd6f12b4df2f70ddefa)
+
+- 🟥 **16:49:42 · Fix** — fix(audio): local preview meter uses the shared 6 dB default gain (Refs #693) · [`2c84cc0a4bd7`](https://github.com/gmanldn/smoothcast/commit/2c84cc0a4bd7183b839f12dabc3fe58dfd090faa)
+
+- ⬜ **16:48:12 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3431044e53c1`](https://github.com/gmanldn/smoothcast/commit/3431044e53c1b58a08e6805e8f8340f9649b74a1)
+
+- ⬜ **16:48:12 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`da6d9d4454b7`](https://github.com/gmanldn/smoothcast/commit/da6d9d4454b75f08e729f91605e3883209b09883)
+
+- 🟪 **16:48:04 · Tests** — test(state): behavioural state-label tests replace source reads; baseline shrinks (Refs #699) · [`d2ed3d37595e`](https://github.com/gmanldn/smoothcast/commit/d2ed3d37595e17b24915b0f4867a73a667683178)
+
+- ⬜ **16:47:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`02216e998ab2`](https://github.com/gmanldn/smoothcast/commit/02216e998ab290ac45a29ed6898934b2562a6879)
+
+- ⬜ **16:47:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`abdc1689985d`](https://github.com/gmanldn/smoothcast/commit/abdc1689985d1dcbf57e11959ea3d0ee000bcbd3)
+
+- 🟩 **16:47:02 · Feature** — feat(network): route diagnostic reports a plain VPN warning from address\_policy (Refs #210) (Refs #325) · [`06856f793b24`](https://github.com/gmanldn/smoothcast/commit/06856f793b24a1e6cbeb999e3510bf6afc9380fc)
+
+- ⬜ **16:46:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a6bbd0f719e2`](https://github.com/gmanldn/smoothcast/commit/a6bbd0f719e28aa7ac6a774f0b4a592c4db0a3cc)
+
+- ⬜ **16:46:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`7558cb664bd4`](https://github.com/gmanldn/smoothcast/commit/7558cb664bd474a28130728eecb9fb6409e6d5ce)
+
+- 🟩 **16:46:16 · Feature** — feat(portal): declarative route table with policy in data (Refs #689) · [`0765c06e43a7`](https://github.com/gmanldn/smoothcast/commit/0765c06e43a791d7aaa23d27584c67c98b9663f5)
+
+- 🟨 **16:45:51 · Documentation** — docs(perf): record first isolated-Xvfb interaction run; every scenario breaches its SLO, no baseline committed (Refs #627) · [`b0bf6d886610`](https://github.com/gmanldn/smoothcast/commit/b0bf6d886610258e01ded41733cb2098c044abf3)
+
+- ⬜ **16:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d16fd0b3467a`](https://github.com/gmanldn/smoothcast/commit/d16fd0b3467a21d1edbd68002368755922937ce3)
+
+- ⬜ **16:43:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d3374183c9d7`](https://github.com/gmanldn/smoothcast/commit/d3374183c9d7b846966916ba218b204be31080bf)
+
+- 🟩 **16:43:36 · Feature** — feat(sandbox): Sandbox port with bubblewrap and sandbox-exec backends, visible degradation (Refs #703) · [`ffc34fe99fa8`](https://github.com/gmanldn/smoothcast/commit/ffc34fe99fa81310717cb4bcd921efaea77faf57)
+
+- ⬜ **16:41:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e56bbef2aaed`](https://github.com/gmanldn/smoothcast/commit/e56bbef2aaedb95ba8d4ed17a7a191404531ec1b)
+
+- ⬜ **16:41:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`96d37cd3f91d`](https://github.com/gmanldn/smoothcast/commit/96d37cd3f91d9ce10ec460ff72d85d28312cba70)
+
+- 🟩 **16:41:44 · Feature** — feat(power): PowerManager port with systemd, caffeinate and Windows backends plus fake (Refs #703) · [`04ff9993d480`](https://github.com/gmanldn/smoothcast/commit/04ff9993d480e02b414c7d6ad204178f32405870)
+
+- ⬜ **16:41:05 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f9ac6c5e7676`](https://github.com/gmanldn/smoothcast/commit/f9ac6c5e7676b5c3a86d0e5161e8c62bd4b952a1)
+
+- 🟥 **16:40:03 · Fix** — fix(gui): external streams with no reported length show a moving playhead marker, elapsed time and 'Live'/'length not reported' on native and web (Refs #635) · [`b27c748f80fa`](https://github.com/gmanldn/smoothcast/commit/b27c748f80fa1795ec71b49118c72b54e546873a)
+
+- ⬜ **16:39:32 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0751572a68d6`](https://github.com/gmanldn/smoothcast/commit/0751572a68d62f6397b87169b9f6e9dc8d617d5b)
+
+- ⬜ **16:39:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9e30dfe83aef`](https://github.com/gmanldn/smoothcast/commit/9e30dfe83aef3cb14faa58e1abb6fc2aaca42887)
+
+- 🟩 **16:39:26 · Feature** — feat(hw): QSV and VideoToolbox backends behind the HardwareEncoder port (Refs #703) · [`1c7ebc316378`](https://github.com/gmanldn/smoothcast/commit/1c7ebc316378578d4ff1d3f77aaee9386bdf32c5)
+
+- ⬜ **16:36:37 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3227c9b2a3a6`](https://github.com/gmanldn/smoothcast/commit/3227c9b2a3a6a558f23f50eff57f242fa0c6c761)
+
+- 🟩 **16:36:37 · Feature** — feat(attempts): attempt folders default to the active command-trace id; ids sanitised (Refs #698) · [`8b7b70d8fa31`](https://github.com/gmanldn/smoothcast/commit/8b7b70d8fa31b7c5b9ffb9eca8fa03582a0cd70d)
+
+- ⬜ **16:36:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8389ea277a36`](https://github.com/gmanldn/smoothcast/commit/8389ea277a36bcea24e87fbdf9dd68843cb6d3d8)
+
+- ⬜ **16:36:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`58614346f12e`](https://github.com/gmanldn/smoothcast/commit/58614346f12e36921b40b17b477fbeea8aee7e58)
+
+- 🟩 **16:36:25 · Feature** — feat(errors): app.save\_failed code, recorded when a store write fails (Refs #207, #701) (Refs #325) · [`82b6356dfcc6`](https://github.com/gmanldn/smoothcast/commit/82b6356dfcc6ff2cf13ffc14ddfae08242d53f25)
+
+- ⬜ **16:36:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0beec0947d94`](https://github.com/gmanldn/smoothcast/commit/0beec0947d94e726e948813ed342bde0a4324ea5)
+
+- 🟪 **16:34:18 · Tests** — test(arch): test\_managed\_source reads a staged temp file, not production source; baseline 104 -&gt; 103 (Refs #699) · [`f223f0509ce5`](https://github.com/gmanldn/smoothcast/commit/f223f0509ce5bc90b8f7b7602de26104f6a83891)
+
+- ⬜ **16:34:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ba42de094a4b`](https://github.com/gmanldn/smoothcast/commit/ba42de094a4b781fc4ae023f8eb4da5bf1565743)
+
+- ⬜ **16:34:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`3b5368476438`](https://github.com/gmanldn/smoothcast/commit/3b53684764380374128d24fa6540ba5643e3eed1)
+
+- 🟩 **16:33:59 · Feature** — feat(cli): smoothcast diagnose writes a redacted support bundle, nothing sent (Refs #698) · [`f62681e7a1a4`](https://github.com/gmanldn/smoothcast/commit/f62681e7a1a44e43cc5a2dfc6ac642bcdd840f23)
+
+- 🟪 **16:30:13 · Tests** — test(arch): convert two source-text tests (accent default behaviour, action-state wiring greps removed); baseline 106 -&gt; 104 (Refs #699) · [`db4d71c0494a`](https://github.com/gmanldn/smoothcast/commit/db4d71c0494a5b98f89f40621bfa17129b1ea961)
+
+- ⬜ **16:28:29 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a914823490f9`](https://github.com/gmanldn/smoothcast/commit/a914823490f986567886fcaf680f07fa2ca5e919)
+
+- ⬜ **16:28:28 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`18b63b01bd24`](https://github.com/gmanldn/smoothcast/commit/18b63b01bd242426d7e256983a30e58dbdd91808)
+
+- 🟪 **16:28:23 · Tests** — test(quarantine): 7 known-red agent lifecycle tests dated and owned until 2026-12-11 (Refs #700) · [`3adcb7a73d6b`](https://github.com/gmanldn/smoothcast/commit/3adcb7a73d6bffb9b94570e24e5f45ca1407813c)
+
+- ⬜ **16:23:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b10ff6160cca`](https://github.com/gmanldn/smoothcast/commit/b10ff6160ccafe6c0bc5f61dd911b8875af25fcd)
+
+- ⬜ **16:23:57 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6221a584f7b6`](https://github.com/gmanldn/smoothcast/commit/6221a584f7b6bf26745ccd1e319e8599b1968eda)
+
+- 🟩 **16:23:57 · Feature** — feat(room): receiver ownership and playback as replayable commands/events (Refs #695) · [`8da3eaa4a927`](https://github.com/gmanldn/smoothcast/commit/8da3eaa4a927aaea323ae1a393fe755c8d908dce)
+
+- 🟩 **16:23:22 · Feature** — feat(observability): bounded local latency histograms and correlation ids, pure and unwired (Refs #698) · [`43380ccd2ec2`](https://github.com/gmanldn/smoothcast/commit/43380ccd2ec2b42c6a788a52bcfeb5d83b613ad1)
+
+- ⬜ **16:21:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`95cf434105bf`](https://github.com/gmanldn/smoothcast/commit/95cf434105bfdaa92c559fde66b59e87e879d1d6)
+
+- ⬜ **16:21:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ba193b666472`](https://github.com/gmanldn/smoothcast/commit/ba193b66647225bcec66e231dd97d42e54aa2df3)
+
+- 🟪 **16:21:31 · Tests** — test(errors): broad-except ratchet, 233 untagged frozen across 89 files (Refs #694) · [`9c61b1972227`](https://github.com/gmanldn/smoothcast/commit/9c61b19722275193fad967d50c51399c31a94055)
+
+- 🟩 **16:18:57 · Feature** — feat(release): GPLv3 source-offer gate: licence/notice text, tag+SHA pin, About link, FFmpeg disclosure with negative fixtures (Refs #538) · [`36fb164eae52`](https://github.com/gmanldn/smoothcast/commit/36fb164eae5290850fbab0c5b1eb0e3ae36f9a1b)
+
+- ⬜ **16:17:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`503726f17510`](https://github.com/gmanldn/smoothcast/commit/503726f1751053da532a2a8c974e78c083342eae)
+
+- ⬜ **16:17:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`da24af847baa`](https://github.com/gmanldn/smoothcast/commit/da24af847baa55028c659748a05fc2dc32f2bb7b)
+
+- 🟦 **16:17:53 · Refactor** — refactor(settings): speed and gain controls read AudioSettings/PlaybackSettings (Refs #693) · [`d79d2cc65c3d`](https://github.com/gmanldn/smoothcast/commit/d79d2cc65c3dbe7751b6618293e0bc5038cbde20)
+
+- ⬜ **16:17:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8c734835d60b`](https://github.com/gmanldn/smoothcast/commit/8c734835d60bb3b0c2f05b04fc910ecb13d56100)
+
+- ⬜ **16:17:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7d466e0ea9c3`](https://github.com/gmanldn/smoothcast/commit/7d466e0ea9c3eebff5fcdafc19f8920f3e11ef0b)
+
+- ⬜ **16:17:34 · Maintenance** — chore: rebaseline update\_managed.py complexity 26-&gt;41; #690 moved setup-module loading into it to drop sys.path mutation (Refs #706) · [`b94e6b37cb1c`](https://github.com/gmanldn/smoothcast/commit/b94e6b37cb1c94aa0bd10279f849570e9eaee7f2)
 
 - ⬜ **16:14:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1c408ddef26a`](https://github.com/gmanldn/smoothcast/commit/1c408ddef26a3285c6662a000bf5fc0423634d2a)
+
+- ⬜ **16:14:23 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`cf9f9a1fc237`](https://github.com/gmanldn/smoothcast/commit/cf9f9a1fc2375ddd3bd40187515afa6f4dba6991)
 
 - 🟪 **16:14:14 · Tests** — test(tiers): report-only per-tier time summary (Refs #699) · [`fabb01b05e4e`](https://github.com/gmanldn/smoothcast/commit/fabb01b05e4e41207d2cce0ba308b8b0f9176f8a)
 

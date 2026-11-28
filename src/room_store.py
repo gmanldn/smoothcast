@@ -77,9 +77,22 @@ class RoomStore:
     def queue(self) -> list[tuple[str, str]]:
         return replay(self.events)
 
+    def events_since(self, seq: int) -> list[Event]:
+        """Events a client at revision ``seq`` is missing (rejoin / catch-up)."""
+        return self.events[max(0, int(seq)):]
+
     def submit(self, cmd: Command) -> Result:
         if cmd.key in self._seen:                      # retry: same answer, no second effect
-            return Result(True, "duplicate", self._seen[cmd.key], duplicate=True)
+            first = self._seen[cmd.key]
+            if isinstance(first, Result):              # a rejection stays rejected; use a new key to try again
+                return Result(False, first.reason, duplicate=True)
+            return Result(True, "duplicate", first, duplicate=True)
+        result = self._decide(cmd)
+        if not result.ok:
+            self._seen[cmd.key] = result
+        return result
+
+    def _decide(self, cmd: Command) -> Result:
         if cmd.base_revision is not None and cmd.base_revision != self.revision:
             return Result(False, "stale_revision")
         ids = [i for i, _ in self.queue]
@@ -95,3 +108,24 @@ class RoomStore:
         self.events.append(event)
         self._seen[cmd.key] = event
         return Result(True, event=event)
+
+
+@dataclass
+class Replica:
+    """A client's copy (UI, portal, mesh peer): folds the event stream, never edits locally.
+
+    Duplicate or already-seen events are ignored; a gap is refused so the caller
+    re-fetches ``events_since(replica.revision)`` instead of diverging.
+    """
+    revision: int = 0
+    queue: list[tuple[str, str]] = field(default_factory=list)
+
+    def ingest(self, events: list[Event]) -> bool:
+        for event in sorted(events, key=lambda e: e.seq):
+            if event.seq <= self.revision:
+                continue
+            if event.seq != self.revision + 1:
+                return False
+            self.queue = apply(self.queue, event)
+            self.revision = event.seq
+        return True

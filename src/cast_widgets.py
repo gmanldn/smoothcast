@@ -15,6 +15,7 @@ import castctl
 import config_control
 import config_persistence
 import idle_chrome
+from hover_coalescer import HoverCoalescer
 import slider_accessibility
 
 import audio_monitor
@@ -52,6 +53,7 @@ DEFAULTS: dict = {
     "subtitle_style": "default",  # burned-in caption preset, see subtitle_style.py (#34)
     "audio_track_by_file": {},
     "burn_subs": False,
+    "jank_watchdog": False,  # opt-in main-loop stall diagnostics (#442)
     "direct": True,
     "autonext": False,
     "idle_join_slate": False,  # opt-in join QR on the TV after playback ends (#420)
@@ -167,6 +169,7 @@ class SeekBar(Gtk.DrawingArea):
         self.position = 0.0
         self.duration = 0.0
         self.buffered = 0.0
+        self.unknown_length = False  # receiver reports no length: draw a moving marker
         self.scrubbing = False
         self.scrub_value = 0.0
         self._hover = False
@@ -174,6 +177,11 @@ class SeekBar(Gtk.DrawingArea):
         self._start_value = 0.0
         self.on_seek = on_seek
         self.on_hover = on_hover
+        # Pointer motion reaches the window once per frame (see hover_coalescer);
+        # the knob itself is drawn from the latest value, so it never lags.
+        self._hover_frames = HoverCoalescer(
+            lambda value: self.on_hover(True, value),
+            schedule=GLib.timeout_add, cancel=GLib.source_remove)
         self.set_hexpand(True)
         self.set_size_request(-1, 30)
         self.set_draw_func(self._draw)
@@ -190,7 +198,8 @@ class SeekBar(Gtk.DrawingArea):
         motion.connect("leave", self._leave)
         self.add_controller(motion)
 
-    def set_state(self, position, duration, buffered) -> None:
+    def set_state(self, position, duration, buffered, unknown_length=False) -> None:
+        self.unknown_length = bool(unknown_length) and not duration
         self.position = position or 0.0
         self.duration = duration or 0.0
         self.buffered = buffered or 0.0
@@ -209,7 +218,8 @@ class SeekBar(Gtk.DrawingArea):
         self.scrubbing = True
         self._start_value = self._x_to_value(x)
         self.scrub_value = self._start_value
-        self.on_hover(True, self.scrub_value)
+        self._hover_frames.drop()
+        self.on_hover(True, self.scrub_value)  # a click shows its frame at once
         self.queue_draw()
 
     def _drag_update(self, _gesture, offset_x, _y) -> None:
@@ -217,12 +227,13 @@ class SeekBar(Gtk.DrawingArea):
             return
         width = max(1, self.get_width())
         self.scrub_value = max(0.0, min(self.duration, self._start_value + offset_x / width * self.duration))
-        self.on_hover(True, self.scrub_value)
+        self._hover_frames.push(self.scrub_value)
         self.queue_draw()
 
     def _drag_end(self, _gesture, _offset_x, _offset_y) -> None:
         if not self.scrubbing:
             return
+        self._hover_frames.drop()
         self.scrubbing = False
         self.on_hover(False, self.scrub_value)
         value = self.scrub_value
@@ -235,12 +246,13 @@ class SeekBar(Gtk.DrawingArea):
         self._hover = True
         self._hover_value = self._x_to_value(x)
         if not self.scrubbing:
-            self.on_hover(True, self._hover_value)
+            self._hover_frames.push(self._hover_value)
         self.queue_draw()
 
     def _leave(self, _controller) -> None:
         self._hover = False
         if not self.scrubbing:
+            self._hover_frames.drop()
             self.on_hover(False, 0.0)
         self.queue_draw()
 
@@ -253,6 +265,14 @@ class SeekBar(Gtk.DrawingArea):
         cr.set_source_rgba(*accent, 0.16)
         self._rounded(cr, 0, y, width, track_h, radius)
         cr.fill()
+        if self.unknown_length:
+            # Length unknown (live or external): a short marker sweeps the track
+            # once a minute so a moving playhead is visible without inventing a length.
+            seg = max(track_h * 4, width * 0.12)
+            x = (self.position % 60.0) / 60.0 * max(0.0, width - seg)
+            cr.set_source_rgba(*accent, 1.0)
+            self._rounded(cr, x, y, seg, track_h, radius)
+            cr.fill()
         if self.duration > 0:
             frac = min(1.0, self.buffered / self.duration) if self.buffered else 0.0
             if frac > 0:

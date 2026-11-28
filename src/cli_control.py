@@ -28,15 +28,19 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 
 import castctl
+import diagnose_bundle
+import paths
 import playback_state
 import command_trace
+import latency_stats
 import state_labels
 import streamer
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_UNREACHABLE, EXIT_MEDIA = 0, 1, 2, 3, 4
-COMMANDS = ("cast", "pause", "resume", "stop", "seek", "status")
+COMMANDS = ("cast", "pause", "resume", "stop", "seek", "status", "diagnose")
 DEVICE_ENV = "SMOOTHCAST_DEVICE"
 _ERROR_NAMES = {EXIT_FAILED: "failed", EXIT_USAGE: "usage",
                 EXIT_UNREACHABLE: "unreachable", EXIT_MEDIA: "media"}
@@ -90,7 +94,7 @@ def _device_ip(device: str) -> str | None:
     """Only a literal IPv4 can be used for route selection without discovery."""
     try:
         castctl.validate_manual_target(device)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any validation failure means not a literal IPv4
         return None
     return device
 
@@ -242,8 +246,22 @@ def cmd_cast(args: argparse.Namespace) -> dict:
             "offset": offset, "stream_url": session.state.stream_url if session.state else ""}
 
 
+def cmd_diagnose(args: argparse.Namespace) -> dict:
+    """Write a redacted support bundle of recent cast attempts; nothing is uploaded."""
+    import time
+    import latency_stats
+    import version
+    dest = Path(args.out) if args.out else Path.cwd() / f"smoothcast-diagnostics-{int(time.time())}.json"
+    try:
+        written = diagnose_bundle.write_bundle(paths.cache_dir(), dest, app_version=version.__version__,
+                                             latency=latency_stats.load(paths.cache_dir()))
+    except OSError as exc:
+        raise CliError(EXIT_FAILED, f"could not write {dest}: {exc.strerror or exc}") from exc
+    return {"path": str(written), "message": f"wrote {written} (paths and tokens removed; nothing was sent)"}
+
+
 HANDLERS = {"cast": cmd_cast, "pause": cmd_pause, "resume": cmd_resume,
-            "stop": cmd_stop, "seek": cmd_seek, "status": cmd_status}
+            "stop": cmd_stop, "seek": cmd_seek, "status": cmd_status, "diagnose": cmd_diagnose}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -267,6 +285,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name, text in (("pause", "pause playback"), ("resume", "resume playback"),
                        ("stop", "stop and end the cast"), ("status", "show receiver state")):
         sub.add_parser(name, parents=[common], help=text)
+    diag = sub.add_parser("diagnose", parents=[common], help="write a redacted support bundle (nothing is sent)")
+    diag.add_argument("--out", help="file to write (default: ./smoothcast-diagnostics-<time>.json)")
     seek = sub.add_parser("seek", parents=[common], help="seek to a position")
     seek.add_argument("time", help="seconds, MM:SS or HH:MM:SS")
     return parser
@@ -287,8 +307,20 @@ def _human(command: str, result: dict) -> str:
     return f"{command}: {result.get('message') or 'ok'}"
 
 
+def _record_command_latency(started: float) -> None:
+    """Keep a bounded local histogram; telemetry failures never change CLI behavior."""
+    try:
+        directory = paths.ensure_private(paths.cache_dir())
+        stats = latency_stats.load(directory)
+        stats.record("cli.command", (time.perf_counter() - started) * 1000.0)
+        latency_stats.save(stats, directory)
+    except OSError:
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
+    started = time.perf_counter()
     try:
         with command_trace.scope("cli", args.command):
             result = HANDLERS[args.command](args)
@@ -299,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:
                    "error": _ERROR_NAMES.get(exc.code, "failed"), "message": exc.message}
         if exc.catalogue_code:
             payload["code"] = exc.catalogue_code
+    finally:
+        _record_command_latency(started)
     if args.json:
         print(json.dumps(payload))
     elif code == EXIT_OK:

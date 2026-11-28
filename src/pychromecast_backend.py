@@ -133,7 +133,7 @@ class PyChromecastBackend:
                         retry_wait=5,
                         timeout=max(1.0, min(timeout, 15.0)),
                     )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - third-party discovery failure is re-raised as a coded CastError
                     raise errors.coded(CastError(f"Google Cast discovery failed: {exc}"), "discovery.failed") from exc
 
             if timeout > 0:
@@ -148,7 +148,7 @@ class PyChromecastBackend:
     def _discovered(self, cast: Any) -> None:
         try:
             self._register(cast)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a malformed mDNS record must not kill zeroconf's thread
             # A malformed or stale mDNS record must not kill zeroconf's thread.
             return
 
@@ -159,14 +159,14 @@ class PyChromecastBackend:
             if self._closed:
                 try:
                     cast.disconnect(timeout=1)
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort disconnect
                     pass
                 return identifier
             if identifier in self._casts:
                 if self._casts[identifier] is not cast:
                     try:
                         cast.disconnect(timeout=1)
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - best-effort disconnect
                         pass
                 return identifier
 
@@ -193,7 +193,7 @@ class PyChromecastBackend:
                 # Request one initial snapshot; subsequent reads use the cache
                 # refreshed by PyChromecast's media and receiver listeners.
                 cast.media_controller.update_status()
-            except Exception:
+            except Exception:  # noqa: BLE001 - the initial status request is optional
                 pass
             self._changed.notify_all()
         return identifier
@@ -212,7 +212,7 @@ class PyChromecastBackend:
                 tries=None,
                 retry_wait=5,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - third-party connect failure is re-raised as CastError
             raise CastError(f"Cannot connect to Google Cast receiver {host}: {exc}") from exc
         self._register(cast)
         return self._devices[str(identifier)]
@@ -264,7 +264,7 @@ class PyChromecastBackend:
             media_status = cast.media_controller.status
             cast_status = cast.status
             snapshot = self._status_dict(media_status, cast_status)
-        except Exception:
+        except Exception:  # noqa: BLE001 - status read falls back to the cached status
             return self._cached_status(identifier) or None
         self._publish(identifier, snapshot)
         # Publication may reject an observation raced by a disconnect or close.
@@ -349,7 +349,7 @@ class PyChromecastBackend:
                 return False, f"Unsupported Google Cast command: {action}"
         except (TypeError, ValueError):
             return _fail("cast.command_invalid")
-        except Exception:
+        except Exception:  # noqa: BLE001 - receiver command failure is logged and reported as cast.command_failed
             log_backend_failure("Google Cast receiver command failed", exc_info=True)
             return _fail("cast.command_failed")
         return True, ""
@@ -438,7 +438,7 @@ class PyChromecastBackend:
         for listener in listeners:
             try:
                 listener(cast(ReceiverInfo, dict(status)))
-            except Exception:
+            except Exception:  # noqa: BLE001 - one bad listener must not stop the others
                 continue
 
     def _cached_status(self, identifier: str) -> ReceiverInfo | None:
@@ -485,9 +485,20 @@ class PyChromecastBackend:
         try:
             media_status = cast.media_controller.status
             cast_status = cast.status
-        except Exception:
+        except Exception:  # noqa: BLE001 - status refresh is best-effort
             return
         self._publish(identifier, self._status_dict(media_status, cast_status))
+        # The cached objects can be stale or still empty (UNKNOWN) after a
+        # reconnect: ask the receiver for fresh status. The answers arrive
+        # through the registered listeners and replace this snapshot.
+        for request in (
+            lambda: cast.socket_client.receiver_controller.update_status(),
+            lambda: cast.media_controller.update_status(),
+        ):
+            try:
+                request()
+            except Exception:  # noqa: BLE001 - a refresh request is best-effort
+                continue
 
     def close(self) -> None:
         with self._changed:
@@ -503,10 +514,10 @@ class PyChromecastBackend:
         for chromecast in casts:
             try:
                 chromecast.disconnect(timeout=2)
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort disconnect on close
                 continue
         if browser is not None:
             try:
                 browser.stop_discovery()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort stop on close
                 pass

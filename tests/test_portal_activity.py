@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import command_trace
+import media_source
 import portal_commands
 import peer_discovery_ui
 import paths
@@ -44,6 +45,16 @@ def test_stale_early_casts_ignores_starting_and_playing_casts():
         {}, now=200.0, busy=False, now_playing=None, grace=5.0) == []
 
 
+def _require_usable_gi():
+    """Status publication formats times via ``cast_widgets`` (GTK); skip, never fail, without PyGObject."""
+    try:
+        import cast_widgets  # noqa: F401
+    except ImportError as exc:
+        if (exc.name or "").split(".")[0] != "gi":
+            raise
+        pytest.skip("requires a working PyGObject (gi)")
+
+
 class _PortalRequestError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
@@ -63,6 +74,7 @@ def _build_window(tmp_path, *, idle_add=None):
     namespace = {
         "portal": SimpleNamespace(PortalRequestError=_PortalRequestError),
         "command_trace": command_trace,
+        "media_source": media_source,
         "portal_commands": portal_commands,
         "portal_uploads": portal_uploads,
         "save_config": lambda cfg: saved.append(dict(cfg)),
@@ -214,6 +226,26 @@ def test_status_dispatch_reads_snapshot_without_idle_callback(tmp_path):
     assert result["snapshot_version"] == 1
     assert isinstance(result["snapshot_age_ms"], int)
     assert idle == []
+
+
+@pytest.mark.parametrize(("info", "expected"), [
+    ({"duration": 3723.2, "stream_type": "BUFFERED"}, "1:02:03"),
+    ({"duration": 0, "stream_type": "LIVE"}, "Live"),
+    ({"duration": None, "stream_type": "BUFFERED"}, "Length unknown"),
+])
+def test_published_external_status_has_an_explicit_total_length_label(tmp_path, info, expected):
+    _require_usable_gi()
+    window, uploads, _idle = _build_window(tmp_path)
+    window.external = True
+    window.device_info = info
+    window._portal_status = portal_status.PublishedStatus()
+    window._portal_handle = lambda _operation, _payload: {"duration": info.get("duration") or 0}
+    try:
+        window._publish_portal_status()
+        published = window._portal_status.read()
+        assert published["length_label"] == expected
+    finally:
+        uploads.close()
 
 
 def test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread(tmp_path):

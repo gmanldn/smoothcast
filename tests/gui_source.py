@@ -36,6 +36,7 @@ GUI_MODULES = (
     "panel_ui.py",
     "cast_settings.py",
     "preferences_ui.py",
+    "preferences_room_ui.py",
     "library_folders_ui.py",
     "cast_queue.py",
     "cast_discovery.py",
@@ -162,6 +163,8 @@ def handler_globals() -> dict:
     import low_end_policy
     import picture_adjustments
     import receiver_memory
+    import settings
+    from queue_component import QueueComponent
 
     config_dir = Path(tempfile.mkdtemp(prefix="smoothcast-test-config-"))
     atexit.register(shutil.rmtree, config_dir, ignore_errors=True)
@@ -171,5 +174,7 @@ def handler_globals() -> dict:
         "low_end_policy": low_end_policy,
         "picture_adjustments": picture_adjustments,
         "receiver_memory": receiver_memory,
+        "settings": settings,
+        "QueueComponent": QueueComponent,
         "CONFIG_DIR": config_dir,
     }

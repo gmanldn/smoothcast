@@ -4,6 +4,8 @@ from __future__ import annotations
 from gi.repository import Adw, Gtk
 
 import error_log
+import latency_stats
+import paths
 import library_folders
 import settings
 import shutdown_plan
@@ -62,6 +64,10 @@ class PortalHostMixin:
             error_log.log(f"Shutdown took {report['total_ms']:.0f} ms (budget "
                           f"{report['budget_ms']:.0f} ms); slow steps: {', '.join(report['overruns']) or 'none'}")
         shutdown_plan.ShutdownLedger().end(report)
+        try:
+            latency_stats.record_shutdown(report, paths.ensure_private(paths.cache_dir()))
+        except OSError:
+            pass          # latency history is best-effort; never block exit
 
     def _stop_house_services(self, *, keep_fingerprint: bool = False) -> None:
         """Stop the library indexer and mesh-library threads; safe to call twice.
@@ -92,7 +98,7 @@ class PortalHostMixin:
             try:
                 indexer = library_index_v2.LibraryIndexer(
                     busy=lambda: bool(getattr(self, "session", None) and self.busy))
-            except Exception:
+            except Exception:  # noqa: BLE001 - library indexing is optional; run without it
                 return
             self._library_indexer = indexer
             indexer.start()
@@ -113,7 +119,7 @@ class PortalHostMixin:
             try:
                 mesh = mesh_library.MeshLibrary(
                     indexer, busy=lambda: bool(getattr(self, "session", None) and self.busy))
-            except Exception:
+            except Exception:  # noqa: BLE001 - mesh library is optional; run without it
                 return
             self._mesh_library = mesh
             mesh.start()
@@ -206,7 +212,7 @@ class PortalHostMixin:
         uploads = getattr(getattr(self, "_portal", None), "uploads", None)
         try:
             activity = uploads.snapshot() if uploads is not None else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unreadable upload snapshot shows no activity
             activity = []
         room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
         room_state = room.snapshot() if room is not None else {}
@@ -222,7 +228,7 @@ class PortalHostMixin:
         screens = getattr(getattr(self._portal, "server", None), "screens", None)
         try:
             screen_rows = screens.snapshot() if screens is not None else []
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unreadable screens snapshot shows no screens
             screen_rows = []
         ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
                  if isinstance(row, dict) and row.get("ready")]

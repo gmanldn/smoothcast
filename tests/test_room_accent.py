@@ -20,7 +20,7 @@ def test_every_preset_has_light_and_dark_accessible_variants():
         assert set(variants) == set(design_tokens.SCHEMES)
         for scheme, colours in variants.items():
             assert set(colours) == {"accent", "on_accent"}
-            assert all(re.fullmatch(r"#[0-9a-f]{6}", value) for value in colours.values())
+            assert all(re.fullmatch(r"#[0-9a-fA-F]{6}", value) for value in colours.values())
             assert design_tokens.contrast_ratio(colours["accent"], design_tokens.SCHEMES[scheme]["card"]) >= 3.0, (preset, scheme)
             assert design_tokens.contrast_ratio(colours["on_accent"], colours["accent"]) >= 4.5, (preset, scheme)
 

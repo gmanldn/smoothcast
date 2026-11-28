@@ -190,7 +190,7 @@ def schedule_probe(*, enabled: bool, path: Path | None = None,
                     seconds=3, height=1080,
                     runner=_priority_runner if runner is None else runner,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failed capacity probe is logged and not retried endlessly
                 # Never leak a background traceback or re-probe endlessly.
                 logging.getLogger(__name__).warning(
                     "Low-end capacity probe unavailable (%s)", type(exc).__name__)

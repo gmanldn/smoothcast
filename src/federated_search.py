@@ -128,7 +128,7 @@ class FederatedSearch:
             for future in done:
                 try:
                     extra += future.result()
-                except Exception:
+                except Exception:  # noqa: BLE001 - a failed peer contributes nothing
                     pass
             pending = [futures[f] for f in not_done]
             for future in not_done:
@@ -164,7 +164,7 @@ class FederatedSearch:
                     oid = remaining.pop(future)
                     try:
                         extra = future.result()
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - a failed peer contributes nothing
                         extra = []
                     if extra:
                         rows = merge([r for r in rows if any(c["origin"] == "local" for c in r["copies"])],

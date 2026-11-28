@@ -7,6 +7,7 @@ is attached to the portal server (the app does this when the mesh runs, #405).
 from __future__ import annotations
 
 import json
+import time
 
 import mesh_clients
 
@@ -35,7 +36,7 @@ def route(handler, method: str, path: str) -> bool:
         import node_profile
         view = feed._publisher.view
         found = [node_profile.profile(node_profile.redact(r), local_id=view.local_id,
-                                      primary_id=feed._primary()) for r in view.nodes]
+                                      primary_id=feed._primary(), now=time.time()) for r in view.nodes]
         if path == "/api/mesh/profiles":
             handler._send(200, {"ok": True, "nodes": [node_profile.as_dict(p) for p in found]})
         else:
@@ -68,7 +69,7 @@ def _heartbeat(server) -> dict | None:
         return None
     try:
         beat = provider()
-    except Exception:
+    except Exception:  # noqa: BLE001 - no heartbeat provider result means no data
         return None
     return beat if isinstance(beat, dict) else None
 

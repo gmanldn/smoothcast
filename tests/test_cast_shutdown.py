@@ -1,17 +1,48 @@
 """Headless lifecycle tests: no GTK display or receiver is launched."""
 from __future__ import annotations
 
+import os
+import signal
+import sys
 import textwrap
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+from cast_app_lifecycle import AppLifecycleMixin
+from entry_name import EntryName
 from gui_source import main_window_methods
+from portal import Portal
 import reliability_metrics
 import shutdown_plan
 
 METHODS = main_window_methods()
+
+
+@unittest.skipUnless(os.name == "posix", "GLib Unix signal source")
+class TerminalInterruptTests(unittest.TestCase):
+    def test_sigint_requests_normal_close_once_and_returns_130(self):
+        glib = mock.Mock(PRIORITY_DEFAULT=0, SOURCE_CONTINUE=True)
+        glib.unix_signal_add.return_value = 42
+        win = mock.Mock(_closing=False)
+
+        class FakeApplication:
+            def run(self, argv):
+                priority, signum, interrupt = glib.unix_signal_add.call_args.args
+                assert (priority, signum) == (0, signal.SIGINT)
+                assert interrupt()
+                assert interrupt()
+                return 0
+
+        class App(AppLifecycleMixin, FakeApplication):
+            window = win
+
+        with mock.patch.dict(sys.modules, {"gi.repository": mock.Mock(GLib=glib)}):
+            self.assertEqual(App().run(["sc.py"]), 130)
+        win.close.assert_called_once_with()
+        glib.source_remove.assert_called_once_with(42)
 
 
 def lifecycle_type():
@@ -168,6 +199,37 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(entry_done.is_set())
         self.assertIsNone(obj._entry_name)
         self.assertIsNone(obj._portal)
+
+    def test_portal_quit_completes_two_250_ms_goodbyes_within_350_ms(self):
+        entry_zeroconf, portal_zeroconf = mock.Mock(), mock.Mock()
+        for zeroconf in (entry_zeroconf, portal_zeroconf):
+            zeroconf.unregister_service.side_effect = lambda _info: time.sleep(0.25)
+
+        entry = EntryName("127.0.0.1", 12345,
+                          zeroconf_factory=lambda _ip: entry_zeroconf,
+                          info_factory=mock.Mock())
+        entry.apply(True)
+        portal = Portal.__new__(Portal)
+        portal.peers = None
+        portal._zeroconf, portal._service_info = portal_zeroconf, object()
+        portal.thread = SimpleNamespace(is_alive=lambda: True, join=mock.Mock())
+        portal.server = mock.Mock(uploads=None)
+        obj = window()
+        obj._closing = True
+        obj._entry_name, obj._portal = entry, portal
+
+        with mock.patch("cast_mesh.stop"):
+            start = time.monotonic()
+            obj._stop_portal()
+            elapsed = time.monotonic() - start
+
+        self.assertLess(elapsed, 0.35, f"Portal shutdown took {elapsed * 1000:.1f} ms")
+        self.assertIsNone(entry.name)
+        for zeroconf in (entry_zeroconf, portal_zeroconf):
+            zeroconf.unregister_service.assert_called_once()
+            zeroconf.close.assert_called_once()
+        portal.server.shutdown.assert_called_once()
+        portal.server.server_close.assert_called_once()
 
     def test_portal_rebind_closes_entry_before_stopping_server(self):
         obj = window()

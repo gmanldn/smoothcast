@@ -49,6 +49,28 @@ class SparseFrameCache:
         while len(self._images) > self.max_entries:
             self._images.popitem(last=False)
 
+    def nearest(
+        self, path: str, generation: int, stream: int, position: float, *, radius: int = 12,
+    ) -> tuple[float, bytes] | None:
+        """The cached frame closest to ``position`` (source time, image), if any.
+
+        Lets a scrub show something at the playhead immediately while the exact
+        frame decodes; it never schedules a decoder.
+        """
+        center = self.bucket(position)
+        best: tuple[int, int] | None = None
+        for (source, gen, video_stream, bucket) in self._images:
+            if source != str(path) or gen != generation or video_stream != stream:
+                continue
+            distance = abs(bucket - center)
+            if distance <= radius and (best is None or (distance, bucket) < best):
+                best = (distance, bucket)
+        if best is None:
+            return None
+        key = (str(path), generation, stream, best[1])
+        image = self.get(key)
+        return (best[1] * self.interval, image) if image is not None else None
+
     def nearby(
         self, path: str, generation: int, stream: int, position: float,
         *, radius: int = 2, limit: int = 5,
@@ -215,7 +237,7 @@ def cover_art(source: Path, *, timeout: int = 8) -> bytes:
 
 def preview_frame(source: Path, position: float, *, timeout: int = 12,
                   video_stream_index: int = 0, aspect_mode: str = "original",
-                  picture_config: dict | None = None) -> bytes:
+                  picture_config: dict | None = None, fast: bool = False) -> bytes:
     """Decode a small JPEG frame for the pre-cast scrubber, without writing files.
 
     This runs only in a worker thread. A bounded output resolution and timeout
@@ -234,6 +256,9 @@ def preview_frame(source: Path, position: float, *, timeout: int = 12,
         raise CaptureError("Invalid video stream index")
     command = [
         media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
+        # fast: nearest earlier keyframe, no decode run-up. Used while dragging;
+        # the exact frame is decoded once the playhead settles.
+        *(["-noaccurate_seek"] if fast else []),
         "-ss", str(max(0.0, position)), "-i", str(source),
         "-map", f"0:{video_stream_index}",
         "-an", "-sn", "-dn", "-frames:v", "1",

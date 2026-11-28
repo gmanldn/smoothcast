@@ -131,15 +131,85 @@ def web_accents() -> dict[str, dict[str, dict[str, str]]]:
     return table
 
 
+
+# The portal embeds the token stylesheet before its base component rules.
+# Scope the Home treatment tightly so it also works in the shared stylesheet.
+_HOME_CSS = """
+#dashboard #homePanel #playback {
+    padding: clamp(16px, 4vw, 32px);
+    border: 1px solid var(--header-line);
+    border-radius: 24px;
+    background-color: var(--card);
+}
+#dashboard #homePanel #playback #title.big {
+    margin-block: 0.45em 0.2em;
+    font-size: clamp(1.65rem, 4vw, 2.75rem);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+}
+#dashboard #homePanel #playback .row {
+    font-variant-numeric: tabular-nums;
+}
+#dashboard #homePanel #playback .actions button[data-action="play_pause"] {
+    min-height: 48px;
+    font-weight: 750;
+}
+#dashboard #homePanel #quickCastCard {
+    padding: 16px clamp(14px, 4vw, 24px);
+    border: 1px solid var(--header-line);
+    border-radius: 18px;
+}
+#dashboard #homePanel #glance {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+#dashboard #homePanel #glance .glance-tile {
+    border-radius: 14px;
+    background: var(--input);
+}
+#dashboard #homePanel .home-actions .home-action {
+    min-height: 48px;
+    border-radius: 14px;
+    background: var(--card);
+}
+#dashboard #homePanel .home-actions .home-action:hover {
+    border-color: var(--accent);
+    background: var(--input);
+}
+@media (max-width: 480px) {
+    #dashboard #homePanel #glance {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    #dashboard #homePanel #glance .glance-tile:first-child {
+        grid-column: 1 / -1;
+    }
+}
+@media (prefers-contrast: no-preference) and (forced-colors: none) {
+    #dashboard #homePanel #playback {
+        background-image: radial-gradient(ellipse at 96% 0%,
+            color-mix(in srgb, var(--accent) 13%, transparent), transparent 64%);
+        box-shadow: 0 16px 48px var(--shadow);
+    }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+    #dashboard #homePanel #playback {
+        background-image: none;
+    }
+}
+"""
+
+
 def css() -> str:
-    """Root custom properties: dark by default, light and high-contrast via media queries."""
+    """Shared custom properties and token-based room Home styles."""
     high_dark = {name: DARK[source] for name, source in HIGH_CONTRAST.items()}
     high_light = {name: LIGHT[source] for name, source in HIGH_CONTRAST.items()}
     return (":root{" + _vars(DARK, "dark") + "}"
             "@media(prefers-color-scheme:light){:root{" + _vars(LIGHT, "light") + "}}"
             "@media(prefers-contrast:more){:root{" + _vars(high_dark, "dark") + "}}"
             "@media(prefers-contrast:more) and (prefers-color-scheme:light){:root{" + _vars(high_light, "light") + "}}"
-            "@media(forced-colors:active){:root{" + _vars(FORCED, None) + "}}")
+            + _HOME_CSS
+            + "@media(forced-colors:active){:root{" + _vars(FORCED, None) + "}}")
 
 
 def _channel(value: int) -> float:

@@ -66,7 +66,7 @@ _MAX_EXTRA_TEXT = 256
 _KNOWN_RECORD_KEYS = frozenset({
     "v", "node_id", "boot_id", "incarnation", "rev", "boot_epoch", "name",
     "version", "protocols", "capabilities", "status", "mesh_port", "room_port",
-    "addresses", "targets", "clients", "sources", "edges", "truncated",
+    "platform", "addresses", "targets", "clients", "sources", "edges", "truncated",
 })
 
 _KNOWN_TARGET_KEYS = frozenset({"id", "kind", "name", "state", "model", "formats", "age_ms", "owner"})
@@ -311,6 +311,7 @@ class NodeRecord:
     # Unknown top-level fields from a newer peer, as sorted ``(key, canonical
     # JSON text)`` pairs. Carried so a relay never strips them; never read.
     extra: tuple[tuple[str, str], ...] = ()
+    platform: str = ""
 
     @property
     def key(self) -> tuple[str, int]:
@@ -336,6 +337,7 @@ def _canonical_wire(record: NodeRecord) -> dict[str, Any]:
         "capabilities": list(_unique_sorted(record.capabilities)),
         "status": record.status,
         "mesh_port": record.mesh_port, "room_port": record.room_port,
+        "platform": record.platform,
         "addresses": list(_unique_sorted(record.addresses)),
         "targets": [item.to_wire() for item in targets],
         "clients": [item.to_wire() for item in clients],
@@ -523,6 +525,7 @@ def parse_record(raw: object) -> NodeRecord:
         status=_enum(data.get("status", "active"), NODE_STATUSES, "node status"),
         mesh_port=_opt_int(data.get("mesh_port"), "mesh port", 1, _MAX_PORT),
         room_port=_opt_int(data.get("room_port"), "room port", 1, _MAX_PORT),
+        platform=_text(data.get("platform", ""), "platform", 32, allow_empty=True),
         addresses=_unique_sorted(addresses),
         targets=tuple(sorted(targets, key=lambda item: item.id)),
         clients=tuple(sorted(clients, key=lambda item: item.id)),

@@ -133,7 +133,7 @@ class MeshCache:
             db.executescript(_SCHEMA)
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             db.commit()
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - close the database then re-raise
             db.close()
             raise
         for suffix in ("", "-wal", "-shm"):

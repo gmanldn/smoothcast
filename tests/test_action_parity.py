@@ -21,7 +21,7 @@ import shortcut_map
 NOT_PLAYBACK = {
     "mpris": {"Raise", "Quit", "OpenUri"},
     "desktop": {"help", "open", "add-files", "shortcuts", "preferences", "quit"},
-    "cli": {"cast", "status"},
+    "cli": {"cast", "status", "diagnose"},  # diagnose writes a support bundle
 }
 
 KNOWN_GAPS = {

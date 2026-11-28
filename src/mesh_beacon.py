@@ -503,13 +503,13 @@ class Beacon:
             return
         try:
             self._handle(message, datagram)
-        except Exception:                      # a bad handler must never kill the loop
+        except Exception:                      # a bad handler must never kill the loop  # noqa: BLE001 - a bad handler must never kill the loop; counted
             self.stats.callback_errors += 1
 
     def _emit_safe(self, event: BeaconEvent) -> None:
         try:
             self._emit(event)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a bad callback must never kill the loop; counted
             self.stats.callback_errors += 1
 
     def _handle(self, message: Message, datagram: Datagram) -> None:

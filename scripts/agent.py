@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -69,7 +70,7 @@ def predicted_files(*texts: str, root: Path = ROOT) -> set[str]:
         for bare in _BARE.findall(text or ""):
             if (root / "src" / bare).exists():
                 found.add(f"src/{bare}")
-    return {f for f in found if f not in SHARED and not f.startswith(("docs/", "tests/"))}
+    return lease_paths(found)
 
 
 def claim_marker(agent: str, files: list[str], ttl: int, beat: float | None = None) -> str:
@@ -134,9 +135,16 @@ def active_claims(events: list[dict], now: datetime) -> list[dict]:
     return [e for e in live.values() if e["at"] + timedelta(minutes=e["ttl"]) > now]
 
 
+# The release lane (#700): ship itself advances src/version.py (automatic +1 PATCH per
+# shipment), guarded by the version-history check and non-force push. A feature lease on it
+# must never block, or be blocked by, an unrelated shipment.
+RELEASE_LANE = {"src/version.py"}
+
+
 def lease_paths(files: set[str]) -> set[str]:
     """Exclude generated and merge-friendly metadata even from explicit claims."""
-    return {f for f in files if f not in SHARED and not f.startswith(("docs/", "tests/"))}
+    return {f for f in files if f not in SHARED and f not in RELEASE_LANE
+            and not f.startswith(("docs/", "tests/"))}
 
 
 def conflicts(issue: int, files: set[str], me: str, claims: list[dict]) -> list[str]:
@@ -920,11 +928,23 @@ def plan_checks(changed: list[str], tests: dict[str, str]) -> list[tuple[str, li
     return steps
 
 
+def polite(cmd: list[str]) -> list[str]:
+    """Run checks at the lowest CPU/IO priority.
+
+    Agents share the owner's desktop; ``pytest -n auto`` at normal priority
+    starved a live cast's encoder (0.5x realtime, 60-100 s to first frame).
+    """
+    if not shutil.which(cmd[0]):
+        return cmd  # a missing tool must still surface as "unavailable"
+    wrap = [t for t in (["nice", "-n", "19"], ["ionice", "-c", "3"]) if shutil.which(t[0])]
+    return [*(a for w in wrap for a in w), *cmd]
+
+
 def run_headless_check(cmd: list[str], timeout: int = 180
                        ) -> tuple[subprocess.CompletedProcess | None, str]:
     """Never let a missing or stalled optional checker monopolise an agent."""
     try:
-        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
+        return subprocess.run(polite(cmd), cwd=ROOT, capture_output=True, text=True,
                               timeout=timeout), ""
     except (FileNotFoundError, PermissionError) as exc:
         return None, f"{cmd[0]} unavailable: {exc}"
@@ -957,10 +977,19 @@ def unquarantined(ids: list[str]) -> list[str]:
     import datetime
     try:
         entries = json.loads((ROOT / "tests" / "quarantine.json").read_text())["entries"]
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
         entries = {}
+    if not isinstance(entries, dict):
+        entries = {}  # a corrupt file must excuse nothing, never crash the gate
     today = datetime.date.today().isoformat()
-    return [i for i in ids if str(entries.get(i, {}).get("expires", "")) < today]
+
+    def live(entry) -> bool:
+        # A quarantine line excuses red only while it names an owner, a ticket
+        # and an unexpired date; anything less is red nobody answers for.
+        return (isinstance(entry, dict) and bool(str(entry.get("owner", "")).strip())
+                and bool(entry.get("ticket")) and str(entry.get("expires", "")) >= today)
+
+    return [i for i in ids if not live(entries.get(i))]
 
 
 def failing_on_develop(ids: list[str]) -> set[str]:
@@ -972,7 +1001,7 @@ def failing_on_develop(ids: list[str]) -> set[str]:
                           cwd=ROOT, capture_output=True).returncode:
             return set()  # cannot prove it: treat every failure as yours
         try:
-            res = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids],
+            res = subprocess.run(polite([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids]),
                                  cwd=tree, capture_output=True, text=True)
             return set(failing_ids(res.stdout))
         finally:
@@ -1180,6 +1209,18 @@ def primary_checkout_refusal() -> str:
     return ""
 
 
+def abandon_generated(remote_before: str, code: int) -> int:
+    """A gate that stops a push must not strand this shipment's generated PATCH/changelog
+    commits: the next ship would stack the agent's fix on top of them and the changelog
+    guard would then refuse as a "hand-edit" (#700). Discard only the verified commits."""
+    try:
+        changelog.recover(ROOT, remote_before)
+        ship_patch.recover_private_patch(ROOT, remote_before)
+    except (ship_patch.PatchAllocationError, changelog.ChangelogError) as exc:
+        print(f"generated PATCH/changelog commits kept (not provably discardable): {exc}")
+    return code
+
+
 def cmd_ship(a: argparse.Namespace) -> int:
     if refusal := primary_checkout_refusal():
         print(refusal)
@@ -1280,7 +1321,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if version_guard.returncode:
             print("VERSION INTEGRITY FAILED; not pushing develop.")
             print((version_guard.stdout + version_guard.stderr)[-1500:])
-            return 6
+            return abandon_generated(remote_before, 6)
         recheck = True
         if checked_base:  # a contended push: re-test only if the newcomers touched our files
             incoming = set(git("diff", "--name-only", checked_base, "origin/develop").split())
@@ -1307,13 +1348,18 @@ def cmd_ship(a: argparse.Namespace) -> int:
                     if mine:
                         print((res.stdout + res.stderr)[-1800:])
                         print(f"  YOUR failures: {', '.join(sorted(mine))[:400]}")
-                        return 1
-                    print(f"  NOT yours: {len(ids)} test(s) already fail on "
-                          f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
+                        return abandon_generated(remote_before, 1)
                     orphan = unquarantined(ids)
                     if orphan:
-                        print("  WARNING: red with no owner/expiry; add to tests/quarantine.json "
-                              f"or fix (#700): {', '.join(orphan)[:300]}")
+                        # Known-red nobody owns trains agents to ignore red (#700): stop here.
+                        print(f"  NOT yours, but UNOWNED: {len(orphan)} test(s) already fail on "
+                              f"origin/develop with no live entry in tests/quarantine.json: "
+                              f"{', '.join(orphan)[:300]}")
+                        print("  Fix them, or add an entry (owner, ticket, expires) so the red has "
+                              "an answerable owner, then rerun ship; your commit is preserved.")
+                        return abandon_generated(remote_before, 1)
+                    print(f"  NOT yours: {len(ids)} quarantined test(s) fail on "
+                          f"origin/develop; pushing: {', '.join(ids)[:300]}")
                 else:
                     checks_run.append(label)
             checked_base = git("rev-parse", "origin/develop").strip()
@@ -1327,7 +1373,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 if res is None:
                     print(f"  MANDATORY {label} cannot run: {unavailable}; "
                           "install pytest or hold this documentation change")
-                    return 1
+                    return abandon_generated(remote_before, 1)
                 print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} ({time.time() - started:.1f}s)")
                 if res.returncode:
                     ids = failing_ids(res.stdout)
@@ -1336,7 +1382,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         print((res.stdout + res.stderr)[-1500:])
                         print("  Your doc/workflow edit breaks contract tests that pin its wording: update those "
                               f"tests in the SAME commit. Failing: {', '.join(sorted(mine))[:300]}")
-                        return 1
+                        return abandon_generated(remote_before, 1)
                     print(f"  NOT yours: {len(ids)} doc test(s) already fail on origin/develop; pushing anyway")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")

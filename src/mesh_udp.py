@@ -24,6 +24,7 @@ import time
 
 import mesh_beacon
 import mesh_model
+import task_runtime
 from mesh_ports import Datagram
 
 GROUP = "239.255.83.67"
@@ -56,6 +57,7 @@ class MeshLoop:
         self._wake_w.setblocking(False)
         self._selector.register(self._wake_r, selectors.EVENT_READ, None)
         self._thread: threading.Thread | None = None
+        self._scope: task_runtime.Scope | None = None
         self._running = False
         self.errors = 0
 
@@ -94,13 +96,16 @@ class MeshLoop:
         if self._thread is not None:
             return
         self._running = True
-        self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
-        self._thread.start()
+        runtime = task_runtime.shared()
+        self._scope = runtime.scope()
+        self._thread = runtime.spawn_daemon(self._name, self._scope, lambda _scope: self._run(), thread_name=self._name)
 
     def stop(self, timeout: float = 3.0) -> None:
         """Stop the thread and release the wake pipe. Idempotent."""
         thread, self._thread = self._thread, None
         self._running = False
+        if self._scope is not None:
+            self._scope.cancel()
         if thread is not None:
             self._wake()
             if thread is not threading.current_thread():
@@ -155,12 +160,12 @@ class MeshLoop:
     def _guard(self, callback: Callable[[], None]) -> None:
         try:
             callback()
-        except Exception as exc:                 # one bad callback never stops the loop
+        except Exception as exc:                 # one bad callback never stops the loop  # noqa: BLE001 - one bad callback never stops the loop; counted
             self.errors += 1
             if self._on_error is not None:
                 try:
                     self._on_error(exc)
-                except Exception:
+                except Exception:  # noqa: BLE001 - an error callback must not raise
                     pass
 
 

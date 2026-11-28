@@ -78,7 +78,7 @@ class NativePeerConnection(HTTPSConnection):
             if (not isinstance(self.sock, ssl.SSLSocket)
                     or self.sock.getpeercert(binary_form=True) != self._approved_certificate):
                 raise ssl.SSLCertVerificationError("Unexpected SmoothCast peer certificate")
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - close the socket then re-raise
             self.close()
             raise
 

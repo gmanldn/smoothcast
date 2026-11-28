@@ -9,6 +9,7 @@ import json
 import os
 import plistlib
 import shutil
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +28,89 @@ import startup_cleanup
 
 
 class SetupContractTests(unittest.TestCase):
+    def test_ctrl_c_between_venv_rename_and_backup_recording_restores_original(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            venv = root / ".venv"
+            venv.mkdir()
+            marker = venv / "keep-me"
+            marker.write_text("original")
+            original_rename = Path.rename
+
+            def rename_and_interrupt(path, target):
+                result = original_rename(path, target)
+                if path == venv:
+                    signal.raise_signal(signal.SIGINT)
+                return result
+
+            previous = signal.getsignal(signal.SIGINT)
+            with mock.patch.object(bootstrap, "VENV", venv), \
+                 mock.patch.object(bootstrap, "venv_python", return_value=venv / "bin/python"), \
+                 mock.patch.object(bootstrap, "works", return_value=False), \
+                 mock.patch.object(Path, "rename", rename_and_interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    bootstrap.ensure_venv(Path(sys.executable), {})
+            self.assertEqual(marker.read_text(), "original")
+            self.assertIs(signal.getsignal(signal.SIGINT), previous)
+
+    def test_repeated_ctrl_c_during_rollback_does_not_interrupt_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            venv = root / ".venv"
+            venv.mkdir()
+            marker = venv / "keep-me"
+            marker.write_text("original")
+            original_rmtree = shutil.rmtree
+
+            def create_venv(_command, **_kwargs):
+                (venv / "bin").mkdir(parents=True)
+                (venv / "bin/python").touch()
+                signal.raise_signal(signal.SIGINT)
+
+            def interrupt_during_cleanup(path, *args, **kwargs):
+                signal.raise_signal(signal.SIGINT)
+                signal.raise_signal(signal.SIGINT)
+                return original_rmtree(path, *args, **kwargs)
+
+            previous = signal.getsignal(signal.SIGINT)
+            with mock.patch.object(bootstrap, "VENV", venv), \
+                 mock.patch.object(bootstrap, "venv_python", return_value=venv / "bin/python"), \
+                 mock.patch.object(bootstrap, "works", return_value=False), \
+                 mock.patch.object(bootstrap, "checked_run", side_effect=create_venv), \
+                 mock.patch.object(bootstrap.shutil, "rmtree", side_effect=interrupt_during_cleanup):
+                with self.assertRaises(KeyboardInterrupt):
+                    bootstrap.ensure_venv(Path(sys.executable), {})
+            self.assertEqual(marker.read_text(), "original")
+            self.assertIs(signal.getsignal(signal.SIGINT), previous)
+
+    def test_ctrl_c_during_final_validation_rolls_back_before_success_return(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            venv = root / ".venv"
+            venv.mkdir()
+            marker = venv / "keep-me"
+            marker.write_text("original")
+            executable = venv / "bin/python"
+
+            def create_venv(_command, **_kwargs):
+                executable.parent.mkdir(parents=True)
+                executable.touch()
+
+            def cancel_check(_env):
+                signal.raise_signal(signal.SIGINT)
+                return []
+
+            previous = signal.getsignal(signal.SIGINT)
+            with mock.patch.object(bootstrap, "VENV", venv), \
+                 mock.patch.object(bootstrap, "venv_python", return_value=executable), \
+                 mock.patch.object(bootstrap, "works", return_value=True), \
+                 mock.patch.object(bootstrap, "checked_run", side_effect=create_venv), \
+                 mock.patch.object(bootstrap, "check_tools", side_effect=cancel_check):
+                with self.assertRaises(KeyboardInterrupt):
+                    bootstrap.ensure_venv(Path(sys.executable), {})
+            self.assertEqual(marker.read_text(), "original")
+            self.assertIs(signal.getsignal(signal.SIGINT), previous)
+
     def test_all_three_entry_points_exist_and_invoke_same_bootstrap(self):
         for path, target in (
             ("linuxsetup.sh", "linux"),

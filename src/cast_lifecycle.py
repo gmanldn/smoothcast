@@ -129,7 +129,11 @@ class LifecycleMixin(LifecycleActionsMixin):
                 self._timed_subtitle_preview(value)
             if previewing and self._local_stream() is None:
                 if self.seekbar.scrubbing:
-                    self._queue_preview(min(value, max(0.0, duration - 1.0)) if duration else value)
+                    target = min(value, max(0.0, duration - 1.0)) if duration else value
+                    # Instant: the nearest decoded frame; then a keyframe-fast
+                    # decode at the playhead. The exact frame follows on release.
+                    self._show_nearest_preview(target)
+                    self._queue_preview(target, fast=True)
                 else:
                     self._queue_preview(value, sparse=True)
         else:
@@ -153,7 +157,7 @@ class LifecycleMixin(LifecycleActionsMixin):
         if self.monitor is not None:
             try:
                 self.monitor.stop()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort monitor stop
                 pass
             self.monitor = None
 

@@ -25,7 +25,7 @@ def test_profile_keeps_every_attachment():
 def test_failing_and_never_reached_links_say_why():
     r = rec(edges=(mm.EdgeObservation("node", "y" * 32, None, None, "timeout"),
                    mm.EdgeObservation("target", "t", None)))
-    texts = {l.peer: (l.healthy, l.text) for l in node_profile.profile(r).links}
+    texts = {link.peer: (link.healthy, link.text) for link in node_profile.profile(r).links}
     assert texts["y" * 32] == (False, "failing: timeout") and texts["t"] == (False, "never reached")
 
 
@@ -52,15 +52,17 @@ def test_redact_strips_private_fields():
 
 
 def test_panel_references_diagram_routes():
-    import portal_mesh_http
     import portal_mesh_panel
     html = portal_mesh_panel.panel_html()
     assert "/api/mesh/diagram.svg" in html and "/api/mesh/profiles" in html
+    assert 'n.platform?"Platform: "+n.platform' in html
+    assert 'sources.length?"Shares: "+sources.join(", ")' in html
+    assert 'String(link.text||"status unavailable")' in html
 
 
 def test_gtk_popover_describes_every_node_fact():
     import pytest
-    gi = pytest.importorskip("gi")
+    pytest.importorskip("gi")
     mesh_ui = pytest.importorskip("mesh_ui")
     r = rec(addresses=("192.168.1.5",), mesh_port=7001, targets=(mm.TargetObservation("t1", "cast", "TV"),),
             edges=(mm.EdgeObservation("node", "z" * 32, 1, 7),))
@@ -120,7 +122,8 @@ def test_gtk_profiles_render_only_visible_changed_snapshots():
         _paint_profiles=calls.append,
     )
     owner._render_profiles = lambda *args: ns["_render_profiles"](owner, *args)
-    show = lambda profiles: ns["show_profiles"](owner, profiles)
+    def show(profiles):
+        ns["show_profiles"](owner, profiles)
     show(["old"])
     show(["latest"])
     assert calls == []
@@ -137,3 +140,43 @@ def test_gtk_profiles_render_only_visible_changed_snapshots():
     visibility["mapped"] = True
     owner._render_profiles()
     assert calls == [("latest",), ("new",)]
+
+
+def test_uptime_text_is_plain_and_never_wrong():
+    t = node_profile.uptime_text
+    assert t(1000, 1000 + 30) == "under a minute"
+    assert t(1000, 1000 + 5 * 60) == "5 min"
+    assert t(1000, 1000 + 3 * 3600 + 12 * 60) == "3 h 12 min"
+    assert t(1000, 1000 + 2 * 86400 + 5 * 3600) == "2 d 5 h"
+    assert t(0, 5000) == "" and t(1000, None) == "" and t(1000, 500) == "" and t("x", 5000) == ""
+
+
+def test_profile_omits_uptime_for_a_nonfinite_clock():
+    record = rec(boot_epoch=10_000)
+    for now in (float("nan"), float("inf"), float("-inf")):
+        profile = node_profile.profile(record, now=now)
+        assert not profile.uptime
+        assert " · up " not in profile.headline
+
+
+def test_profile_shows_uptime_only_when_the_clock_is_given():
+    r = rec(boot_epoch=10_000)
+    assert node_profile.profile(r).uptime == "" and "up " not in node_profile.profile(r).headline
+    p = node_profile.profile(r, now=10_000 + 7200)
+    assert p.uptime == "2 h 0 min" and p.headline.endswith("up 2 h 0 min")
+    assert node_profile.as_dict(p)["uptime"] == "2 h 0 min"
+
+
+def test_profile_exposes_reported_platform_and_gtk_description():
+    r = rec(platform="Linux")
+    p = node_profile.profile(r)
+    assert p.platform == "Linux"
+    assert node_profile.as_dict(p)["platform"] == "Linux"
+    import ast
+    from pathlib import Path
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "src/mesh_ui.py").read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "NetworkPopover")
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "describe")
+    ns = {"node_profile": node_profile}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), "<mesh describe>", "exec"), ns)
+    assert "Platform: Linux" in ns["describe"](p)

@@ -242,7 +242,7 @@ class AudioMonitor:
                     self._pair()
                     return
                 self._stop.wait(0.05)
-        except Exception:
+        except Exception:  # noqa: BLE001 - the meter is best-effort and must never break playback
             return
 
     def _pair(self) -> None:

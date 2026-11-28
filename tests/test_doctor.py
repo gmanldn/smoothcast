@@ -40,3 +40,12 @@ def test_run_survives_a_crashing_check_and_reports_json_and_exit_code():
     data = json.loads(doctor.to_json(results))
     assert data["status"] == "fail" and len(data["checks"]) == 2
     assert doctor.exit_code(results) == 2 and doctor.exit_code(results[:1]) == 0
+
+
+def test_vpn_route_warns_only_for_tunnel_interfaces():
+    import doctor_vpn
+
+    assert doctor_vpn.vpn_route("wg0").status == doctor_vpn.WARN
+    assert "LAN" in doctor_vpn.vpn_route("tun0").fix
+    assert doctor_vpn.vpn_route("eth0").status == doctor_vpn.PASS
+    assert doctor_vpn.vpn_route(None).status == doctor_vpn.PASS

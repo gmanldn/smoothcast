@@ -133,7 +133,7 @@ list.insertBefore=nativeInsert;
 toggle.focus();
 window.scRenderScreens({screens:[],queue:[]});
 assert.equal(document.activeElement,heading,"disconnected focused screen returns to heading");
-assert.equal(list.children[0].textContent,"No screens connected");
+assert.equal(list.children[0].textContent,"No screens yet. Open the screen page on a TV, tablet or laptop to add one.");
 window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
 const liveRow=list.children[0],buttons=liveRow.children[1].children;
 const select=buttons[0],livePlay=buttons[1],liveToggle=buttons[2];

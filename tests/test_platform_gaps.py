@@ -13,8 +13,9 @@ TESTS = Path(__file__).resolve().parent
 
 
 def fake_item(nodeid: str):
-    item = SimpleNamespace(nodeid=nodeid, markers=[])
+    item = SimpleNamespace(nodeid=nodeid, markers=[], fspath="")
     item.add_marker = item.markers.append
+    item.iter_markers = lambda name=None: iter(list(item.markers))  # the tier hook (#699) reads these
     return item
 
 
@@ -52,7 +53,8 @@ class HookTests(unittest.TestCase):
         item = fake_item(nodeid)
         with mock.patch("sys.platform", platform):
             conftest.pytest_collection_modifyitems(None, [item])
-        return item.markers
+        # The tier hook also tags unit/integration; this register only governs skips.
+        return [marker for marker in item.markers if marker.name == "skip"]
 
     def test_a_registered_test_is_skipped_only_on_its_platform_with_the_reason(self):
         for platform, entries in platform_gaps.GAPS.items():

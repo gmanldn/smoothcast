@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 import ipaddress
 import json
+import logging
 import math
 import os
 import pathlib
@@ -36,6 +37,7 @@ import hdr_tonemap
 import lan_interfaces
 import language_prefs
 import loudness
+import paths
 import playback_state
 import process_identity
 import process_priority
@@ -72,6 +74,7 @@ def _hls_server_script() -> str:
 SESSION_FILE = ROOT / "session.json"
 PROGRESS_FILE = ROOT / "progress.log"
 FFMPEG_LOG = ROOT / "ffmpeg.log"
+_ATTEMPT_LOG = logging.getLogger("smoothcast.attempts")
 PORT = hls_server.PORT  # default; Session picks a free fallback if it is taken
 FALLBACK_PORTS = 32  # PORT .. PORT+31 are scanned for a free port or our own server
 HLS_NAME = "movie.m3u8"
@@ -690,6 +693,17 @@ def _usable_ipv4(value: str) -> bool:
         return False
     return not (addr.is_loopback or addr.is_link_local or
                 addr.is_unspecified or addr.is_multicast)
+
+
+def _may_still_be_arriving(path: pathlib.Path) -> bool:
+    """A guest upload may be cast while it is still arriving; only -readrate
+    keeps FFmpeg behind the transfer, so such a file must not burst-read."""
+    cache = os.environ.get("XDG_CACHE_HOME") or str(pathlib.Path.home() / ".cache")
+    root = pathlib.Path(cache) / paths.APP_DIR / "portal-uploads"
+    try:
+        return pathlib.Path(path).resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError, RuntimeError):
+        return True
 
 
 def require_compatible_ffmpeg() -> tuple[int, int]:
@@ -1430,6 +1444,38 @@ class Session:
         if thread is not None:
             thread.join(timeout=1.0)
 
+    _attempt = None  # per-attempt artifact folder for the encoder start in flight (#698)
+
+    def _begin_attempt(self, args: list[str], software: bool) -> str:
+        """Open an attempt folder (argv, plan reason); returns the plan reason. Never raises."""
+        plan = "software encode" if software else "hardware encode (VAAPI), software fallback on stall"
+        self._attempt = None
+        try:
+            import attempt_log
+            self._attempt = attempt_log.begin(paths.cache_dir(), argv=[str(a) for a in args],
+                                              plan_reason=plan)
+        except Exception as exc:  # noqa: BLE001 - diagnostics must never break a cast
+            _ATTEMPT_LOG.warning("attempt diagnostics unavailable: %s", exc)
+            self._attempt = None
+        return plan
+
+    def _end_attempt(self, outcome: str, reason: str = "") -> None:
+        """Keep this attempt's ffmpeg stderr tail before a retry truncates ffmpeg.log."""
+        attempt, self._attempt = self._attempt, None
+        if attempt is None:
+            return
+        try:
+            with open(FFMPEG_LOG, "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, handle.tell() - 65536))
+                attempt.write("ffmpeg.log", handle.read())
+        except OSError as exc:
+            _ATTEMPT_LOG.warning("could not keep ffmpeg stderr for this attempt: %s", exc)
+        try:
+            attempt.finish(outcome, reason)
+        except Exception as exc:  # noqa: BLE001 - diagnostics must never break a cast
+            _ATTEMPT_LOG.warning("could not record attempt outcome: %s", exc)
+
     def log_tail(self, lines: int = 5) -> str:
         try:
             content = FFMPEG_LOG.read_text(errors="replace").splitlines()
@@ -1858,6 +1904,9 @@ class Session:
             # setpts/atempo stream needs 2× input, otherwise the TV starves.
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
+        if not _may_still_be_arriving(media.path):
+            # The first two segments no longer take 8 s of wall clock.
+            args += ffmpeg_compat.initial_burst_args()
         if not audio_only:
             args += self._hwaccel_args(software)
         args += ["-i", str(media.path)]
@@ -1947,8 +1996,13 @@ class Session:
             "-hls_flags", "delete_segments+independent_segments",
         ]
         args += hls_output_args
+        plan_reason = self._begin_attempt(args, software)
         with open(FFMPEG_LOG, "w") as log:
-            low_priority = process_priority.enabled()
+            # This encoder feeds the TV in real time; below 1x the receiver
+            # buffers, so it keeps normal priority. At nice 10 a busy host
+            # starved it to 0.5x (#686). Background conversions (DLNA,
+            # previews) keep the #247 lower priority.
+            low_priority = False
             self.ffmpeg = subprocess.Popen(
                 args, cwd=str(ROOT),
                 stdout=subprocess.DEVNULL, stderr=log,
@@ -1958,7 +2012,8 @@ class Session:
             process_priority.lower(self.ffmpeg, low_priority)
         try:
             self._start_server(local_ip, device_ip, token=generation)
-        except Exception:
+        except Exception as exc:
+            self._end_attempt("failed", f"stream server did not start: {exc}")
             _terminate(self.ffmpeg)
             self.ffmpeg = None
             raise
@@ -1974,6 +2029,8 @@ class Session:
             timeout *= 3
         if not self._wait_for_segments(timeout):
             tail = self.log_tail()
+            self._end_attempt("stalled-retry-software" if not software else "failed",
+                              f"no media segments within {timeout}s ({plan_reason})")
             if not software:
                 _terminate(self.ffmpeg)
                 self.ffmpeg = None
@@ -1997,7 +2054,7 @@ class Session:
                 )
                 return
             raise StreamError("the encoder failed to produce a stream within "
-                              f"{timeout}s" + (f" — {tail}" if tail else " — ffmpeg was silent (large source or subtitle burn-in?)"))
+                              f"{timeout}s ({plan_reason})" + (f" — {tail}" if tail else " — ffmpeg was silent (large source or subtitle burn-in?)"))
         if self._vaapi_stalled:
             self._vaapi_stalled = False
             hw_encoder_state.record_failure(
@@ -2008,15 +2065,19 @@ class Session:
             cast_args += ["-s", str(receiver_subs)]
         else:
             cast_args += ["--no-subs"]
-        self.caster = subprocess.Popen(
-            castctl.catt_command(cast_args),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            start_new_session=True, text=True,
-        )
-        self._await_receiver(
-            device,
-            lambda info: playback_state.hls_session_matches(info, url, title),
-        )
+        try:
+            self.caster = subprocess.Popen(
+                castctl.catt_command(cast_args),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                start_new_session=True, text=True,
+            )
+            self._await_receiver(
+                device,
+                lambda info: playback_state.hls_session_matches(info, url, title),
+            )
+        except Exception as exc:
+            self._end_attempt("failed", f"receiver did not accept the stream: {exc}")
+            raise
         self.state = SessionState(
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
@@ -2042,6 +2103,7 @@ class Session:
             stream_url=url,
         )
         _save_session(self.state)
+        self._end_attempt("started", plan_reason)
 
     def _wait_for_segments(self, timeout: float, *, max_wait: float = 120.0) -> bool:
         # A busy CPU or subtitle burn-in can make a healthy encoder slower than
@@ -2090,6 +2152,8 @@ class Session:
         observed = False
         known_state = False
         last_status = {}
+        silent_since: float | None = None
+        resets = 0
         while True:
             if self.caster is not None and self.caster.poll() not in (None, 0):
                 raise StreamPreparationError(
@@ -2108,6 +2172,21 @@ class Session:
                 known_state |= castctl.player_state(info) not in {"UNKNOWN", "OFFLINE"}
             if matches(info):
                 return
+            # A reply that never carries a playback state means the kept status
+            # connection is stale (TV standby, app switch). Drop it so the next
+            # read reconnects, instead of polling the same dead cache for 40 s.
+            if known_state or not observed:
+                silent_since = None
+            else:
+                now = time.monotonic()
+                silent_since = now if silent_since is None else silent_since
+                if now - silent_since >= 4.0 and resets < 3:
+                    resets += 1
+                    silent_since = now
+                    try:
+                        castctl.reset_status_route(device)
+                    except Exception as exc:  # noqa: BLE001 - best-effort recovery only
+                        castctl.log_backend_failure(f"status route reset failed: {exc}")
             remaining = deadline - time.monotonic()
             if remaining > 0:
                 time.sleep(min(interval, remaining))
@@ -2123,10 +2202,10 @@ class Session:
                        f"state={castctl.player_state(last_status)}, "
                        f"media_present={bool(last_status.get('content_id'))}; "
                        f"{self._caster_output('helper still running or no output')}",
-                code="cast.command_failed")
+                code="cast.status_unavailable")
         raise StreamPreparationError(
             "Receiver is reachable but did not confirm playback of this media. Check the TV.",
-            detail=self._caster_output("playback not confirmed"), code="cast.command_failed")
+            detail=self._caster_output("playback not confirmed"), code="cast.playback_unconfirmed")
 
     def _caster_output(self, fallback: str) -> str:
         """Best-effort catt output for an error; never block on a live catt."""

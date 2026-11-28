@@ -4,14 +4,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import portal
+import portal_mesh_panel
 import room_layout
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 
 
 def test_every_section_exists_on_the_web():
+    page = portal._HTML + portal_mesh_panel.panel_html()   # the mesh panel is injected at serve time
     for section in room_layout.FRONT_PAGE + room_layout.DISCLOSED:
-        assert f'id="{section.web_id}"' in portal._HTML, section.key
+        assert f'id="{section.web_id}"' in page, section.key
 
 
 def test_every_section_has_a_gtk_builder():

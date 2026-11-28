@@ -105,6 +105,8 @@ def catt_command(args: list[str]) -> list[str]:
     # use the same receiver route. Keep the public/session identity unchanged.
     if len(args) >= 2 and args[0] == "-d" and isinstance(_backend, CattBackend):
         args = [args[0], _backend.receiver_route(args[1]), *args[2:]]
+    if args and demo_mode.active() and "cast" in args[:3]:
+        return [sys.executable, str(pathlib.Path(__file__).with_name("demo_cast_helper.py")), *args]
     return frozen_runtime.catt_command(str(CATT), args)
 
 
@@ -326,10 +328,16 @@ class CattBackend:
             self._verified_hosts[device] = (host, now)
         return host
 
+    def reset_status_route(self, device: str) -> None:
+        """Forget the kept status connection so the next read reconnects."""
+        host = self._mirror_routes.pop(device, None)
+        if host is not None:
+            self._mirror.forget(host)
+
     def scan(self, timeout: float = 30) -> list[Device]:
         try:
             devices = _passive_cast_scan(timeout)
-        except Exception:
+        except Exception:  # noqa: BLE001 - fall back to the compatibility scan on any discovery failure
             # Older/broken discovery environments retain the compatibility
             # path. Its JSON keys collapse duplicate names, so do not use
             # that result as evidence for an automatic IP route.
@@ -349,7 +357,7 @@ class CattBackend:
         try:
             host = validate_manual_target(selected.host)
             identity = _receiver_identity_at(host)
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unverifiable identity keeps the name route
             return name
         if identity and identity.replace("-", "").casefold() == selected.uuid.replace("-", "").casefold():
             return host
@@ -365,7 +373,7 @@ class CattBackend:
         self._last_refresh[name] = now
         try:
             self._advertisements = tuple(_passive_cast_scan(3.0))
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed refresh keeps the name route
             return name
         return self.receiver_route(name)
 
@@ -480,6 +488,9 @@ _CATT_MEDIA_KEYS = (
 )
 
 
+_MEDIA_NAMESPACE = "urn:x-cast:com.google.cast.media"
+
+
 class _StatusMirror:
     """Kept read-only PyChromecast connections, keyed by verified host.
 
@@ -488,83 +499,138 @@ class _StatusMirror:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        # A receiver's connection lifecycle is single-flight: wait() starts
+        # PyChromecast's SocketClient thread, so disconnect/join must not race
+        # that start. Stripes keep lock memory bounded across arbitrary hosts.
+        self._host_locks = tuple(threading.RLock() for _ in range(8))
+        self._closed = False
         self._casts: dict[str, object] = {}
 
     def info(self, host: str, timeout: float) -> ReceiverInfo | None:
-        deadline = time.monotonic() + timeout
-        try:
-            import pychromecast
-            from pychromecast_backend import PyChromecastBackend
-
-            # Creating the object opens no socket (wait() does), so do it under
-            # the lock: concurrent pollers must share one connection, not leak one.
+        with self._host_lock(host):
             with self._lock:
-                chromecast = self._casts.get(host)
-                if chromecast is None:
-                    chromecast = pychromecast.get_chromecast_from_host(
-                        (host, 8009, None, None, None), tries=1,
-                        timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
-                    self._casts[host] = chromecast
-            cc = cast(Any, chromecast)
-            cc.wait(timeout=max(0.1, deadline - time.monotonic()))
-            cast_status = cc.status
-            media = cc.media_controller
-            app_id = getattr(cast_status, "app_id", None)
-            if app_id and getattr(media.status, "media_session_id", None) is None:
-                # A freshly joined app reports its media session shortly after.
-                try:
-                    media.update_status()
-                except Exception as exc:
-                    log_backend_failure(f"media status refresh failed: {exc}")
-                wait_until = min(deadline, time.monotonic() + 1.5)
-                while (time.monotonic() < wait_until
-                       and getattr(media.status, "media_session_id", None) is None):
-                    time.sleep(0.05)
-            status = PyChromecastBackend._status_dict(
-                cast(Any, None), media.status, cast_status)
-            # A kept connection's last report ages; extrapolate like the receiver.
-            adjusted = getattr(media.status, "adjusted_current_time", None)
-            if isinstance(adjusted, (int, float)) and "current_time" in status:
-                status["current_time"] = adjusted
-            for key in ("display_name", "status_text"):
-                value = getattr(cast_status, key, None)
-                if value:
-                    status[key] = value  # type: ignore[literal-required]
-            # Same media keys as `catt info -j`, so every caller sees one shape.
-            for key in _CATT_MEDIA_KEYS:
-                value = getattr(media.status, key, None)
-                if value is not None and key not in status:
-                    status[key] = value  # type: ignore[literal-required]
-            return status
-        except Exception as exc:
+                if self._closed:
+                    return None
+            return self._info_locked(host, timeout)
+
+    def _info_locked(self, host: str, timeout: float) -> ReceiverInfo | None:
+        deadline = time.monotonic() + timeout
+        # A kept connection can go stale without any event (TV standby, app
+        # switch, Wi-Fi roam): it keeps answering from a cache that stays UNKNOWN
+        # forever. Prove it is alive; if not, drop it and reconnect once.
+        for _attempt in (0, 1):
+            reused = False
+            try:
+                import pychromecast
+
+                # Creating the object opens no socket (wait() does), so do it under
+                # the lock: concurrent pollers must share one connection, not leak one.
+                with self._lock:
+                    chromecast = self._casts.get(host)
+                    reused = chromecast is not None
+                    if chromecast is None:
+                        chromecast = pychromecast.get_chromecast_from_host(
+                            (host, 8009, None, None, None), tries=1,
+                            timeout=max(0.5, min(5.0, timeout)), retry_wait=1)
+                        self._casts[host] = chromecast
+                status = self._observe(cast(Any, chromecast), deadline, reused=reused)
+            except Exception as exc:  # noqa: BLE001 - any connection failure drops the cast and reports no status
+                self._drop(host)
+                _info_failed(host, f"direct status connection failed: {type(exc).__name__}")
+                return None
+            if status is not None:
+                return status
             self._drop(host)
-            _info_failed(host, f"direct status connection failed: {type(exc).__name__}")
-            return None
+            if deadline - time.monotonic() < 1.0:
+                break
+        _info_failed(host, "kept status connection stopped answering")
+        return None
+
+    @staticmethod
+    def _observe(cc: Any, deadline: float, *, reused: bool) -> ReceiverInfo | None:
+        """Current status, or None when a *reused* connection proved stale."""
+        from pychromecast_backend import PyChromecastBackend
+
+        cc.wait(timeout=max(0.1, deadline - time.monotonic()))
+        client = getattr(cc, "socket_client", None)
+        if reused:
+            # Ask the receiver for its status and wait for the answer. This both
+            # proves the socket is live and refreshes the running-app fields.
+            answered = threading.Event()
+            try:
+                client.receiver_controller.update_status(
+                    callback_function=lambda *_args: answered.set())
+            except Exception:  # noqa: BLE001 - a connection that cannot send is stale
+                return None
+            if not answered.wait(max(0.1, min(1.5, deadline - time.monotonic()))):
+                return None
+        cast_status = cc.status
+        media = cc.media_controller
+        app_id = getattr(cast_status, "app_id", None)
+        no_session = getattr(media.status, "media_session_id", None) is None
+        namespaces = getattr(client, "app_namespaces", None) or ()
+        if app_id and no_session and _MEDIA_NAMESPACE in namespaces:
+            # A freshly joined media app reports its session shortly after. Apps
+            # without a media channel (backdrop, launcher) never will: do not wait.
+            try:
+                media.update_status()
+            except Exception as exc:  # noqa: BLE001 - a failed media status refresh is logged; polling continues
+                log_backend_failure(f"media status refresh failed: {exc}")
+            wait_until = min(deadline, time.monotonic() + 1.5)
+            while (time.monotonic() < wait_until
+                   and getattr(media.status, "media_session_id", None) is None):
+                time.sleep(0.05)
+            if reused and getattr(media.status, "media_session_id", None) is None:
+                # Alive but never joined the running app's media channel: only a
+                # fresh connection can recover it.
+                return None
+        status = PyChromecastBackend._status_dict(
+            cast(Any, None), media.status, cast_status)
+        # A kept connection's last report ages; extrapolate like the receiver.
+        adjusted = getattr(media.status, "adjusted_current_time", None)
+        if isinstance(adjusted, (int, float)) and "current_time" in status:
+            status["current_time"] = adjusted
+        for key in ("display_name", "status_text"):
+            value = getattr(cast_status, key, None)
+            if value:
+                status[key] = value  # type: ignore[literal-required]
+        # Same media keys as `catt info -j`, so every caller sees one shape.
+        for key in _CATT_MEDIA_KEYS:
+            value = getattr(media.status, key, None)
+            if value is not None and key not in status:
+                status[key] = value  # type: ignore[literal-required]
+        return status
 
     def connected(self, host: str) -> bool:
         """True only while the kept socket is live; stale caches never answer."""
-        with self._lock:
-            chromecast = self._casts.get(host)
-        try:
-            client = getattr(chromecast, "socket_client", None)
-            return bool(client is not None and client.is_connected)
-        except Exception:
-            return False
+        with self._host_lock(host):
+            with self._lock:
+                chromecast = self._casts.get(host)
+            try:
+                client = getattr(chromecast, "socket_client", None)
+                return bool(client is not None and client.is_connected)
+            except Exception:  # noqa: BLE001 - a broken socket client means not connected
+                return False
 
     def forget(self, host: str) -> None:
         self._drop(host)
 
     def _drop(self, host: str) -> None:
-        with self._lock:
-            chromecast = self._casts.pop(host, None)
-        if chromecast is not None:
-            try:
-                cast(Any, chromecast).disconnect(timeout=1)
-            except Exception as exc:
-                log_backend_failure(f"receiver disconnect failed: {exc}")
+        with self._host_lock(host):
+            with self._lock:
+                chromecast = self._casts.pop(host, None)
+            if chromecast is not None:
+                try:
+                    cast(Any, chromecast).disconnect(timeout=1)
+                except Exception as exc:  # noqa: BLE001 - a failed disconnect is logged
+                    log_backend_failure(f"receiver disconnect failed: {exc}")
+
+    def _host_lock(self, host: str) -> threading.RLock:
+        return self._host_locks[hash(host) % len(self._host_locks)]
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             hosts = list(self._casts)
         for host in hosts:
             self._drop(host)
@@ -702,13 +768,20 @@ def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     return result
 
 
+def reset_status_route(device: str) -> None:
+    """Drop a possibly stale kept status connection; a no-op for other backends."""
+    reset = getattr(_backend, "reset_status_route", None)
+    if callable(reset):
+        reset(device)
+
+
 def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     """Run a receiver command using the active Cast backend."""
     command_trace.clear_receiver_expectation()
     command_trace.stage("receiver_call")
     try:
         accepted, response = _backend.command(device, *args, timeout=timeout)
-    except Exception:
+    except Exception:  # noqa: BLE001 - record the failed stage then re-raise
         command_trace.stage("receiver_failed", code=502)
         raise
     command_trace.stage("receiver_ack" if accepted else "receiver_failed",

@@ -148,7 +148,7 @@ class MusicImportMixin:
                     metadata[path] = streamer.ffprobe(
                         Path(path), cancel=cancel,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 - a failed import is skipped
                     pass
                 if index == 1 or index % 16 == 0 or index == len(result.paths):
                     GLib.idle_add(

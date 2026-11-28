@@ -3,15 +3,16 @@ from __future__ import annotations
 
 import pathlib
 import sys
-import textwrap
 import unittest
 from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from gui_source import main_window_methods
+import cast_lifecycle
+import cast_session
 import playback_state
+from gui_shortcuts import installed_shortcuts
 
 
 class FrameStepTests(unittest.TestCase):
@@ -24,12 +25,9 @@ class FrameStepTests(unittest.TestCase):
         self.assertEqual(playback_state.frame_step_delta("bad"), 1.0)
 
     def test_frame_step_uses_the_media_frame_rate(self):
-        namespace = {"playback_state": playback_state}
-        code = "class M:\n" + textwrap.indent(
-            textwrap.dedent(main_window_methods()["_frame_step"]), "    ")
-        exec(compile(code, "<frame-step>", "exec"), namespace)
+        class Fake:
+            _frame_step = cast_lifecycle.LifecycleMixin._frame_step
 
-        class Fake(namespace["M"]):
             def __init__(self, fps):
                 self.media = SimpleNamespace(fps=fps)
                 self.skips = []
@@ -48,9 +46,24 @@ class FrameStepTests(unittest.TestCase):
         self.assertEqual(unknown.skips, [1.0])
 
     def test_step_keys_are_wired_to_the_frame_step(self):
-        methods = main_window_methods()
-        self.assertIn("self._frame_step(-1)", methods["_skip_back1"])
-        self.assertIn("self._frame_step(1)", methods["_skip_forward1"])
+        class Window:
+            def __init__(self):
+                self.steps = []
+
+            _skip_back1 = cast_session.SessionMixin._skip_back1
+            _skip_forward1 = cast_session.SessionMixin._skip_forward1
+
+            def _frame_step(self, direction):
+                self.steps.append(direction)
+
+            def __getattr__(self, name):
+                return lambda *a, **kw: None
+
+        window = Window()
+        keys = installed_shortcuts(window)
+        keys["comma"]()
+        keys["period"]()
+        self.assertEqual(window.steps, [-1, 1])
 
 
 if __name__ == "__main__":

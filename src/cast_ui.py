@@ -931,7 +931,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         if service is not None:
             try:
                 beat = service.heartbeat_snapshot()
-            except Exception:
+            except Exception:  # noqa: BLE001 - no heartbeat means no card data
                 beat = None
         card.update(beat)
 
@@ -1102,7 +1102,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         """
         try:
             active = bool(self.is_active())
-        except Exception:
+        except Exception:  # noqa: BLE001 - unknown window state counts as inactive
             active = False
         if not notifications.should_notify(self.cfg, event, window_active=active):
             return
@@ -1120,7 +1120,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self._console(f"{title}: {body}")
         try:
             self.toast(body, error=event != notifications.FINISHED)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - in-app alert is best-effort
             self._console(f"In-app playback alert unavailable: {exc}")
 
 

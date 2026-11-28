@@ -43,6 +43,8 @@ PATHS: dict[str, dict] = {
                                auth=False, method_body="Login")},
     "/api/session": {"get": _op("Resume an existing session after a reload")},
     "/api/profile": {"post": _op("Rename yourself in the room", csrf=True, method_body="Profile")},
+    "/api/room/rename": {"post": _op("Rename the shared room from its host computer",
+                                      csrf=True, method_body="RoomName")},
     "/api/status": {"get": _op("Playback, queue, room presence, receiver state and link acquisitions")},
     "/api/link-jobs": {"post": _op("Acquire an authorised YouTube video or magnet into Up Next",
                                    csrf=True, method_body="LinkStart", tag="acquisition")},
@@ -171,6 +173,7 @@ ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
     ("/api/media/{id}", "get"): "media:read",
     # State-changing: cookie plus CSRF token.
     ("/api/profile", "post"): "room:write",
+    ("/api/room/rename", "post"): "room:host",
     ("/api/action", "post"): "room:write",
     ("/api/screens", "post"): "room:write",
     ("/api/screens/{id}", "delete"): "room:write",
@@ -198,7 +201,7 @@ def required_capability(path: str, method: str) -> str | None:
     (no session, no capability). State-changing routes additionally require the
     session cookie and CSRF token already declared in ``PATHS``.
     """
-    return ROUTE_CAPABILITIES.get((path, method))
+    return ROUTE_CAPABILITIES.get((path, method.lower()))
 
 
 SCHEMAS = {
@@ -206,6 +209,8 @@ SCHEMAS = {
     "Login": {"type": "object", "properties": {
         "name": {"type": "string", "maxLength": 40}, "pin": {"type": "string", "pattern": "^[0-9]{6}$"}}},
     "Profile": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+    "RoomName": {"type": "object", "required": ["name"], "properties": {
+        "name": {"type": "string", "maxLength": 40}}},
     "Action": {"type": "object", "required": ["action"], "properties": {
         "action": {"type": "string"}, "value": {}, "id": {"type": "string"},
         "key": {"type": "string", "pattern": "^qh:[0-9a-f]{32}$"},

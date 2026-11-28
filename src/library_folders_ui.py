@@ -113,7 +113,7 @@ class LibraryFoldersPage:
     def _folder_chosen(self, dialog, result) -> None:
         try:
             chosen = dialog.select_folder_finish(result)
-        except Exception:  # Cancelled or portal failure: nothing to add.
+        except Exception:  # Cancelled or portal failure: nothing to add.  # noqa: BLE001 - cancelled dialog or portal failure: nothing to add
             return
         path = chosen.get_path() if chosen is not None else None
         if not path:

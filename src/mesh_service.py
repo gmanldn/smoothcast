@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 import json
 import os
+import platform
 from pathlib import Path
 import random
 import secrets
@@ -151,7 +152,7 @@ class MeshService:
                 return False
             try:
                 self._build()
-            except Exception as exc:               # contain every startup failure
+            except Exception as exc:               # contain every startup failure  # noqa: BLE001 - contain every startup failure
                 self._teardown()
                 self.state, self.error = "unavailable", f"{type(exc).__name__}: {exc}"[:200]
                 return False
@@ -177,6 +178,7 @@ class MeshService:
                             version=cfg.version if _valid_version(cfg.version) else "0.0.0",
                             rev=1, boot_epoch=epoch, mesh_port=http.port,
                             room_port=cfg.room_port,
+                            platform=platform.system() or "Unknown",
                             capabilities=("room", "screens", mesh_acquisition_activity.HINT,
                                           *((mesh_acquisition_bridge.HINT,)
                                             if cfg.acquisition_worker is not None
@@ -244,7 +246,7 @@ class MeshService:
             try:
                 if item.probe is not None:
                     result = mv.connect_probe(*item.probe)
-            except Exception:
+            except Exception:  # noqa: BLE001 - a failed probe reports no result
                 pass
             if loop is not None:
                 loop.call_soon_threadsafe(lambda: done(result))
@@ -312,24 +314,24 @@ class MeshService:
             if obj is not None:
                 try:
                     obj.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 - teardown closes everything best-effort
                     pass
         udp = getattr(self, "_udp", None)
         if udp is not None:
             try:
                 udp.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 - teardown closes everything best-effort
                 pass
         if self.cache is not None:
             try:
                 self.cache.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 - teardown closes everything best-effort
                 pass
         beat = getattr(self, "heartbeat", None)
         if beat is not None:
             try:
                 beat.stop()
-            except Exception:
+            except Exception:  # noqa: BLE001 - teardown closes everything best-effort
                 pass
         if self._loop is not None:
             self._loop.stop()
@@ -349,7 +351,7 @@ class MeshService:
         if self.config.on_error is not None:
             try:
                 self.config.on_error(exc)
-            except Exception:
+            except Exception:  # noqa: BLE001 - an error callback must not raise
                 pass
 
     def _on_beacon(self, event: mb.BeaconEvent) -> None:
@@ -366,12 +368,12 @@ class MeshService:
         for listener in list(getattr(self, "primary_listeners", [])):
             try:
                 listener(change)
-            except Exception:
+            except Exception:  # noqa: BLE001 - a bad listener must not stop the others; counted
                 self.errors += 1
         if self.cache is not None and change.new:
             try:
                 self.cache.set_last_primary(change.new)
-            except Exception:
+            except Exception:  # noqa: BLE001 - a cache write failure is counted
                 self.errors += 1
 
     def _regenerate_identity(self) -> None:
@@ -394,7 +396,7 @@ class MeshService:
             return
         try:
             self.cache.record_view(self.publisher.view)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a cache write failure is counted
             self.errors += 1
         self._loop.call_later(CACHE_SAVE_S, self._save_cache)
 
@@ -463,7 +465,7 @@ class MeshService:
             return None
         try:
             return beat.snapshot()
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unreadable heartbeat means no snapshot
             return None
 
     def _heartbeat_sample(self) -> dict[str, Any]:

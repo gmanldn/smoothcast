@@ -32,6 +32,45 @@ def test_queue_is_first_and_links_remain_discoverable():
     assert "disabled" not in page.ids["linkInput"]
     assert "disabled" in page.ids["linkSubmit"]
     assert "#queuePanel{grid-column:1/-1}" in html
+    assert '<a id="roomRenameLink" href="#roomNameForm" hidden>Rename</a>' in html
+    assert 'id="roomNameForm" hidden' in html and 'id="roomNameInput" maxlength="40"' in html
+    assert 'id="homeChooseScreen"' in html
+    assert 'class="primary-action"' in html and "Choose a file to cast" in html
+    assert "No screen selected. Choose one before casting, or add your file to Up Next instead." in html
+    assert 'class="settings-scope-list"' in html
+    for scope in ("Your profile", "This browser", "Everyone in this room", "Room host only"):
+        assert scope in html
+    assert "House PIN, host policies and shared-library folders are managed in desktop Preferences." in html
+
+
+def test_room_heading_and_rename_controls_follow_host_permission():
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for headless browser checks")
+    html = portal._HTML
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    identity = script[script.index("function renderRoomIdentity(room){"):
+                      script.index("function renderRoom(room){")]
+    harness = r"""
+const assert=require("node:assert/strict");
+const elements={roomRenameLink:{hidden:true},roomNameForm:{hidden:true},roomNameInput:{value:""},
+  homeHeading:{textContent:"Your room"},joinTitle:{textContent:"Join the house"}};
+const document={activeElement:null};
+const $=id=>elements[id];
+"""
+    scenario = r"""
+renderRoomIdentity({name:"Lounge",can_rename:true});
+assert.equal(elements.homeHeading.textContent,"Lounge");
+assert.equal(elements.joinTitle.textContent,"Join Lounge");
+assert.equal(elements.roomRenameLink.hidden,false);
+assert.equal(elements.roomNameForm.hidden,false);
+assert.equal(elements.roomNameInput.value,"Lounge");
+renderRoomIdentity({name:"Studio",can_rename:false});
+assert.equal(elements.homeHeading.textContent,"Studio");
+assert.equal(elements.roomRenameLink.hidden,true);
+assert.equal(elements.roomNameForm.hidden,true);
+"""
+    subprocess.run(["node", "-"], input=harness + identity + scenario,
+                   text=True, check=True, timeout=10)
 
 
 def test_destination_and_link_controls_without_receiver_or_provider():
@@ -52,11 +91,11 @@ let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,
 """
     checks = """
 renderQueueDestination({});
-assert.equal($("quickCastStatus").textContent,"No room receiver selected. You can still add media to Up Next.");
+assert.equal($("quickCastStatus").textContent,"No screen selected. Choose one before casting, or add your file to Up Next instead.");
 assert.equal($("liveRoomTarget").textContent,"No casting target selected");
 assert.equal($("liveRoomPlayback").textContent,"Playback state unavailable");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Idle",title:"Old",active:false});
-assert.equal($("quickCastStatus").textContent,"Selected receiver: Lounge TV. SmoothCast checks availability before sending any file.");
+assert.equal($("quickCastStatus").textContent,"Selected screen: Lounge TV. SmoothCast checks availability before sending any file.");
 assert.equal($("liveRoomTarget").textContent,"Lounge TV");
 assert.equal($("liveRoomPlayback").textContent,"Idle");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Playing",title:"Film",active:true});

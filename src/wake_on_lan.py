@@ -109,5 +109,5 @@ class Wake:
 def _ok(fn, *a) -> bool:
     try:
         return bool(fn(*a))
-    except Exception:
+    except Exception:  # noqa: BLE001 - a failing wake call reports False
         return False

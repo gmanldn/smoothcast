@@ -11,6 +11,7 @@ import time
 from typing import Callable
 
 import library_replication
+import task_runtime
 import replica_store
 
 SOFT_TTL = 10 * 60.0
@@ -35,7 +36,7 @@ class ReplicaManager:
         self._syncing: set[str] = set()
         self._snapshots = 0
         self._lock = threading.RLock()
-        self._stop = threading.Event()
+        self._scope: task_runtime.Scope | None = None
         self._thread: threading.Thread | None = None
 
     # -- observations -----------------------------------------------------
@@ -186,18 +187,19 @@ class ReplicaManager:
     def start(self, interval: float = 10.0) -> None:
         if self._thread and self._thread.is_alive():
             return
-        self._stop.clear()
+        runtime = task_runtime.shared()
+        self._scope = runtime.scope()
 
-        def run() -> None:
-            while not self._stop.wait(interval):
+        def run(scope: task_runtime.Scope) -> None:
+            while not scope.wait(interval):
                 try:
                     self.tick()
-                except Exception:
+                except Exception:  # noqa: BLE001 - a failed tick must not end the loop
                     pass
-        self._thread = threading.Thread(target=run, name="replica-manager", daemon=True)
-        self._thread.start()
+        self._thread = runtime.spawn_daemon("replica-manager", self._scope, run)
 
     def stop(self, timeout: float = 5.0) -> None:
-        self._stop.set()
+        if self._scope:
+            self._scope.cancel()
         if self._thread:
             self._thread.join(timeout)

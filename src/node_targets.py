@@ -56,10 +56,13 @@ class Fence:
             return False, "Stale or foreign command."
         return True, ""
 
-    def release(self, node: str, session: str | None = None) -> None:
-        cur = self._owner.get(node)
-        if cur and (session is None or cur[0] == session):
-            del self._owner[node]
+    def release(self, node: str, session: str, epoch: int) -> bool:
+        """Free the node only for the exact claim; a stale epoch is a no-op."""
+        return self._owner.get(node) == (session, epoch) and bool(self._owner.pop(node))
+
+    def revoke(self, node: str) -> bool:
+        """Administrative teardown: drop any claim."""
+        return self._owner.pop(node, None) is not None
 
     def owners(self) -> dict[str, str]:
         return {n: s for n, (s, _) in self._owner.items()}

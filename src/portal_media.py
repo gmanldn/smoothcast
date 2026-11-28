@@ -88,7 +88,7 @@ def open_regular(path: str | os.PathLike[str]) -> tuple[BinaryIO, int]:
         if not stat.S_ISREG(info.st_mode):
             raise MediaError(404, "That media is no longer available")
         return os.fdopen(fd, "rb", buffering=0), info.st_size
-    except BaseException:
+    except BaseException:  # noqa: BLE001 - close the descriptor then re-raise
         os.close(fd)
         raise
 

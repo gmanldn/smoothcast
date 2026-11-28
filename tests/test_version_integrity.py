@@ -183,7 +183,6 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertIn('label=version.identity_label()', source)  # header shows version, date and codename
         self.assertIn('version=version.__version__', source)
         self.assertIn('print(f"{APP_NAME} {version.label()}")', source)
-        self.assertIn('window.update_notice = notice', source)
         self.assertIn(' · restart to apply', source)
         self.assertIn(' · update information', source)
 

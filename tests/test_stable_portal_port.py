@@ -61,8 +61,9 @@ def test_port_config_is_bounded_and_desktop_persists_selected_port():
     root = Path(__file__).resolve().parents[1]
     host = (root / "src" / "cast_portal.py").read_text()
     pref = ((root / "src" / "preferences_ui.py").read_text()
-            + (root / "src" / "preferences_tracks_ui.py").read_text())
-    assert 'preferred_port=int(self.cfg.get("portal_port", 0))' in host
+            + (root / "src" / "preferences_tracks_ui.py").read_text()
+            + (root / "src" / "preferences_room_ui.py").read_text())
+    assert "preferred_port=settings.PortalSettings.from_config(self.cfg).port" in host
     assert 'self.cfg["portal_port"] = self._portal.port' in host
     assert 'self._portal.port_fallback' in host
     assert '"Room remote port"' in pref

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 from pathlib import Path
 import sys
 import threading
@@ -122,6 +123,8 @@ def test_two_services_find_each_other_sync_targets_and_see_departures(pair):
     a, b, seen = pair
     assert wait_for(lambda: len(a.view.nodes) == 2 and len(b.view.nodes) == 2), (
         a.diagnostics(), b.diagnostics())
+    assert a.view.node(a.node_id).platform == platform.system() or a.view.node(a.node_id).platform == "Unknown"
+    assert b.view.node(b.node_id).platform == platform.system() or b.view.node(b.node_id).platform == "Unknown"
     assert a.view.fingerprint() != "" and {n.name for n in a.view.nodes} == {"alpha", "beta"}
     seen["tv"].append(mv.Discovered("tv-1", "cast", "Lounge TV", time.monotonic()))
     a.discovery_changed()

@@ -277,7 +277,7 @@ def publish(snapshot: dict, target: PublishTarget, *, fetch_current=None) -> str
                 k: value for k, value in previous.items() if k != "observed_at"
             } == {k: value for k, value in snapshot.items() if k != "observed_at"}:
                 return "unchanged"
-        except Exception:
+        except Exception:  # noqa: BLE001 - a failed read must never block an explicit write
             pass  # A failed read must never block an explicitly enabled write.
     target.transport(target.repo, target.branch, target.path, body)
     return "published"

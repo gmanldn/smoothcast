@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -29,6 +30,89 @@ class QueueHost(PortalQueueMixin):
 
     def _rebuild_queue(self):
         pass
+
+
+def test_upload_path_rejects_parent_traversal_outside_upload_root(tmp_path):
+    root = tmp_path / "uploads"
+    root.mkdir()
+    outside = tmp_path / "private.mp4"
+    outside.write_bytes(b"not a guest upload")
+    host = QueueHost()
+    host._portal = SimpleNamespace(server=SimpleNamespace(
+        uploads=SimpleNamespace(root=root),
+    ))
+
+    with pytest.raises(portal.PortalRequestError) as error:
+        host._portal_upload_path({"path": str(root / ".." / outside.name)})
+
+    assert error.value.status == 400
+    assert "unavailable" in str(error.value).lower()
+
+
+def test_upload_path_rejects_symlink_escape_outside_upload_root(tmp_path):
+    root = tmp_path / "uploads"
+    root.mkdir()
+    outside = tmp_path / "private.mp4"
+    outside.write_bytes(b"not a guest upload")
+    (root / "link.mp4").symlink_to(outside)
+    host = QueueHost()
+    host._portal = SimpleNamespace(server=SimpleNamespace(
+        uploads=SimpleNamespace(root=root),
+    ))
+
+    with pytest.raises(portal.PortalRequestError) as error:
+        host._portal_upload_path({"path": str(root / "link.mp4")})
+
+    assert error.value.status == 400
+
+
+def test_library_path_uses_shared_root_containment(tmp_path):
+    shared = tmp_path / "shared"
+    private = tmp_path / "private"
+    shared.mkdir()
+    private.mkdir()
+    media = private / "unshared.mp4"
+    media.write_bytes(b"private")
+
+    class Indexer:
+        def entry(self, key):
+            return {"key": key}
+
+        def resolve_path(self, key):
+            return media
+
+        def shared_roots(self):
+            return [shared]
+
+    host = QueueHost()
+    host._library_indexer = Indexer()
+
+    with pytest.raises(portal.PortalRequestError) as error:
+        host._portal_library_path("forged-key")
+
+    assert error.value.status == 404
+
+
+def test_library_path_accepts_resolved_file_in_shared_root(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    media = shared / "film.mp4"
+    media.write_bytes(b"shared")
+
+    class Indexer:
+        def entry(self, key):
+            return {"key": key}
+
+        def resolve_path(self, key):
+            return media
+
+        def shared_roots(self):
+            return [shared]
+
+    host = QueueHost()
+    host._library_indexer = Indexer()
+
+    assert host._portal_library_path("valid-key") == media.resolve()
 
 
 def test_stale_revision_rejects_queue_edits_before_mutation():

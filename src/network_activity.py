@@ -105,7 +105,7 @@ def snapshot(
             protocol, name, host = futures[future]
             try:
                 entry = _active_entry(protocol, name, host, future.result())
-            except Exception:
+            except Exception:  # noqa: BLE001 - one unresponsive or malformed receiver does not hide others
                 # One unresponsive or malformed receiver does not hide others.
                 continue
             if entry is not None:

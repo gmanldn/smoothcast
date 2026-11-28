@@ -76,7 +76,7 @@ class MeshFiles:
         try:
             conn.request("HEAD" if head else "GET", f"/mesh/file/{key}", headers=headers)
             return conn, conn.getresponse()
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - close the half-open connection then re-raise
             # No caller owns the connection until getresponse succeeds.
             conn.close()
             raise

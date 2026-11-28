@@ -41,3 +41,16 @@ def test_bundle_is_redacted_and_never_raises_on_missing_root(tmp_path):
     text = json.dumps(al.bundle(tmp_path))
     assert "alice" not in text
     assert al.bundle(tmp_path / "nope") == {}
+
+
+def test_attempt_defaults_to_the_active_command_trace_id(tmp_path):
+    import command_trace
+    with command_trace.scope("cli", "cast"):
+        trace_id = command_trace.current_id()
+        a = al.begin(tmp_path)
+    assert trace_id and trace_id in a.folder.name
+
+
+def test_unsafe_correlation_id_cannot_escape_the_attempts_folder(tmp_path):
+    a = al.begin(tmp_path, correlation_id="../../etc/x y")
+    assert a.folder.parent == tmp_path / "attempts" and "/" not in a.folder.name

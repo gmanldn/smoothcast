@@ -67,7 +67,7 @@ def _room_url(server) -> str:
     if callable(getter):
         try:
             url = getter()
-        except Exception:
+        except Exception:  # noqa: BLE001 - a URL getter failure means no URL
             url = None
         if isinstance(url, str) and url:
             return url
@@ -137,7 +137,7 @@ def _guarded(handler, action, *, csrf: bool = False) -> None:
         handler._error(exc.status, exc.message)
     except portal_media.MediaError as exc:
         handler._error(exc.status, exc.message)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - anything but the typed errors is an internal failure; sent as such
         # portal.PortalRequestError (raised by the GTK owner) carries a safe
         # status and message; anything else is an internal failure.
         code = getattr(exc, "status", None)
@@ -199,7 +199,7 @@ def _queue_hint(handler) -> dict:
     snapshot = handler.server.status_snapshot
     try:
         state = snapshot() if snapshot is not None else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - status snapshot is optional
         return {}
     queue = state.get("queue") if isinstance(state, dict) else None
     return {"queue_empty": not queue} if isinstance(queue, list) else {}
@@ -239,7 +239,7 @@ def _advance(handler, screen_id: str, finished: str) -> None:
     """A following screen finished an item: start the next one in the queue."""
     try:
         rows = _queue_rows(handler)
-    except Exception:
+    except Exception:  # noqa: BLE001 - queue read failure stops auto-advance
         return
     ids = [row["id"] for row in rows]
     if finished not in ids:
@@ -250,7 +250,7 @@ def _advance(handler, screen_id: str, finished: str) -> None:
             return
         except (portal_screens.ScreenError, portal_media.MediaError):
             continue          # skip an unplayable entry rather than stall
-        except Exception:
+        except Exception:  # noqa: BLE001 - stop auto-advance on any other failure
             return
 
 

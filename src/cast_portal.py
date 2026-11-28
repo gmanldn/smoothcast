@@ -121,7 +121,7 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                 def close_entry():
                     try:
                         entry.close()
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - entry-name shutdown is best-effort and logged
                         print(f"SmoothCast entry-name shutdown failed: {type(exc).__name__}", flush=True)
 
                 deadline = time.monotonic() + 0.3
@@ -179,13 +179,13 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                 return False
             try:
                 result.append(self._portal_handle(operation, payload))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - any handler failure is returned to the waiting caller
                 result.append(exc)
             finally:
                 completed.set()
                 try:
                     self._publish_portal_status()
-                except Exception:
+                except Exception:  # noqa: BLE001 - status publish is best-effort
                     pass
             return False
 
@@ -195,7 +195,7 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             cancelled.set()
             try:
                 GLib.source_remove(source_id)
-            except Exception:
+            except Exception:  # noqa: BLE001 - removing an already-gone source is harmless
                 pass
             raise portal.PortalRequestError(503, "SmoothCast did not respond in time")
         if result and isinstance(result[0], Exception):
@@ -211,6 +211,15 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             current = getattr(self, "_portal", None)
             if current is None or not current.server.session_key_active(session_key):
                 raise portal.PortalRequestError(401, guest_messages.ACCESS_REMOVED)
+        if operation == "room_rename":
+            current = getattr(self, "_portal", None)
+            if (current is None or session_key is None
+                    or not current.server.session_key_is_host(session_key)):
+                raise portal.PortalRequestError(403, "Only the host computer can rename this room")
+            from portal_room import clean_room_name
+            name = clean_room_name(payload.get("name"))
+            self._rename_portal_room(name)
+            return {"name": name}
         if operation == "upload_target":
             return self._portal_upload_target()
         if operation == "music_autogain":
@@ -312,7 +321,7 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                 reason = self._cast_path(path, 0)
                 if reason is not None:
                     raise portal.PortalRequestError(409, reason)
-            except Exception:
+            except Exception:  # noqa: BLE001 - a failed submission is not an accepted cast; undo dedupe then re-raise
                 # A failed synchronous submission is not an accepted cast.
                 # Otherwise the same upload ID is silently ignored on retry.
                 if upload_id:

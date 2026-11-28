@@ -28,6 +28,13 @@ def _isolated_worktree_pool(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _scope_expansion_never_reaches_github(monkeypatch):
+    """Lifecycle tests model pushes and handovers; the live-lease scope check is covered in
+    test_agent_coordination.py and would otherwise call load_issue() on a half-faked payload."""
+    monkeypatch.setattr(agent, "ensure_task_scope", lambda task, changed: True)
+
+
+@pytest.fixture(autouse=True)
 def _clones_act_as_private_worktrees(request, monkeypatch):
     """Push-race tests model agents as plain clones; only the #688 test checks the guard."""
     if "primary_checkout" not in request.node.name:
@@ -224,12 +231,57 @@ def test_legacy_assign_patch_flag_does_not_allocate(monkeypatch, tmp_path):
     assert agent.cmd_ship(args) == 0
     shipped = run(successor, "rev-parse", "origin/develop")
     assert shipped != tip
-    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 51")
-    assert run(successor, "show", "--format=", "--name-only", "HEAD") == "native_result.txt"
+    # A nonempty shipment gets exactly one automatic +1 PATCH commit on top (AGENTS.md
+    # "Version and journal"); the legacy --assign-patch flag never mints a second one.
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 52")
+    recent = run(successor, "log", "--format=%s", f"{tip}..HEAD").splitlines()
+    assert sum("[sc-auto-patch]" in subject for subject in recent) == 1
+    assert "native_result.txt" in run(successor, "log", "--format=", "--name-only", f"{tip}..HEAD")
     assert len(deliveries) == 1
     assert agent.cmd_ship(args) == 0
     assert run(successor, "rev-parse", "origin/develop") == shipped
     assert len(deliveries) == 1
+
+
+def test_failed_gate_discards_generated_commits_so_a_fix_can_ship_next(monkeypatch, tmp_path):
+    """#700: a blocked push must not strand its generated PATCH/changelog commits.
+
+    Left in place, the agent's follow-up fix landed on top of them and the changelog
+    guard refused the whole shipment as a hand-edit.
+    """
+    _, _first, worker = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: True)
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *args: True)
+    outcome = {"code": 1}
+
+    def check(cmd, timeout=180):
+        done = subprocess.CompletedProcess(
+            cmd, outcome["code"], stdout="FAILED tests/test_x.py::test_mine\n" if outcome["code"] else "",
+            stderr="")
+        return done, ""
+
+    monkeypatch.setattr(agent, "plan_checks", lambda changed, tests: [("pytest (1 files)", ["pytest"])])
+    monkeypatch.setattr(agent, "run_headless_check", check)
+    monkeypatch.setattr(agent, "failing_on_develop", lambda ids: set())  # the failure is ours
+    args = agent.build_parser().parse_args(["ship", "--next", "none"])
+
+    commit(worker, "feature.txt", "needs a fix\n")
+    assert agent.cmd_ship(args) == 1
+    stranded = run(worker, "log", "--format=%s", "origin/develop..HEAD")
+    assert "[sc-auto-patch]" not in stranded and "[sc-auto-changelog]" not in stranded
+    assert run(worker, "status", "--porcelain") == ""
+
+    commit(worker, "fix.txt", "now green\n")
+    outcome["code"] = 0
+    assert agent.cmd_ship(args) == 0
+    assert run(worker, "rev-parse", "HEAD") == run(worker, "rev-parse", "origin/develop")
+    assert run(worker, "show", "origin/develop:feature.txt") == "needs a fix"
+    assert run(worker, "show", "origin/develop:fix.txt") == "now green"
 
 
 def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
@@ -421,7 +473,9 @@ def test_start_ship_finish_complete_headless_cycle(monkeypatch, tmp_path):
     assert agent.cmd_ship(ship) == 0
     commit_sha = run(worktree, "rev-parse", "HEAD")
     assert commit_sha == run(worktree, "rev-parse", "origin/develop")
-    assert "Refs #584" in run(worktree, "log", "-1", "--format=%s")
+    # The shipment is the feature commit plus generated PATCH/changelog commits on top of it.
+    subjects = run(worktree, "log", "--format=%s", "-6").splitlines()
+    assert any("Refs #584" in subject for subject in subjects)
     assert any("sc-ship v1 sha=" in c["body"] for c in comments)
     assert any("Commit: " + commit_sha in c["body"] for c in comments)
 
@@ -548,15 +602,20 @@ def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp
     monkeypatch.setattr(agent, "publish_ship_handover", lambda *args:
                         handovers.append(args) or True)
     real_run = subprocess.run
-    sha = run(worker, "rev-parse", "HEAD")
+    feature = run(worker, "rev-parse", "HEAD")
     admin = Path(run(worker, "rev-parse", "--absolute-git-dir"))
     journal = admin / "sc-agent-task.json"
     pushes = []
+    pushed_tips = []
 
     def interrupted(command, **kwargs):
         if command[:2] == ["git", "push"]:
             pushes.append(1)
-            assert json.loads(journal.read_text())["pending_push"]["sha"] == sha
+            # The write-ahead receipt names the exact tip being pushed. A shipment is the feature
+            # commit plus generated PATCH/changelog commits, so that tip is not the feature SHA.
+            tip = run(worker, "rev-parse", "HEAD")
+            pushed_tips.append(tip)
+            assert json.loads(journal.read_text())["pending_push"]["sha"] == tip
             result = real_run(command, **kwargs)
             assert result.returncode == 0
             if len(pushes) == 1:
@@ -574,7 +633,10 @@ def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp
     task = json.loads(journal.read_text())
     assert agent.cmd_ship(args) == 0
     assert len(pushes) == 1
-    assert [item[1] for item in handovers] == [sha]
+    assert [item[1] for item in handovers] == [pushed_tips[0]]
+    assert subprocess.run(["git", "-C", str(worker), "merge-base", "--is-ancestor", feature,
+                           pushed_tips[0]]).returncode == 0
+    assert run(worker, "rev-parse", "origin/develop") == pushed_tips[0]
     assert "pending_push" not in json.loads(journal.read_text())
     assert "pending_handover" not in json.loads(journal.read_text())
 
@@ -665,8 +727,13 @@ def test_failed_push_and_failed_fetch_retries_unpublished_code(monkeypatch, tmp_
     assert handovers == []
     assert agent.cmd_ship(args) == 0
     assert len(pushes) == 2
-    assert [args[1] for args in handovers] == [sha]
-    assert run(worker, "rev-parse", "origin/develop") == sha
+    # Generated PATCH/changelog commits are rebuilt on retry and carry a
+    # timestamp, so the retried tip may differ from the first attempt's SHA.
+    # The invariant: the handover names exactly the SHA the remote contains.
+    published = run(worker, "rev-parse", "origin/develop")
+    assert [args[1] for args in handovers] == [published]
+    assert run(worker, "rev-parse", "HEAD") == published
+    assert run(worker, "show", "origin/develop:retry.txt") == "needs a real push"
     assert "pending_push" not in task
 
 
@@ -854,3 +921,12 @@ def test_ship_refuses_primary_checkout_without_a_private_task(monkeypatch, tmp_p
     assert agent.cmd_ship(args) == 2
     assert "primary checkout" in capsys.readouterr().out
     assert pushed == []
+
+
+def test_ship_checks_run_at_lowest_priority_so_they_never_starve_a_live_cast():
+    import sys
+    sys.path.insert(0, "scripts")
+    import agent
+    cmd = agent.polite(["pytest", "-q"])
+    assert cmd[-2:] == ["pytest", "-q"]
+    assert cmd[:3] == ["nice", "-n", "19"] or not __import__("shutil").which("nice")

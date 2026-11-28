@@ -25,6 +25,8 @@ import socket
 import threading
 import time
 
+import task_runtime
+
 ALLOWED_PORTS = frozenset({80, 443})
 MAX_TUNNELS = 16
 MAX_TUNNEL_BYTES = 2 * 1024**3
@@ -88,7 +90,8 @@ class EgressProxy:
         self._resolver, self._clock, self._max_bytes = resolver, clock, max_bytes
         self._connector = connector or self._connect
         self._slots = threading.BoundedSemaphore(MAX_TUNNELS)
-        self._stop = threading.Event()
+        self._runtime = task_runtime.shared()
+        self._scope = self._runtime.scope()
         self.denied = 0
         self.tunnels = 0
         if os.path.exists(self.path):
@@ -98,8 +101,7 @@ class EgressProxy:
         os.chmod(self.path, 0o600)
         self._server.listen(16)
         self._server.settimeout(0.2)
-        self._thread = threading.Thread(target=self._serve, name="smoothcast-egress", daemon=True)
-        self._thread.start()
+        self._thread = self._runtime.spawn_daemon("egress-accept", self._scope, self._serve)
 
     @staticmethod
     def _connect(family: int, address: str, port: int) -> socket.socket:
@@ -113,23 +115,25 @@ class EgressProxy:
         return sock
 
     def close(self) -> None:
-        self._stop.set()
-        self._thread.join(2)
+        self._scope.cancel()
+        if self._thread is not None:
+            self._thread.join(2)
         self._server.close()
         try:
             os.unlink(self.path)
         except OSError:
             pass
 
-    def _serve(self) -> None:
-        while not self._stop.is_set():
+    def _serve(self, scope: task_runtime.Scope) -> None:
+        while not scope.cancelled:
             try:
                 client, _ = self._server.accept()
             except (TimeoutError, socket.timeout):
                 continue
             except OSError:
                 return
-            threading.Thread(target=self._handle, args=(client,), daemon=True).start()
+            if self._runtime.spawn_daemon("egress-conn", self._scope, lambda _s, c=client: self._handle(c)) is None:
+                client.close()
 
     def _reply(self, client: socket.socket, status: str) -> None:
         try:
@@ -191,7 +195,7 @@ class EgressProxy:
         moved = 0
         a.settimeout(None)
         b.settimeout(None)
-        while not self._stop.is_set():
+        while not self._scope.cancelled:
             now = self._clock()
             if now - last > IDLE_SECONDS or now - start > TOTAL_SECONDS or moved > self._max_bytes:
                 return

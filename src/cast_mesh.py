@@ -75,7 +75,7 @@ def start(window: object, address: str) -> None:
             if started and remote is not None:
                 try:
                     remote.reconcile()  # stop-or-confirm workers a previous run may have left running
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort reconcile of leftover workers
                     pass
             if started and portal is not None:
                 try:
@@ -84,11 +84,11 @@ def start(window: object, address: str) -> None:
                         portal.server.mesh_feed = service.feed
                         portal.server.mesh_heartbeat = service.heartbeat_snapshot
                         portal.server.mesh_acquisition_activity = service.acquisition_activity
-                except Exception:
+                except Exception:  # noqa: BLE001 - wiring the portal feed is optional
                     pass
 
         threading.Thread(target=run, name="smoothcast-mesh-start", daemon=True).start()
-    except Exception:
+    except Exception:  # noqa: BLE001 - mesh start must never break the app
         return
 
 
@@ -117,7 +117,7 @@ def set_acquisition(window: object, name: str, value: object, *, save=None, flus
         if address:
             start(window, address)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 - mesh toggle failure reports False
         return False
 
 
@@ -132,7 +132,7 @@ def _remote_acquisition(settings: dict, address: str, jobs: object):
             base, bind_ip=address, local_provider=local,
             use_workers=lambda: bool(mesh_service.load_settings()["remote_acquisition"]),
             accept_work=lambda: bool(mesh_service.load_settings()["accept_acquisition"]))
-    except Exception:
+    except Exception:  # noqa: BLE001 - mesh construction failure means no mesh
         return None
 
 
@@ -165,7 +165,7 @@ def stop(window: object) -> None:
             portal.server.mesh_acquisition_activity = None
         threading.Thread(target=service.stop, name="smoothcast-mesh-stop",
                          daemon=True).start()
-    except Exception:
+    except Exception:  # noqa: BLE001 - mesh stop must never break the app
         return
 
 
@@ -174,7 +174,7 @@ def refresh_view(window: object) -> None:
     try:
         import mesh_ui
         mesh_ui.refresh(window)
-    except Exception:
+    except Exception:  # noqa: BLE001 - UI refresh is best-effort
         return
 
 
@@ -195,7 +195,7 @@ def push_clients(window: object) -> None:
         if signature != getattr(window, "_mesh_sig", None):
             window._mesh_sig = signature             # type: ignore[attr-defined]
             service.set_clients(people, screens)
-    except Exception:
+    except Exception:  # noqa: BLE001 - client sync is best-effort
         return
 
 

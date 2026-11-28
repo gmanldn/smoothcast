@@ -491,6 +491,23 @@ def test_scope_expansion_collision_preserves_old_claim_and_worktree(monkeypatch,
     assert not (tmp_path / "sc-agent-task.json").exists()
 
 
+def test_version_bump_is_a_release_lane_no_feature_lease_can_block(monkeypatch):
+    """#700: the automatic PATCH commit touches src/version.py; that never needs a lease."""
+    assert agent.lease_paths({"src/version.py", "src/a.py"}) == {"src/a.py"}
+    monkeypatch.setattr(agent, "cmd_claim", lambda *args: (_ for _ in ()).throw(
+        AssertionError("a version bump must not claim or conflict with a rival lease")))
+    task = {"issue": 584, "files": ["src/first.py"]}
+    assert agent.ensure_task_scope(task, ["src/first.py", "src/version.py"])
+    assert task["files"] == ["src/first.py"]
+
+
+def test_rival_lease_on_version_py_does_not_overlap_other_claims():
+    rival = {"issue": 9, "agent": "rival", "files": ["src/version.py"]}
+    assert not (agent.lease_paths({"src/version.py"}) & agent.lease_paths(rival["files"]))
+    # Real production files are still fenced: only the release lane is exempt.
+    assert agent.lease_paths({"src/a.py"}) & agent.lease_paths(["src/a.py", "src/version.py"])
+
+
 def test_scope_expansion_does_not_claim_merge_friendly_tests_or_docs(monkeypatch):
     monkeypatch.setattr(agent, "cmd_claim", lambda *args: (_ for _ in ()).throw(
         AssertionError("tests and docs are merge-friendly shared paths")))
@@ -498,6 +515,32 @@ def test_scope_expansion_does_not_claim_merge_friendly_tests_or_docs(monkeypatch
         {"issue": 584, "files": []},
         ["tests/test_widget.py", "docs/COORDINATION.md", "pyproject.toml"]
     )
+
+
+def test_scope_narrows_remote_claim_and_private_journal(monkeypatch):
+    task = {"issue": 584, "files": ["src/keep.py", "src/release.py"]}
+    renewed = []
+    persisted = []
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "git", lambda *args: "")
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: renewed.append(args) or 0)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: persisted.append(task) or True)
+    args = agent.build_parser().parse_args(["scope", "--files", "src/keep.py"])
+    assert agent.cmd_scope(args) == 0
+    assert [(claim.number, claim.files) for claim in renewed] == [(584, "src/keep.py")]
+    assert persisted == [task]
+    assert task["files"] == ["src/keep.py"]
+
+
+def test_scope_keeps_path_with_unpublished_edits(monkeypatch):
+    task = {"issue": 584, "files": ["src/keep.py", "src/dirty.py"]}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "git", lambda *args: "src/dirty.py" if args[-1] == "HEAD" else "")
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: sys.exit("must not release a dirty path"))
+    args = agent.build_parser().parse_args(["scope", "--files", "src/keep.py"])
+    assert agent.cmd_scope(args) == 3
+    assert task["files"] == ["src/keep.py", "src/dirty.py"]
 
 
 def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):

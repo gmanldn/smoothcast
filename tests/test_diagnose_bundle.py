@@ -20,3 +20,17 @@ def test_bundle_contains_versions_and_attempts_without_paths_or_tokens(tmp_path)
 def test_empty_root_still_writes_a_valid_bundle(tmp_path):
     out = db.write_bundle(tmp_path / "none", tmp_path / "d.json")
     assert json.loads(out.read_text())["attempts"] == {}
+
+
+def test_latency_summary_and_buckets_are_included_when_supplied(tmp_path):
+    import latency_stats
+    stats = latency_stats.Stats()
+    for ms in (3, 40, 900):
+        stats.record("portal.request", ms)
+    data = json.loads(db.write_bundle(tmp_path, tmp_path / "d.json", latency=stats).read_text())
+    assert data["latency"]["summary"]["portal.request"]["count"] == 3
+    assert data["latency"]["bounds_ms"] == list(latency_stats.BOUNDS_MS)
+
+
+def test_latency_defaults_to_empty(tmp_path):
+    assert json.loads(db.write_bundle(tmp_path, tmp_path / "d.json").read_text())["latency"] == {}

@@ -11,7 +11,7 @@ def main() -> int:
         return _main()
     except KeyboardInterrupt:
         return 130
-    except Exception as exc:  # SystemExit (argparse, explicit exits) passes through
+    except Exception as exc:  # SystemExit (argparse, explicit exits) passes through  # noqa: BLE001 - last-resort handler: report through failure_boundary and exit non-zero
         import failure_boundary
         failure = failure_boundary.describe(exc)
         logged = False
@@ -19,7 +19,7 @@ def main() -> int:
             import error_log
             error_log.log(f"cli failed: {failure.detail}")
             logged = True
-        except Exception:
+        except Exception:  # noqa: BLE001 - logging must not mask the original failure
             pass
         print(f"smoothcast: {failure.message}", file=sys.stderr)
         if logged:
@@ -85,7 +85,7 @@ def _main() -> int:
         # Explicit diagnostic command; does not import GTK or start a cast.
         import network_routes
         return network_routes.main(sys.argv[2:])
-    if sys.argv[1:2] and sys.argv[1] in ("cast", "pause", "resume", "stop", "seek", "status"):
+    if sys.argv[1:2] and sys.argv[1] in ("cast", "pause", "resume", "stop", "seek", "status", "diagnose"):
         # Headless Chromecast control (#268): never imports GTK or opens a window.
         import cli_control
         return cli_control.main(sys.argv[1:])

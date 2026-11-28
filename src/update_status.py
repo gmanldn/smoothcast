@@ -81,10 +81,13 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     """Plain-language state and the safe actions for it."""
     channel, channel_line = _channel(f.channel)
     version = (f.running_version.strip() if isinstance(f.running_version, str) else "") or "unknown version"
-    running = f"SmoothCast {version} ({short(f.running_commit)}) on {channel}"
-    running_id, active_id, candidate_id, previous_id, staged_id = (
+    # Preferences is the operator's source of truth for the installed build;
+    # keep the full validated identity visible for exact candidate comparison.
+    running_sha = running_id = _exact(f.running_commit)
+    running = f"SmoothCast {version} ({running_sha or 'unknown'}) on {channel}"
+    active_id, candidate_id, previous_id, staged_id = (
         _exact(value) for value in
-        (f.running_commit, f.active_commit, f.candidate, f.previous_commit, f.staged_commit)
+        (f.active_commit, f.candidate, f.previous_commit, f.staged_commit)
     )
 
     def make(state: str, headline: str, detail: str, *actions: str, new: bool = False) -> UpdateStatus:

@@ -109,7 +109,7 @@ class WorkDomains:
         if self._on_error is not None:
             try:
                 self._on_error(message, exc_info=exc_info)
-            except Exception:
+            except Exception:  # noqa: BLE001 - logging must not strand a worker
                 pass  # Logging must not strand a worker or the GTK event loop.
 
     def _schedule(
@@ -125,13 +125,13 @@ class WorkDomains:
             try:
                 if valid is None or valid():
                     callback(value)
-            except Exception:
+            except Exception:  # noqa: BLE001 - callback failure is logged
                 self._log("Async callback failed", exc_info=True)
             return False  # GLib.idle_add is one-shot, not a repeating timer.
 
         try:
             self._dispatch(deliver)
-        except Exception:
+        except Exception:  # noqa: BLE001 - dispatch failure is logged
             self._log("Async main-context dispatch failed", exc_info=True)
 
     def _worker(self, domain: str) -> None:
@@ -145,7 +145,7 @@ class WorkDomains:
                     continue
                 try:
                     value = job.work()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - worker failure is logged and reported
                     suffix = f" [command:{job.trace_id}]" if job.trace_id else ""
                     self._log(f"Async {domain} work failed{suffix}", exc_info=True)
                     expected = exc if isinstance(exc, UserFacingError) else exc.__cause__

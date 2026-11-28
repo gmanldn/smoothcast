@@ -8,6 +8,7 @@ from unittest import mock
 import screenshot
 import picture_adjustments
 from gui_source import main_window_methods
+from video_settings import VideoSettings
 
 
 def test_sparse_cache_reuses_bins_and_bounds_memory_and_generation():
@@ -78,6 +79,7 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
                                  Error=ValueError, timeout_add=lambda *_: 1),
         "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=lambda data: data)),
         "picture_adjustments": picture_adjustments,
+        "VideoSettings": VideoSettings,
     }
     methods = main_window_methods()
     source = "\n\n".join(methods[name] for name in
@@ -179,3 +181,113 @@ def test_thumbnail_strip_uses_nearby_cached_frames_and_exact_click_positions():
     assert window._thumbnail_positions == []
     assert all(picture.set_paintable.call_args.args == (None,) for picture in window.thumbnail_pictures)
     window.thumbnail_strip.set_visible.assert_called_with(False)
+
+# --- Scrubbing shows the frame at the playhead, instantly and in order. ---
+
+JPEG = b"\xff\xd8"
+
+
+def make_window(decoded: dict[float, bytes], *, deferred: list | None = None):
+    """A window built from the real preview methods, with decoding run by hand."""
+    jobs: list = []
+    timers: list = []
+    calls: list = []
+
+    def run(work, done=None, failed=None, **_kwargs):
+        jobs.append((work, done, failed))
+
+    shown: list = []
+    ns = {
+        "pathlib": pathlib,
+        "screenshot": SimpleNamespace(
+            SparseFrameCache=screenshot.SparseFrameCache,
+            preview_frame=lambda _p, position, **kw: (
+                calls.append((position, kw)) or decoded.get(position, JPEG))),
+        "Async": SimpleNamespace(run=run),
+        "GLib": SimpleNamespace(
+            Bytes=SimpleNamespace(new=lambda data: data), Error=ValueError,
+            timeout_add=lambda delay, fn: timers.append((delay, fn)) or len(timers),
+            source_remove=lambda _id: None),
+        "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=lambda data: data)),
+        "picture_adjustments": picture_adjustments,
+        "VideoSettings": VideoSettings,
+    }
+    methods = main_window_methods()
+    names = ("_start_preview", "_queue_preview", "_show_nearest_preview",
+             "_thumbnail_identity", "_refresh_thumbnail_strip")
+    source = "\n\n".join(methods[name] for name in names)
+    exec(compile("class Window:\n" + textwrap.indent(textwrap.dedent(source), "    "),
+                 "<scrub-preview>", "exec"), ns)
+    window = ns["Window"]()
+    window._preview_timer_id, window._preview_busy = 0, False
+    window._preview_pending, window._preview_sparse = None, False
+    window._preview_path, window._preview_generation = "film.mkv", 1
+    window.session, window.external, window.cfg = None, False, {}
+    window.media = SimpleNamespace(path="film.mkv", is_audio_only=False, video_stream_index=0)
+    window.preview_picture = SimpleNamespace(
+        set_paintable=shown.append, set_visible=mock.Mock())
+    window.thumbnail_strip = None
+    window._local_stream = lambda: None
+    window.decode_calls = calls
+    return window, jobs, timers, shown
+
+
+def finish_next(window, jobs, timers):
+    """Complete the running decode, then start the next queued one, if any."""
+    work, done, _failed = jobs.pop(0)
+    done(work())
+    if timers:
+        timers.pop(0)[1]()
+
+
+def test_frames_decoded_while_a_newer_position_is_pending_are_still_shown_in_order():
+    decoded = {10.0: b"\xff\xd8a", 20.0: b"\xff\xd8b", 30.0: b"\xff\xd8c"}
+    window, jobs, timers, shown = make_window(decoded)
+    window._queue_preview(10.0, fast=True)
+    timers.pop(0)[1]()                      # decode of 10 s starts
+    window._queue_preview(20.0, fast=True)  # user keeps dragging
+    window._queue_preview(30.0, fast=True)  # ... only the latest is kept
+    finish_next(window, jobs, timers)       # 10 s lands although 30 s is pending
+    assert shown == [b"\xff\xd8a"]          # picture moves instead of freezing
+    finish_next(window, jobs, timers)
+    assert shown == [b"\xff\xd8a", b"\xff\xd8c"]   # 20 s was coalesced away
+    assert window._preview_head == 30.0
+
+
+def test_an_older_decode_never_replaces_a_frame_closer_to_the_playhead():
+    decoded = {10.0: b"\xff\xd8old", 50.0: b"\xff\xd8new"}
+    window, jobs, timers, shown = make_window(decoded)
+    window._queue_preview(10.0, fast=True)
+    timers.pop(0)[1]()
+    window._queue_preview(50.0)             # click: exact frame requested next
+    window._preview_shown = ("film.mkv", 1, 48.0)   # a nearer frame is on screen
+    finish_next(window, jobs, timers)       # the stale 10 s decode completes
+    assert shown == []                      # ... and is NOT painted over it
+    finish_next(window, jobs, timers)
+    assert shown == [b"\xff\xd8new"]        # exact frame replaces the approximation
+
+
+def test_fast_flag_reaches_the_decoder_only_while_scrubbing():
+    window, jobs, timers, _shown = make_window({})
+    window._queue_preview(5.0, fast=True)
+    timers.pop(0)[1]()
+    finish_next(window, jobs, [])
+    window._queue_preview(6.0)              # release: the exact frame
+    timers.pop(0)[1]()
+    finish_next(window, jobs, [])
+    assert [(pos, kw.get("fast", False)) for pos, kw in window.decode_calls] == [
+        (5.0, True), (6.0, False)]
+
+
+def test_nearest_cached_frame_is_painted_instantly_and_exact_one_wins_later():
+    window, jobs, timers, shown = make_window({40.0: b"\xff\xd8exact"})
+    cache = window._sparse_frame_cache = screenshot.SparseFrameCache()
+    cache.put(cache.key("film.mkv", 1, 0, 30.0), b"\xff\xd8slot3")
+    window._show_nearest_preview(37.0)
+    assert shown == [b"\xff\xd8slot3"]
+    window._show_nearest_preview(37.5)       # same slot: no redundant texture upload
+    assert shown == [b"\xff\xd8slot3"]
+    window._queue_preview(40.0)
+    timers.pop(0)[1]()
+    finish_next(window, jobs, [])
+    assert shown[-1] == b"\xff\xd8exact"

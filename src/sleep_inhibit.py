@@ -27,7 +27,7 @@ class Inhibitor:
             return True
         try:
             self.token = self.backend.acquire(why[:120])
-        except Exception:
+        except Exception:  # noqa: BLE001 - no inhibitor: proceed; the drain deadline still applies
             return False                                 # no inhibitor: proceed, the drain deadline still bounds us
         self.held, self.t0 = True, self.clock()
         return True
@@ -44,7 +44,7 @@ class Inhibitor:
         self.held = False
         try:
             self.backend.release(self.token)
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort release
             pass
         self.token = None
 

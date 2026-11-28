@@ -291,12 +291,16 @@ def test_joined_room_and_open_expiry_return_focus_to_visible_content():
 
     joined = _fn("showJoinedRoom")
     expired = _fn("expireSession")
+    profile_reset = _fn("resetProfileEdit")
+    room_reset = _fn("resetRoomNameEdit")
     assert 'id="queueHeading" tabindex="-1"' in portal._HTML
     if not shutil.which("node"):
         pytest.skip("Node.js required to test focus transitions")
     harness = r"""
 const assert=require("node:assert/strict");
-const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
+const elements={dashboard:{hidden:true},uploadCard:{hidden:true},saveRoomName:{disabled:true},
+ saveDisplayName:{disabled:true},profileStatus:{textContent:"Saving"},
+ roomNameStatus:{textContent:"Saving"},roomRenameLink:{hidden:false},roomNameForm:{hidden:false},
  homeHeading:{focusCount:0,focus(){this.focusCount++}},
  login:{hidden:true},loginButton:{disabled:false},
  pin:{focusCount:0,focus(){this.focusCount++}},
@@ -304,7 +308,7 @@ const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
  errorDash:{textContent:""},error:{textContent:""}};
 const $=id=>elements[id];
 const loginButton=elements.loginButton;
-let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null;
+let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null,roomRenameEdit={session:"paired"};
 let playhead=null,playheadTimer=null;
 function stopPlayhead(){}
 const pendingControls={clear(){}};const roomEvents={stop(){}};
@@ -326,7 +330,7 @@ assert.match(elements.error.textContent,/name to rejoin/);
 assert.equal(elements.login.hidden,false);
 assert.equal(elements.dashboard.hidden,true);
 """
-    subprocess.run(["node", "-"], input=harness + joined + expired + scenario,
+    subprocess.run(["node", "-"], input=harness + joined + expired + profile_reset + room_reset + scenario,
                    check=True, text=True, timeout=10)
 
 
@@ -605,7 +609,7 @@ def test_mesh_retry_timer_is_cancelled_on_room_exit_and_tab_resume():
 
     panel = panel_html()
     assert "cancelMeshRetry();backoff=3000;close();started=false" in panel
-    assert "else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}" in panel
+    assert "else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}else{syncHeartbeat();syncProfiles()}}" in panel
     script = panel.split("<script>", 1)[1].split("</script>", 1)[0]
     start = script.index("function cancelMeshRetry(){")
     end = script.index("async function boot(){", start)
@@ -649,11 +653,11 @@ def test_open_join_shows_authoritative_identity_and_change_name_link():
     page = room_html()
     assert "joinedAs" in page.ids
     assert "nameForm" in page.ids and "nameForm" in page.anchors
-    assert '<a href="#nameForm">Change name</a>' in portal._HTML
+    assert '<a href="#nameForm">Change my display name</a>' in portal._HTML
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
     assert 'showJoinedName(d.participant.name);' in script
     assert 'showJoinedName(data.participant.name);' in script
-    assert 'showJoinedName(d.participant.name);showError("errorDash","Display name updated")' in script
+    assert 'feedback.textContent="Display name updated."' in script
     start = script.index("function showJoinedName(value){")
     end = script.index("function configureOpenJoin(){", start)
     helper = script[start:end]
@@ -839,36 +843,50 @@ def test_incoming_transfer_updates_reuse_rows_and_remove_only_finished_items():
     if not shutil.which("node"):
         pytest.skip("Node is needed for the browser contract")
     source = portal._HTML
-    start = source.index("let roomTransferSignature=null;")
+    start = source.index("let roomTransferSignature=null")
     end = source.index("function playbackFeedback", start)
     harness = r"""
 const assert=require("node:assert/strict");
 let made=0, moves=0;
 class Node{
-  constructor(){this.children=[];this.dataset={};this.textContent="";this.hidden=true;this.max=1;this.value=0;}
+  constructor(){this.children=[];this.dataset={};this.textContent="";this.hidden=false;this.max=1;this.value=0;this.className=""}
+  get firstChild(){return this.children[0]||null}
   append(...nodes){for(const n of nodes){n.parent=this;this.children.push(n)}}
   setAttribute(){}
+  querySelectorAll(){return this.children.filter(n=>n.className.includes("pinned"))}
+  querySelector(){return null}
   insertBefore(n,b){moves++;if(n.parent)n.remove();n.parent=this;this.children.splice(b?this.children.indexOf(b):this.children.length,0,n)}
   remove(){const p=this.parent;if(p){p.children.splice(p.children.indexOf(this),1);this.parent=null}}
 }
-const nodes=Object.fromEntries(["queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
-const $=id=>nodes[id], document={createElement(){made++;return new Node()}};
+const queueElement=new Node(),document={createElement(){made++;return new Node()}};
+const requestAnimationFrame=f=>{f();return 0};
 const mediaKindLabel=x=>x,fileUnits=x=>String(x);
 """
     scenario = r"""
-const a={id:"a",title:"Film",media_kind:"video",intent:"cast",stage:"receiving",received:0,size:100};
+const a={id:"a",title:"Film",intent:"cast",stage:"receiving",received:0,size:100};
 const b={...a,id:"b",title:"Second",intent:"queue"};
+const q=queueElement;
 renderRoomTransfers({room_transfers:[a,b]});
-const list=nodes.queueIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
-renderRoomTransfers({room_transfers:[{...a,received:60,stage:"buffering"},b]});
+const first=q.children[0],second=q.children[1],count=made,initialMoves=moves;
+assert.equal(first.children[1].firstChild.textContent,"Uploading 0%");
+renderRoomTransfers({room_transfers:[{...a,received:60,stage:"receiving"},b]});
 assert.equal(made,count);assert.equal(moves,initialMoves);
-assert.equal(list.children[0],first);assert.equal(first.children[2].value,60);
-assert.equal(list.children[1],second);
+assert.equal(q.children[0],first);assert.equal(first.children[2].value,60);
+assert.equal(first.children[1].firstChild.textContent,"Uploading 60%");
 renderRoomTransfers({room_transfers:[b]});
-assert.equal(list.children[0],second);assert.equal(list.children.length,1);
-assert.equal(made,count);
-renderRoomTransfers({room_transfers:[]});
-assert.equal(list.children.length,0);assert.equal(nodes.queueIncomingPanel.hidden,true);
+assert.equal(q.children[0],second);assert.equal(q.children.length,1);assert.equal(made,count);
+// An optimistic local row shows at once and is replaced by the server row of the same name.
+setLocalUploads([{name:"Local.mp4",size:50}]);
+assert.equal(q.children.length,2);assert.equal(q.children[1].children[1].firstChild.textContent,"Waiting");
+localUploadProgress("transfer",25,50,"");
+assert.equal(q.children[1].children[1].firstChild.textContent,"Uploading 50%");
+renderRoomTransfers({room_transfers:[b,{...a,id:"c",title:"Local.mp4",size:50,received:30}]});
+assert.equal(q.children.length,2);
+// Now-playing row is pinned first with its own chip.
+renderRoomTransfers({room_transfers:[],active:true,title:"Playing film",state:"BUFFERING",receiver:"TV"});
+assert.equal(q.children[0].children[1].firstChild.textContent,"Buffering");
+renderRoomTransfers({room_transfers:[]});localUploadProgress("choose",0,0,"");
+assert.equal(q.children.length,0);
 """
     subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
                    text=True, check=True, timeout=10)
@@ -981,3 +999,18 @@ assert.equal(extraTransportEnvelope("seek_back",state,NaN,40),null);
 """
     result = subprocess.run(["node", "-e", source + checks], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_empty_states_tell_new_guests_what_to_do_next():
+    source = portal._page().decode("utf-8")
+    up_next = "Up Next is empty. Find something to play and add it; everyone in the room will see it."
+    # The static markup and the JS renderer must agree so the text never flickers.
+    assert source.count(up_next) == 2
+    assert "Nothing in Up Next yet" not in source
+    assert 'id="idleHint"' in source
+    # The idle hint must not say "choose something" while the receiver is unusable.
+    hide_rule = source.split('$("idleHint");if(h)h.hidden=', 1)[1].split("}", 1)[0]
+    for state in ("OFFLINE", "ERROR", "UNKNOWN", "EXTERNAL"):
+        assert f'"{state}"' in hide_rule
+    assert "No other SmoothCast computers found on this network yet." in source
+    assert "Nearby-computer discovery is unavailable on this network. This room still works." in source

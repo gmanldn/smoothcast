@@ -15,6 +15,7 @@ import playback_state
 import portal_status
 import sleep_fade
 import stream_watchdog
+import streamer
 from cast_widgets import Async, save_config
 
 
@@ -23,6 +24,8 @@ class UiTimerMixin:
         self._timers_enabled = True
         if getattr(self, "_core_status", None) is None:
             self._core_status = portal_status.PublishedStatus()
+        # The first FFmpeg version query can take seconds; pay it before the first cast.
+        Async.run(streamer.require_compatible_ffmpeg, failed=lambda _message: None)
         self._refresh_portal()
         GLib.timeout_add_seconds(15, self._refresh_portal)
         GLib.timeout_add_seconds(15, self._refresh_network_activity)
@@ -54,7 +57,7 @@ class UiTimerMixin:
                 "mode": str(getattr(session, "mode", "") or ""),
                 "target": str(self._device() or ""),
             })
-        except Exception:
+        except Exception:  # noqa: BLE001 - a timer tick must never raise into GLib
             pass
         return True
 
@@ -67,7 +70,7 @@ class UiTimerMixin:
             if (self.get_mapped() and stack is not None
                     and stack.get_visible_child_name() == "info"):
                 self._refresh_mesh_heartbeat()
-        except Exception:
+        except Exception:  # noqa: BLE001 - a timer tick must never raise into GLib
             pass
         return True
 

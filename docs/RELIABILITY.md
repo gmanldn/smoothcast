@@ -154,6 +154,24 @@ Status: the budget script, the SLOs and their tests are in place (#678). The
 Xvfb harness that drives the interactions and writes the samples, the committed
 baseline and the results table land with the rest of #627.
 
+### First isolated-Xvfb run (2026-11-27, 10 rounds, UNVERIFIED as a baseline)
+
+Software-rendered Xvfb on a busy shared development host, so absolute numbers are
+pessimistic, but every scenario breached its SLO by one to two orders of magnitude.
+No baseline is committed: it would encode a failing result.
+
+| Scenario | median (ms) | worst (ms) | SLO p95 (ms) |
+| --- | --- | --- | --- |
+| play_pause | 1353 | 3678 | 16 |
+| seek | 312 | 1518 | 16 |
+| volume | 478 | 3128 | 16 |
+| queue_rebuild_1000 | 15046 | 25371 | 150 |
+| queue_remove_1000 | 17187 | 41296 | n/a |
+
+Next: repeat on a quiet runner to separate host load from real main-loop cost, then
+profile the 1,000-item queue rebuild/remove (a 15 s rebuild is a real defect if it
+reproduces), then commit the baseline.
+
 ## Cross-surface freshness (#629)
 
 How quickly an action on one surface shows on the other, measured against the

@@ -99,6 +99,13 @@ def candidate_manifest(repo: Path, commit: str, *, timeout: int = GIT_TIMEOUT,
         return export_manifest(repo, commit, Path(scratch), timeout)
 
 
+def commit_display_date(repo: Path, commit: str, timeout: int = GIT_TIMEOUT) -> str | None:
+    """The commit's committer date and time as "YYYY-MM-DD HHMM" in its own timezone, else None."""
+    value = _git(repo, ["show", "-s", "--format=%cI", commit], timeout)
+    found = re.fullmatch(r"(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):\d{2}(?:Z|[+-]\d{2}:\d{2})", value or "")
+    return f"{found[1]} {found[2]}{found[3]}" if found else None
+
+
 def require_free_space(root: Path, entries: object, generations: int = 2) -> None:
     """Refuse to stage unless ``generations`` copies of the candidate fit (#580)."""
     need = 0
@@ -130,4 +137,6 @@ def stage_trusted_candidate(root: Path, repo: Path, *, channel: str,
     with tempfile.TemporaryDirectory(prefix="smoothcast-candidate-") as scratch:
         entries = export_manifest(repo, commit, Path(scratch), timeout)
         require_free_space(root, entries)
-        return managed_generations.stage_local_snapshot(root, Path(scratch) / "tree", commit, entries)
+        return managed_generations.stage_local_snapshot(
+            root, Path(scratch) / "tree", commit, entries,
+            commit_date=commit_display_date(repo, commit, timeout))

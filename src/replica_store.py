@@ -65,7 +65,7 @@ class ReplicaStore:
         except sqlite3.DatabaseError:
             try:
                 self.conn.close()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort close of a corrupt database
                 pass
             if self.path.exists():
                 self.path.rename(self.path.with_name(
@@ -170,7 +170,7 @@ class ReplicaStore:
                     "UPDATE origins SET snapshot_active=1, snapshot_epoch=?, snapshot_cursor=?, "
                     "snapshot_at_seq=? WHERE origin_id=?", (epoch, cursor, at_seq, origin_id))
             self.conn.commit()
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - roll back then re-raise
             self.conn.rollback()
             raise
 
@@ -189,7 +189,7 @@ class ReplicaStore:
                 "entry_count=(SELECT COUNT(*) FROM rentries WHERE origin_id=?), state='fresh' "
                 "WHERE origin_id=?", (epoch, to_seq, now, origin_id, origin_id))
             self.conn.commit()
-        except BaseException:
+        except BaseException:  # noqa: BLE001 - roll back then re-raise
             self.conn.rollback()
             raise
 

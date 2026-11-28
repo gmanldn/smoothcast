@@ -35,6 +35,7 @@ import subtitle_style
 import subtitle_restart
 
 import playback_state
+import settings
 
 import watch_history
 
@@ -56,7 +57,7 @@ import reliability_metrics
 
 import cast_failure_code
 
-from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
+from cast_widgets import CONFIG_DIR, save_config, fmt_time, Async
 
 
 class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
@@ -129,6 +130,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
             return reason
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
+        typed = settings.Settings.from_config(cfg)
         previous = self.session
         prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
         display_name = getattr(self, "_portal_queue_display_names", {}).get(str(path))
@@ -143,7 +145,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         delay = subtitle_delay.get(cfg, path)
         adelay = audio_delay.get(cfg, path)
         preset = subtitle_style.from_config(cfg)
-        speed = float(cfg.get("playback_speed", 1.0))
+        speed = typed.playback.speed
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
         aspect_mode = cfg.get("aspect_override", "original")
         saved_audio = cfg.get("audio_track_by_file")
@@ -322,8 +324,8 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=cfg["audio"], subs_file=effective_subs_path,
                     burn_subs=effective_burn, title=title,
-                    audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-                    audio_loudness=str(cfg.get("audio_loudness", "off")),
+                    audio_gain_db=typed.audio.gain,
+                    audio_loudness=typed.audio.loudness,
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -342,10 +344,10 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     learned.record(receiver_key, codec_key, "hls", True)
                 return session, media
             except Exception:
-                # Clean up failed startup processes.
+                # Preserve the startup failure; cleanup must not replace it.
                 try:
                     session.stop(device, send_stop=False)
-                except Exception:
+                except Exception:  # noqa: BLE001 - cleanup cannot mask startup failure
                     pass
                 raise
 
@@ -577,6 +579,11 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 exact_source_time: bool = False) -> None:
         # Guard before seekbar moves.
         if self.busy:
+            if feedback_label is None and not exact_source_time:
+                # A click or drag on the bar must not be lost: hold the knob where
+                # the user put it and apply the seek the moment the TV is free.
+                self._defer_seek(target)
+                return
             self.toast("Hold on — finishing the last command")
             return
         if self.external:
@@ -606,6 +613,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 else:
                     self._local_start_pending = target
             else:
+                self._show_nearest_preview(target)
                 self._queue_preview(target)
             if feedback_label:
                 self.toast(f"{feedback_label} — {fmt_time(target)} (local preview)")
@@ -673,6 +681,24 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         self.tracker.device_update(target, duration)
         self._restart_at(session, target, feedback_label=feedback_label)
 
+    def _defer_seek(self, target: float) -> None:
+        self._deferred_seek = max(0.0, target)
+        self._deferred_seek_ticks = 0
+        if not getattr(self, "_deferred_seek_timer", 0):
+            self._deferred_seek_timer = GLib.timeout_add(100, self._retry_deferred_seek)
+
+    def _retry_deferred_seek(self) -> bool:
+        target = getattr(self, "_deferred_seek", None)
+        self._deferred_seek_ticks = getattr(self, "_deferred_seek_ticks", 0) + 1
+        if target is not None and self.busy and self._deferred_seek_ticks < 150 \
+                and not getattr(self, "_closing", False):
+            return True  # still finishing the previous command (about 15 s at most)
+        self._deferred_seek = None
+        self._deferred_seek_timer = 0
+        if target is not None and not self.busy and not getattr(self, "_closing", False):
+            self.seek_to(target)
+        return False
+
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None,
                     resume_after_pause: bool = False,
@@ -687,12 +713,13 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
         cfg = dict(self.cfg)  # frozen before background restart
+        typed = settings.Settings.from_config(cfg)
         picture_config = picture_adjustments.for_path(cfg, file_path)
         audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
             else float(state.speed) if state and state.speed
-            else float(self.cfg.get("playback_speed", 1.0))
+            else typed.playback.speed
         )
         rotation = int(self.cfg.get("rotation", 0))
         aspect_mode = getattr(state, "aspect_mode", "original")
@@ -720,8 +747,8 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=audio, subs_file=captions.external,
                     burn_subs=captions.burn, title=title,
-                    audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-                    audio_loudness=str(self.cfg.get("audio_loudness", "off")),
+                    audio_gain_db=typed.audio.gain,
+                    audio_loudness=typed.audio.loudness,
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -735,9 +762,10 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                     picture_config=picture_config,
                 )
             except Exception:
+                # Preserve the startup failure; cleanup must not replace it.
                 try:
                     session.stop(device, send_stop=False)
-                except Exception:
+                except Exception:  # noqa: BLE001 - cleanup cannot mask startup failure
                     pass
                 raise
             if was_paused:
@@ -955,9 +983,13 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 self.session.state.offset, snapshot.out_time, duration,
                 speed=self.session.state.speed,
             )
+        deferred = getattr(self, "_deferred_seek", None)
+        if deferred is not None and not self.external:
+            position = deferred  # the knob stays where the user clicked
         # Pure watchdog: no blocking I/O on the GTK tick.
         stream_watchdog.recover_window(self, snapshot, position)
-        self.seekbar.set_state(position, duration, buffered)
+        self.seekbar.set_state(position, duration, buffered,
+                               unknown_length=self.external and position is not None)
         if position is not None:
             local_stream = self._local_stream() if previewing else None
             playing = (bool(local_stream and local_stream.get_playing())
@@ -974,7 +1006,7 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
                 if duration:
                     self.remaining_label.set_text(f"-{fmt_time(duration - position)}")
                 else:
-                    self.remaining_label.set_text("--:--")
+                    self.remaining_label.set_text("Live" if self.external else "--:--")
             else:
                 self.elapsed_label.set_text("--:--")
                 self.remaining_label.set_text("--:--")

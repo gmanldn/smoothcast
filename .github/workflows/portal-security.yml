@@ -113,6 +113,9 @@ jobs:
           tests/test_portal_screens_http.py
           tests/test_portal_commands.py
           tests/test_portal_error_codes.py
+          tests/test_fuzz_parsers.py
+          tests/test_link_egress.py
+          tests/test_capability_gate.py
           tests/test_portal_uploads.py
           tests/test_portal_queue.py
           tests/test_room_conformance.py
