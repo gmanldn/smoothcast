@@ -70,7 +70,7 @@ def predicted_files(*texts: str, root: Path = ROOT) -> set[str]:
         for bare in _BARE.findall(text or ""):
             if (root / "src" / bare).exists():
                 found.add(f"src/{bare}")
-    return {f for f in found if f not in SHARED and not f.startswith(("docs/", "tests/"))}
+    return lease_paths(found)
 
 
 def claim_marker(agent: str, files: list[str], ttl: int, beat: float | None = None) -> str:
@@ -135,9 +135,16 @@ def active_claims(events: list[dict], now: datetime) -> list[dict]:
     return [e for e in live.values() if e["at"] + timedelta(minutes=e["ttl"]) > now]
 
 
+# The release lane (#700): ship itself advances src/version.py (automatic +1 PATCH per
+# shipment), guarded by the version-history check and non-force push. A feature lease on it
+# must never block, or be blocked by, an unrelated shipment.
+RELEASE_LANE = {"src/version.py"}
+
+
 def lease_paths(files: set[str]) -> set[str]:
     """Exclude generated and merge-friendly metadata even from explicit claims."""
-    return {f for f in files if f not in SHARED and not f.startswith(("docs/", "tests/"))}
+    return {f for f in files if f not in SHARED and f not in RELEASE_LANE
+            and not f.startswith(("docs/", "tests/"))}
 
 
 def conflicts(issue: int, files: set[str], me: str, claims: list[dict]) -> list[str]:

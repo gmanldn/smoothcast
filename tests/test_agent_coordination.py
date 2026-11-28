@@ -491,6 +491,23 @@ def test_scope_expansion_collision_preserves_old_claim_and_worktree(monkeypatch,
     assert not (tmp_path / "sc-agent-task.json").exists()
 
 
+def test_version_bump_is_a_release_lane_no_feature_lease_can_block(monkeypatch):
+    """#700: the automatic PATCH commit touches src/version.py; that never needs a lease."""
+    assert agent.lease_paths({"src/version.py", "src/a.py"}) == {"src/a.py"}
+    monkeypatch.setattr(agent, "cmd_claim", lambda *args: (_ for _ in ()).throw(
+        AssertionError("a version bump must not claim or conflict with a rival lease")))
+    task = {"issue": 584, "files": ["src/first.py"]}
+    assert agent.ensure_task_scope(task, ["src/first.py", "src/version.py"])
+    assert task["files"] == ["src/first.py"]
+
+
+def test_rival_lease_on_version_py_does_not_overlap_other_claims():
+    rival = {"issue": 9, "agent": "rival", "files": ["src/version.py"]}
+    assert not (agent.lease_paths({"src/version.py"}) & agent.lease_paths(rival["files"]))
+    # Real production files are still fenced: only the release lane is exempt.
+    assert agent.lease_paths({"src/a.py"}) & agent.lease_paths(["src/a.py", "src/version.py"])
+
+
 def test_scope_expansion_does_not_claim_merge_friendly_tests_or_docs(monkeypatch):
     monkeypatch.setattr(agent, "cmd_claim", lambda *args: (_ for _ in ()).throw(
         AssertionError("tests and docs are merge-friendly shared paths")))
