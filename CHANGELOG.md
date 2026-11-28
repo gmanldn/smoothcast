@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: bd07c87cc28ea6bbde9be2c2b5a7bf97f6c5648f -->
+<!-- sc-changelog-through: b1f6f292d8dbdf288bad90b02480e069b6ff965c -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **11:01:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **11:03:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **11:03:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b1f6f292d8db`](https://github.com/gmanldn/smoothcast/commit/b1f6f292d8dbdf288bad90b02480e069b6ff965c)
+
+- 🟩 **11:03:25 · Feature** — feat(state): event-sourced playback and receiver ownership store, single-poller by construction (Refs #695) · [`4904acd5b14d`](https://github.com/gmanldn/smoothcast/commit/4904acd5b14dc2cd22f11252b8a8599c51d93e35)
 
 - ⬜ **11:01:38 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`bd07c87cc28e`](https://github.com/gmanldn/smoothcast/commit/bd07c87cc28ea6bbde9be2c2b5a7bf97f6c5648f)
+
+- ⬜ **11:01:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`592c58526a1a`](https://github.com/gmanldn/smoothcast/commit/592c58526a1a1e2bbf1c7c76a4cfecbbffb1df44)
 
 - 🟪 **11:01:26 · Tests** — test(dlna): fake-receiver query test accounts for #725 format cache · [`8118c23b86b9`](https://github.com/gmanldn/smoothcast/commit/8118c23b86b9c1dc5a1bea24ae580f81de5cdc2e)
 
