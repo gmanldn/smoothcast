@@ -49,8 +49,8 @@ class VisualDesignTests(unittest.TestCase):
             'card.add_css_class("settings-card")',
             'card.add_css_class("device-card")',
             'card.add_css_class("diagnostics-card")',
-            'state_labels.present(self.device_state).short.upper()',  # #446 vocabulary
-            'self.queue_scroller.set_visible(bool(visible))',
+            'state_labels.present(w.device_state).short.upper()',  # #446 vocabulary
+            'w.queue_scroller.set_visible(bool(visible))',
             'self.console_empty.set_visible(not has_activity)',
             'self.preview = PreviewScreen()',
         ):
