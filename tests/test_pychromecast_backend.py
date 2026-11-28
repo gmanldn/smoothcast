@@ -342,6 +342,160 @@ def test_manual_private_ip_connection_uses_one_persistent_connection():
     backend.close()
 
 
+def test_simultaneous_manual_connects_share_only_the_same_endpoint():
+    entered, release = threading.Event(), threading.Event()
+    factory_calls = []
+
+    def connect(endpoint, **_kwargs):
+        factory_calls.append(endpoint)
+        entered.set()
+        assert release.wait(2)
+        cast = FakeCast(name=f"{endpoint[0]}:{endpoint[1]}", host=endpoint[0], identifier=endpoint[2])
+        cast.cast_info.port = endpoint[1]
+        return cast
+
+    backend = PyChromecastBackend(discover=mock.Mock(return_value=FakeBrowser()),
+                                  connect_from_host=connect)
+    wait_entered = threading.Event()
+    original_wait = backend._changed.wait
+
+    def observed_wait(timeout=None):
+        wait_entered.set()
+        return original_wait(timeout)
+
+    backend._changed.wait = observed_wait
+    start = threading.Barrier(3)
+    results, failures = [], []
+
+    def caller(port):
+        start.wait()
+        try:
+            results.append(backend.connect_manual("192.168.1.44", port=port))
+        except Exception as exc:  # pragma: no cover - captured for assertion below
+            failures.append(exc)
+
+    threads = [threading.Thread(target=caller, args=(8009,)) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    start.wait()
+    try:
+        assert entered.wait(2)
+        assert wait_entered.wait(2), "the second caller did not join the in-flight attempt"
+    finally:
+        release.set()
+    for thread in threads:
+        thread.join(2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert failures == [] and len(results) == 2 and results[0] == results[1]
+    assert len(factory_calls) == 1
+
+    other_port = backend.connect_manual("192.168.1.44", port=9000)
+    assert other_port.port == 9000
+    assert len(factory_calls) == 2 and [endpoint[1] for endpoint in factory_calls] == [8009, 9000]
+    backend.close()
+
+
+def test_failed_manual_connect_wakes_all_waiters_and_can_be_retried():
+    entered, release = threading.Event(), threading.Event()
+    factory_calls = []
+
+    def connect(endpoint, **_kwargs):
+        factory_calls.append(endpoint)
+        if len(factory_calls) == 1:
+            entered.set()
+            assert release.wait(2)
+            raise RuntimeError("receiver did not answer")
+        return FakeCast(host=endpoint[0], identifier=endpoint[2])
+
+    backend = PyChromecastBackend(discover=mock.Mock(return_value=FakeBrowser()),
+                                  connect_from_host=connect)
+    wait_entered = threading.Event()
+    original_wait = backend._changed.wait
+
+    def observed_wait(timeout=None):
+        wait_entered.set()
+        return original_wait(timeout)
+
+    backend._changed.wait = observed_wait
+    start = threading.Barrier(3)
+    results, failures = [], []
+
+    def caller():
+        start.wait()
+        try:
+            results.append(backend.connect_manual("192.168.1.45"))
+        except Exception as exc:
+            failures.append(exc)
+
+    threads = [threading.Thread(target=caller) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    start.wait()
+    try:
+        assert entered.wait(2)
+        assert wait_entered.wait(2), "the second caller did not join the in-flight attempt"
+    finally:
+        release.set()
+    for thread in threads:
+        thread.join(2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert results == [] and len(failures) == 2
+    assert all("Cannot connect to Google Cast receiver 192.168.1.45:8009" in str(exc)
+               for exc in failures)
+    recovered = backend.connect_manual("192.168.1.45")
+    assert recovered.host == "192.168.1.45" and len(factory_calls) == 2
+    backend.close()
+
+
+def test_manual_connect_waiters_are_released_when_backend_closes():
+    entered, release = threading.Event(), threading.Event()
+    casts = []
+
+    def connect(endpoint, **_kwargs):
+        entered.set()
+        assert release.wait(2)
+        cast = FakeCast(host=endpoint[0], identifier=endpoint[2])
+        casts.append(cast)
+        return cast
+
+    backend = PyChromecastBackend(discover=mock.Mock(return_value=FakeBrowser()),
+                                  connect_from_host=connect)
+    wait_entered = threading.Event()
+    original_wait = backend._changed.wait
+
+    def observed_wait(timeout=None):
+        wait_entered.set()
+        return original_wait(timeout)
+
+    backend._changed.wait = observed_wait
+    start = threading.Barrier(3)
+    failures = []
+
+    def caller():
+        start.wait()
+        try:
+            backend.connect_manual("192.168.1.46")
+        except Exception as exc:
+            failures.append(exc)
+
+    threads = [threading.Thread(target=caller) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    start.wait()
+    assert entered.wait(2)
+    assert wait_entered.wait(2), "the second caller did not join the in-flight attempt"
+    backend.close()
+    release.set()
+    for thread in threads:
+        thread.join(2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(failures) == 2 and all("backend is closed" in str(exc) for exc in failures)
+    assert casts and casts[0].disconnected == [1]
+
+
 def test_backend_selection_is_explicit_and_catt_remains_the_fallback():
     fake_library = types.ModuleType("pychromecast")
     fake_library.get_chromecasts = mock.Mock()

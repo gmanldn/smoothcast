@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
@@ -80,6 +81,13 @@ class _CastStatusListener:
         )
 
 
+@dataclass
+class _ManualConnectAttempt:
+    done: bool = False
+    device: Device | None = None
+    error: str | None = None
+
+
 class PyChromecastBackend:
     """Manage long-lived PyChromecast connections and map SmoothCast commands."""
 
@@ -112,6 +120,7 @@ class PyChromecastBackend:
         self._status: dict[str, ReceiverInfo] = {}
         self._subscribers: dict[str, set[StatusListener]] = {}
         self._connection_state: dict[str, str] = {}
+        self._manual_connects: dict[tuple[str, int], _ManualConnectAttempt] = {}
         self._closed = False
 
     def scan(self, timeout: float = 30) -> list[Device]:
@@ -203,10 +212,32 @@ class PyChromecastBackend:
     def connect_manual(self, address: str, *, port: int = 8009) -> Device:
         """Connect directly to a user-selected private IPv4 Cast target."""
         host = validate_manual_target(address)
-        with self._lock:
-            existing = next((d for d in self._devices.values() if d.host == host), None)
+        endpoint = (host, port)
+        with self._changed:
+            if self._closed:
+                raise CastError("Cast backend is closed")
+            existing = next((d for d in self._devices.values()
+                             if d.host == host and d.port == port), None)
             if existing is not None:
                 return existing
+            attempt = self._manual_connects.get(endpoint)
+            if attempt is None:
+                attempt = _ManualConnectAttempt()
+                self._manual_connects[endpoint] = attempt
+                owner = True
+            else:
+                owner = False
+            if not owner:
+                while not attempt.done and not self._closed:
+                    self._changed.wait()
+                if self._closed and not attempt.done:
+                    raise CastError("Cast backend is closed")
+                if attempt.error is not None:
+                    raise CastError(attempt.error)
+                if attempt.device is not None:
+                    return attempt.device
+                raise CastError("Cast backend is closed")
+
         identifier = uuid.uuid5(uuid.NAMESPACE_URL, f"smoothcast-cast:{host}:{port}")
         try:
             cast = self._connect_from_host(
@@ -214,10 +245,32 @@ class PyChromecastBackend:
                 tries=None,
                 retry_wait=5,
             )
+            self._register(cast)
         except Exception as exc:  # noqa: BLE001 - third-party connect failure is re-raised as CastError
-            raise CastError(f"Cannot connect to Google Cast receiver {host}: {exc}") from exc
-        self._register(cast)
-        return self._devices[str(identifier)]
+            failure = CastError(f"Cannot connect to Google Cast receiver {host}:{port}: {exc}")
+            with self._changed:
+                attempt.error = str(failure)
+                attempt.done = True
+                if self._manual_connects.get(endpoint) is attempt:
+                    self._manual_connects.pop(endpoint, None)
+                self._changed.notify_all()
+            raise failure from exc
+
+        with self._changed:
+            device = self._devices.get(str(identifier))
+            if self._closed or device is None:
+                attempt.error = "Cast backend is closed" if self._closed else "Cast receiver was not registered"
+            else:
+                attempt.device = device
+            attempt.done = True
+            if self._manual_connects.get(endpoint) is attempt:
+                self._manual_connects.pop(endpoint, None)
+            self._changed.notify_all()
+            if attempt.error is not None:
+                raise CastError(attempt.error)
+            if device is None:
+                raise CastError("Cast receiver was not registered")
+            return device
 
     def _resolve(self, target: str, *, allow_connect: bool = True) -> tuple[str | None, str | None]:
         value = target.strip()
