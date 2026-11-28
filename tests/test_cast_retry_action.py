@@ -16,7 +16,8 @@ import cast_failure_code
 import cast_recovery
 from gui_source import main_window_methods
 
-NAMES = ("_cast_failed", "_retry_action", "_retry_cast", "_select_receiver")
+NAMES = ("_cast_failed", "_retry_action", "_retry_cast", "_select_receiver",
+         "_retry_receiver_identity")
 
 
 def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
@@ -37,7 +38,8 @@ def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
             self._dlna_cancel = None
             self._finished_handled = False
             self.tracker = SimpleNamespace(value=lambda: 125.0, clear=mock.Mock())
-            self.devices = [SimpleNamespace(name="Kitchen")]
+            self.devices = [SimpleNamespace(name="Living Room", uuid="receiver-a", host="192.168.1.10"),
+                            SimpleNamespace(name="Kitchen", uuid="receiver-b", host="192.168.1.11")]
             self.device_info = {"duration": 3600}
             self.toasts = []
             self._console = mock.Mock()
@@ -61,7 +63,7 @@ def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
             self.toasts.append((message, error, action))
 
         def _device(self):
-            return "Living Room"
+            return self.cfg["device"]
 
     return Window()
 
@@ -116,6 +118,37 @@ def test_retry_never_interrupts_other_work(state):
     action()
     w._cast_path.assert_not_called()
     assert "not retrying" in w.toasts[-1][0]
+
+
+def test_retry_rejects_changed_receiver():
+    w = make_window()
+    action = fail(w)[2][1]
+    w._dropdown_selected(1)
+    action()
+    w._cast_path.assert_not_called()
+    assert "Receiver changed" in w.toasts[-1][0]
+
+
+@pytest.mark.parametrize("replacement", [
+    [SimpleNamespace(name="Living Room", uuid="receiver-b", host="192.168.1.11")],
+    [SimpleNamespace(name="Living Room", uuid="receiver-a", host="192.168.1.10"),
+     SimpleNamespace(name="Living Room", uuid="receiver-b", host="192.168.1.11")],
+])
+def test_retry_rejects_replaced_or_ambiguous_friendly_name(replacement):
+    w = make_window()
+    action = fail(w)[2][1]
+    w.devices = replacement
+    action()
+    w._cast_path.assert_not_called()
+    assert "Receiver changed" in w.toasts[-1][0]
+
+
+def test_retry_does_not_interrupt_external_playback():
+    w = make_window()
+    action = fail(w)[2][1]
+    w.external = True
+    action()
+    w._cast_path.assert_not_called()
 
 
 def test_inactive_leftover_session_does_not_block_a_retry():

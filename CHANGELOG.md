@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 0fa2dcb107f6796b5d0361bfa37e606b886a132e -->
+<!-- sc-changelog-through: 92253d8e0e8d356d042b83696abe237dcfc730a4 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:37:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **04:38:00 · Fix** — fix: pin cast recovery actions to the original receiver identity (Refs #745) <!-- sc-changelog-pending -->
+
+- ⬜ **04:37:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`92253d8e0e8d`](https://github.com/gmanldn/smoothcast/commit/92253d8e0e8d356d042b83696abe237dcfc730a4)
 
 - ⬜ **04:37:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0fa2dcb107f6`](https://github.com/gmanldn/smoothcast/commit/0fa2dcb107f6796b5d0361bfa37e606b886a132e)
 
