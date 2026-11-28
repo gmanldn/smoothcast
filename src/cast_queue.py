@@ -19,6 +19,8 @@ import streamer
 import playback_state
 
 import playlist_control
+import room_events
+import secrets
 import queue_metadata
 from queue_component import QueueComponent
 import room_checkpoint
@@ -246,7 +248,7 @@ class QueueController:
     def clear_queue(self) -> None:
         w = self.w
         w._cancel_queue_prewarm()
-        QueueComponent(w.queue).clear()
+        room_events.store_for(w).submit(secrets.token_hex(8), "clear")
         w.selected_index = None
         w._retire_unqueued_preview()
         w._rebuild_queue()
@@ -256,7 +258,9 @@ class QueueController:
     def _enqueue(self, paths: list[str]) -> None:
         w = self.w
         added = 0
-        for path in QueueComponent(w.queue).add(paths):
+        before = set(w.queue)
+        events = room_events.store_for(w).submit(secrets.token_hex(8), "add", paths)
+        for path in [p for e in events for p in e.data if p not in before]:
             record = getattr(w, "_portal_record_contribution", None)
             if callable(record):
                 record(path, "Host", "local")
@@ -287,8 +291,11 @@ class QueueController:
 
     def _remove_queue(self, index: int) -> None:
         w = self.w
-        removed, w.selected_index = QueueComponent(w.queue).remove(index, w.selected_index)
+        removed = w.queue[index] if 0 <= index < len(w.queue) else None
         if removed is not None:
+            room_events.store_for(w).submit(secrets.token_hex(8), "remove", index)
+            w.selected_index = playlist_control.selection_after_remove(
+                w.selected_index, index, len(w.queue))
             if removed == w.now_playing and not (
                 w.session and w.session.state is not None
             ):

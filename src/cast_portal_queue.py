@@ -18,7 +18,7 @@ import portal
 import portal_uploads
 from queue_component import QueueComponent
 import queue_metadata
-from room_events import QueueStore
+from room_events import store_for
 import media_source
 
 
@@ -305,9 +305,7 @@ class PortalQueueController:
                     position = 0
             if type(position) is not int or not 0 <= position < len(w.queue):
                 raise portal.PortalRequestError(400, "Queue position is outside the queue")
-            store = getattr(w, "_queue_store", None)
-            if store is None or store.state.items is not w.queue:
-                store = w._queue_store = QueueStore(w.queue)
+            store = store_for(w)
             selected = getattr(w, "selected_index", None)
             selected_path = w.queue[selected] if selected is not None and 0 <= selected < len(w.queue) else None
             store.submit(secrets.token_hex(8), "move", index, position)

@@ -206,10 +206,9 @@ class PlaylistTests(unittest.TestCase):
         self.assertNotIn("row.get_index()", activated)
         self.assertNotIn("row.get_index()", selected)
         self.assertIn("playlist_control.selection_after_move(", methods["_move_queue"])
-        # Removal is delegated to QueueComponent, which owns the selection rule.
-        self.assertIn("QueueComponent(w.queue).remove(", methods["_remove_queue"])
-        component = (Path(__file__).resolve().parents[1] / "src" / "queue_component.py").read_text(encoding="utf-8")
-        self.assertIn("playlist_control.selection_after_remove(", component)
+        # Removal goes through the room event store and the shared selection rule.
+        self.assertIn('"remove", index', methods["_remove_queue"])
+        self.assertIn("playlist_control.selection_after_remove(", methods["_remove_queue"])
 
     def test_actions_are_separate_and_load_uses_enqueue(self):
         source = combined_source()

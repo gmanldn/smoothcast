@@ -178,6 +178,8 @@ def handler_globals() -> dict:
     import low_end_policy
     import picture_adjustments
     import receiver_memory
+    import room_events
+    import secrets
     import settings
     from queue_component import QueueComponent
 
@@ -186,6 +188,8 @@ def handler_globals() -> dict:
     return {
         "capability_gate": capability_gate,
         "fingerprint": fingerprint,
+        "room_events": room_events,
+        "secrets": secrets,
         "low_end_policy": low_end_policy,
         "picture_adjustments": picture_adjustments,
         "receiver_memory": receiver_memory,

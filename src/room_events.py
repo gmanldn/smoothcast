@@ -51,6 +51,14 @@ def replay(events) -> QueueState:
     return state
 
 
+def store_for(window) -> "QueueStore":
+    """The window's store, bound to its live ``queue`` list (re-adopted if the list is replaced)."""
+    store = getattr(window, "_queue_store", None)
+    if store is None or store.state.items is not window.queue:
+        store = window._queue_store = QueueStore(window.queue)
+    return store
+
+
 class QueueStore:
     """Validated commands -> ordered events -> state."""
 
