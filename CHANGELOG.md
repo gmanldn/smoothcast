@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c6db5e134ba7b0c8e2fa1c12c5764f38dc64ac7f -->
+<!-- sc-changelog-through: ab3c72b5db516d1fecbc8fa2b34d013614636bf8 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **01:34:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **01:35:49 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **01:35:49 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ab3c72b5db51`](https://github.com/gmanldn/smoothcast/commit/ab3c72b5db516d1fecbc8fa2b34d013614636bf8)
+
+- 🟥 **01:35:43 · Fix** — fix(agent): version.py is a release lane; a feature lease can no longer block or be blocked by a shipment's PATCH bump (Refs #700) · [`1e32671a4dea`](https://github.com/gmanldn/smoothcast/commit/1e32671a4dea875161e21454b07ad36550be5fb7)
+
+- ⬜ **01:34:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`25a17f1d6d64`](https://github.com/gmanldn/smoothcast/commit/25a17f1d6d6434946ebe94ffd33478ce56ee07a4)
 
 - ⬜ **01:34:30 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c6db5e134ba7`](https://github.com/gmanldn/smoothcast/commit/c6db5e134ba7b0c8e2fa1c12c5764f38dc64ac7f)
 
