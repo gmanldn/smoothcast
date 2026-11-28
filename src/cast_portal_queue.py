@@ -44,13 +44,9 @@ class PortalQueueMixin:
     def _portal_prune_queue_provenance(self) -> None:
         queued_paths = set(self.queue)
         active = getattr(self, "now_playing", None)
-        for attr in ("_portal_queue_display_names", "_portal_queue_provenance"):
-            records = getattr(self, attr, {})
-            for path in tuple(records):
-                if path not in queued_paths and not (
-                    attr == "_portal_queue_display_names" and path == active
-                ):
-                    records.pop(path, None)
+        # The active item keeps its display name until playback ends.
+        QueueComponent.prune_records(getattr(self, "_portal_queue_display_names", {}), queued_paths, active)
+        QueueComponent.prune_records(getattr(self, "_portal_queue_provenance", {}), queued_paths)
 
     def _portal_contributor(self, payload: dict) -> str | None:
         server = getattr(getattr(self, "_portal", None), "server", None)

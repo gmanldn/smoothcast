@@ -50,3 +50,10 @@ class QueueComponent:
         """Summed known duration of ``visible`` and whether every item's duration is known."""
         total = sum(durations.get(p, 0.0) or 0.0 for p in visible)
         return total, all(durations.get(p) for p in visible)
+
+    @staticmethod
+    def prune_records(records: dict, queued: set[str], keep: str | None = None) -> None:
+        """Drop per-path ``records`` for paths no longer queued (``keep`` is the one extra path to retain)."""
+        for path in tuple(records):
+            if path not in queued and path != keep:
+                records.pop(path, None)

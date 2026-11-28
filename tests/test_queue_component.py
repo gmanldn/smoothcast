@@ -58,3 +58,12 @@ def test_total_duration_sums_known_and_flags_unknown():
     assert QueueComponent.total_duration(durations, ["a", "c"]) == (90.0, True)
     assert QueueComponent.total_duration(durations, ["a", "b", "z"]) == (60.0, False)
     assert QueueComponent.total_duration({}, []) == (0, True)
+
+
+def test_prune_records_drops_unqueued_but_keeps_the_named_extra():
+    from queue_component import QueueComponent
+    records = {"a": 1, "b": 2, "c": 3}
+    QueueComponent.prune_records(records, {"a"}, keep="b")
+    assert records == {"a": 1, "b": 2}
+    QueueComponent.prune_records(records, {"a"})
+    assert records == {"a": 1}
