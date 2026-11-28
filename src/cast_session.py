@@ -2,6 +2,8 @@
 """Cast sessions, transport, seeking and window modes."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -169,20 +171,33 @@ class SessionMixin(AbRepeatUiMixin, RemoteUrlCastMixin):
         def work():
             if cancel.is_set():
                 raise streamer.StreamError("Cast cancelled before receiver handoff")
-            subs_path = (self._resolve_subs(path, config=cfg)
-                         if subs_mode == "auto" else picked_subs_path)
+            # These bounded, read-only checks do not depend on one another.
+            # Collect in their former order so simultaneous failures keep a
+            # predictable user-facing cause.
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="cast-preflight") as workers:
+                subs_future = workers.submit(
+                    self._resolve_subs, path, config=cfg,
+                ) if subs_mode == "auto" else None
+                media_future = workers.submit(
+                    queue_metadata.media_for_cast, prewarmed_entry, path,
+                    lambda source: streamer.ffprobe(source, cancel=cancel),
+                )
+                ffmpeg_future = workers.submit(streamer.require_compatible_ffmpeg)
+                try:
+                    subs_path = subs_future.result() if subs_future is not None else picked_subs_path
+                    media, prewarm_fingerprint = media_future.result()
+                    ffmpeg_future.result()
+                except Exception:
+                    for future in (subs_future, media_future, ffmpeg_future):
+                        if future is not None:
+                            future.cancel()
+                    raise
             if cancel.is_set():
                 raise streamer.StreamError("Cast cancelled before receiver handoff")
             burn = subs_path is not None and (
                 bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
                 or delay != 0 or preset != subtitle_style.DEFAULT
             )
-            media, prewarm_fingerprint = queue_metadata.media_for_cast(
-                prewarmed_entry, path, streamer.ffprobe,
-            )
-            if cancel.is_set():
-                raise streamer.StreamError("Cast cancelled before receiver handoff")
-            streamer.require_compatible_ffmpeg()
             # Reject an FFmpeg without HDR filters before stopping an owned cast.
             try:
                 hdr_tonemap.require_available(media)

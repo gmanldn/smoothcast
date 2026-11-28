@@ -158,6 +158,8 @@ def handler_globals() -> dict:
     in one place. ``CONFIG_DIR`` is always a fresh temp directory so a test can
     never read or write a real SmoothCast config.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     import capability_gate
     import fingerprint
     import low_end_policy
@@ -176,5 +178,6 @@ def handler_globals() -> dict:
         "receiver_memory": receiver_memory,
         "settings": settings,
         "QueueComponent": QueueComponent,
+        "ThreadPoolExecutor": ThreadPoolExecutor,
         "CONFIG_DIR": config_dir,
     }

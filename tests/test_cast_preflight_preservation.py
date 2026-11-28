@@ -15,6 +15,7 @@ from unittest import mock
 
 from gui_source import handler_globals, main_window_methods
 import dlna
+import hdr_tonemap
 import idle_slate
 import playback_state
 import queue_metadata
@@ -129,6 +130,48 @@ def test_no_previous_session_uses_normal_failure_cleanup():
     w._cast_path(pathlib.Path("/another.mkv"), 0.0)
     w._cast_failed.assert_called_once()
 
+
+def test_independent_cast_preflight_checks_run_in_parallel(monkeypatch):
+    import audio_delay
+    import subtitle_delay
+
+    rendezvous = threading.Barrier(3)
+    reached = []
+
+    def arrive(label):
+        rendezvous.wait(timeout=2)
+        reached.append(label)
+
+    def run(work, *, done, failed, domain):
+        try:
+            done(work())
+        except Exception as exc:
+            failed(str(exc))
+
+    w, _previous = window(subs="auto", dependencies={
+        "Async": SimpleNamespace(run=run), "streamer": streamer,
+        "audio_delay": audio_delay, "subtitle_delay": subtitle_delay,
+        "subtitle_style": subtitle_style,
+    })
+    w.cfg.update(direct=True, audio="original")
+    w.session = None
+    w._closing = False
+    w.np_meta = mock.Mock()
+    w._resolve_subs = lambda *_args, **_kwargs: arrive("subtitles")
+    monkeypatch.setattr(queue_metadata, "media_for_cast",
+                        lambda *_args, **_kwargs: (arrive("media") or object(), None))
+    monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: arrive("ffmpeg"))
+
+    def stop_after_preflight(_media):
+        raise RuntimeError("stop after preflight")
+
+    monkeypatch.setattr(hdr_tonemap, "require_available", stop_after_preflight)
+
+    w._cast_path(pathlib.Path("/private/movie.mkv"), 0.0)
+
+    assert set(reached) == {"subtitles", "media", "ffmpeg"}
+    w._cast_failed.assert_called_once_with("stop after preflight")
+
 def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     import audio_delay
     import subtitle_delay
@@ -158,7 +201,7 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     w._closing = False
     w.cfg.update(direct=True, audio="original")
     previous.stop = mock.Mock()
-    monkeypatch.setattr(streamer, "ffprobe", lambda path: object())
+    monkeypatch.setattr(streamer, "ffprobe", lambda path, **_kwargs: object())
     monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
     monkeypatch.setattr(dlna, "advertised_http_formats", lambda target: {"video/webm"})
 
@@ -196,7 +239,7 @@ def test_stop_cancels_cast_during_probe_before_stopping_previous_session(monkeyp
     w.media = None
     previous.stop = mock.Mock()
 
-    def probe(_path):
+    def probe(_path, **_kwargs):
         w.stop_stream()
         return object()
 
@@ -247,7 +290,7 @@ def test_stop_during_old_session_stop_aborts_new_receiver_handoff(monkeypatch):
     previous.stop = mock.Mock(side_effect=stop_previous)
     previous.mode = "dlna"
     previous.active = lambda: not stopped["value"]
-    monkeypatch.setattr(streamer, "ffprobe", lambda _path: object())
+    monkeypatch.setattr(streamer, "ffprobe", lambda _path, **_kwargs: object())
     monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
     monkeypatch.setattr(dlna, "negotiate_media_type", lambda _renderer: "video/mp4")
     with mock.patch.object(dlna, "Session") as session:
@@ -288,7 +331,7 @@ def test_stop_during_new_session_start_stops_owned_receiver(monkeypatch):
     previous.stop = mock.Mock(side_effect=lambda *_a, **_k: stopped.update(value=True))
     previous.mode = "transcode"
     previous.active = lambda: not stopped["value"]
-    monkeypatch.setattr(streamer, "ffprobe", lambda _path: SimpleNamespace(direct_ok=False))
+    monkeypatch.setattr(streamer, "ffprobe", lambda _path, **_kwargs: SimpleNamespace(direct_ok=False))
     monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
     stop_calls = []
 
