@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 76cd100ef82714943d65ba72fc4d238b7f49b055 -->
+<!-- sc-changelog-through: eba94749b9c9fc837acbbec56ce23fed54a8fca4 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:14:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:15:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:15:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`eba94749b9c9`](https://github.com/gmanldn/smoothcast/commit/eba94749b9c9fc837acbbec56ce23fed54a8fca4)
+
+- ⬜ **03:15:40 · Maintenance** — chore(ci): refresh complexity baseline after shipped #568 and #710 growth (Refs #704) · [`29289debc5c7`](https://github.com/gmanldn/smoothcast/commit/29289debc5c741bc8aceb772567629bef9fbadce)
+
+- 🟥 **03:15:40 · Fix** — fix(cast): show the receiver reported total length (Refs #704) · [`933146abf9bc`](https://github.com/gmanldn/smoothcast/commit/933146abf9bcc7ff9d6dd9b668d6fac43930a1d6)
 
 - ⬜ **03:14:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`76cd100ef827`](https://github.com/gmanldn/smoothcast/commit/76cd100ef82714943d65ba72fc4d238b7f49b055)
 
 - 🟥 **03:14:13 · Fix** — fix: cancel stale screen queue advances (Refs #749) · [`2feb4aa970c9`](https://github.com/gmanldn/smoothcast/commit/2feb4aa970c924695bbc06cc2faef9c282607509)
+
+- ⬜ **03:14:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d0b4ffe4afbd`](https://github.com/gmanldn/smoothcast/commit/d0b4ffe4afbd84e6579fef4f39ab77ce5d612b18)
 
 - ⬜ **03:11:37 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`60b0b0731d29`](https://github.com/gmanldn/smoothcast/commit/60b0b0731d291b8bd2cee632c205b381d63f7eb6)
 
