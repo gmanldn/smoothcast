@@ -137,6 +137,79 @@ def test_orders_are_sequenced_and_replayed_after_a_missed_poll(registry):
     assert registry.poll(screen.id, "k1", 4)["orders"] == []
 
 
+def _seeks(registry, screen, count, first=1):
+    for n in range(count):
+        registry.command(screen.id, "seek", value=first + n)
+
+
+def test_poll_without_a_gap_delivers_exactly_the_newer_orders(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    _seeks(registry, screen, 5)
+    got = registry.poll(screen.id, "k1", 2)
+    assert [o["seq"] for o in got["orders"]] == [3, 4, 5, 6]
+    assert "resync" not in got
+    # The boundary is not a gap: the oldest retained order directly follows the cursor.
+    for _ in range(screens.MAX_PENDING_ORDERS):
+        registry.command(screen.id, "seek", value=1)
+    oldest = screen.orders[0]["seq"]
+    assert "resync" not in registry.poll(screen.id, "k1", oldest - 1)
+    assert "resync" in registry.poll(screen.id, "k1", oldest - 2)
+
+
+def test_a_cursor_behind_evicted_orders_resyncs_to_the_current_film(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    cursor = screen.seq                           # the browser last applied Play(A)
+    _seeks(registry, screen, screens.MAX_PENDING_ORDERS)      # evicts A's own order
+    play(registry, screen, item="bbb")
+    registry.report(screen.id, "k1", {"state": "playing", "position": 77.0,
+                                      "play_seq": screen.play_seq})
+    registry.command(screen.id, "pause")
+    got = registry.poll(screen.id, "k1", cursor, wait=5.0)
+    assert got["resync"] == {"from": screen.play_seq - 1}
+    kinds = [(o["kind"], o.get("item")) for o in got["orders"]]
+    assert kinds == [("play", "bbb"), ("pause", None)]        # nothing aimed at A
+    assert got["orders"][0]["start"] == 77.0                  # host's last evidence
+    assert got["seq"] == screen.seq
+    # Applying the resync from its own origin leaves no further gap.
+    assert "resync" not in registry.poll(screen.id, "k1", got["resync"]["from"])
+
+
+def test_resync_survives_the_anchor_itself_being_evicted(registry):
+    screen = make(registry)
+    play(registry, screen, item="bbb")
+    anchor_seq = screen.play_seq
+    _seeks(registry, screen, screens.MAX_PENDING_ORDERS + 4)
+    assert screen.orders[0]["seq"] > anchor_seq
+    got = registry.poll(screen.id, "k1", 0)
+    assert got["resync"] == {"from": anchor_seq - 1}
+    assert got["orders"][0]["kind"] == "play" and got["orders"][0]["item"] == "bbb"
+    assert [o["seq"] for o in got["orders"][1:]] == [o["seq"] for o in screen.orders]
+
+
+def test_resync_after_a_stop_tells_the_screen_to_stop(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    _seeks(registry, screen, 3)
+    registry.command(screen.id, "stop")
+    for value in range(screens.MAX_PENDING_ORDERS):
+        registry.command(screen.id, "volume", value=value)
+    got = registry.poll(screen.id, "k1", 1)
+    assert got["orders"][0]["kind"] == "stop"
+    assert all(o["kind"] in {"stop", "volume"} for o in got["orders"])
+
+
+def test_resync_without_any_play_or_stop_replays_only_what_is_retained(registry):
+    screen = make(registry)
+    for value in range(screens.MAX_PENDING_ORDERS + 3):
+        registry.command(screen.id, "volume", value=value % 100)
+    got = registry.poll(screen.id, "k1", 0)
+    oldest = screen.orders[0]["seq"]
+    assert got["resync"] == {"from": oldest - 1}
+    assert [o["seq"] for o in got["orders"]] == [o["seq"] for o in screen.orders]
+
+
 def test_identical_command_id_is_an_idempotent_retry(registry):
     screen = make(registry)
     first = play(registry, screen, command_id="c-1")

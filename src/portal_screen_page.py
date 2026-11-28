@@ -202,6 +202,7 @@ async function loop(){
   while(started&&!stopped){
     try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`,undefined,POLL_TIMEOUT);
       if(failures){failures=0;banner("");if(!current)setSlate(READY,"ok")}
+      if(d.resync){seq=d.resync.from;stopPlayback()}
       for(const o of d.orders){if(o.seq>seq){seq=o.seq;apply(o)}}
       slateLayout(d.queue_empty)
     }catch(err){

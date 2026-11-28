@@ -194,6 +194,7 @@ class Screen:
     ack: int = 0                    # last order the screen says it applied
     orders: deque = field(default_factory=lambda: deque(maxlen=MAX_PENDING_ORDERS))
     commands: OrderedDict = field(default_factory=OrderedDict)
+    anchor: dict | None = None  # latest play/stop order, kept after the mailbox evicts it
 
     def public(self, now: float) -> dict:
         age = max(0.0, now - self.last_seen)
@@ -353,10 +354,36 @@ class ScreenRegistry:
                 if screen is None or screen.owner_key != owner_key:
                     raise ScreenError(404, "This screen is no longer registered")
                 screen.last_seen = now
+                if screen.orders and screen.orders[0]["seq"] > since + 1:
+                    return self._resync(screen)
                 pending = [dict(o) for o in screen.orders if o["seq"] > since]
                 if pending or now >= deadline:
                     return {"seq": screen.seq, "orders": pending}
                 self._cond.wait(timeout=min(0.5, max(0.0, deadline - now)))
+
+    @staticmethod
+    def _resync(screen: Screen) -> dict:
+        """Answer a cursor that fell behind the bounded mailbox.
+
+        Orders between the cursor and the oldest retained one are gone, so the
+        screen cannot tell what it missed and must not apply later controls to a
+        film that may have been replaced. Rebuild the current intent from the
+        host instead: the latest play or stop order (resuming a play where the
+        host last saw it) followed by whatever retained orders came after it.
+        ``resync.from`` is the cursor the screen should adopt before applying
+        ``orders``; it is also what a fresh poll must send to see no gap.
+        """
+        anchor = screen.anchor
+        if anchor is None:
+            orders = [dict(o) for o in screen.orders]
+            return {"seq": screen.seq, "orders": orders,
+                    "resync": {"from": orders[0]["seq"] - 1}}
+        first = dict(anchor)
+        if first["kind"] == "play":
+            first["start"] = round(screen.position, 1)
+        later = [dict(o) for o in screen.orders if o["seq"] > anchor["seq"]]
+        return {"seq": screen.seq, "orders": [first, *later],
+                "resync": {"from": anchor["seq"] - 1}}
 
     def report(self, screen_id: str, owner_key: str, report: dict) -> dict:
         """Record the screen's playback state. Returns follow-on information.
@@ -491,6 +518,8 @@ class ScreenRegistry:
                 screen.state = "idle"
                 screen.item = screen.title = screen.kind = screen.mode = ""
                 screen.position = screen.duration = 0.0
+            if action in {"play", "stop"}:
+                screen.anchor = dict(order)
             screen.orders.append(order)
             receipt = {"ok": True, "seq": screen.seq, "screen": screen.id}
             if command_id is not None:

@@ -139,3 +139,37 @@ def test_idle_join_code_is_a_corner_badge_when_queued_and_large_when_queue_empty
     assert 'toggle("corner",queueEmpty===false)' in html
     assert 'toggle("empty",queueEmpty===true)' in html
     assert "slateLayout(d.queue_empty)" in html
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_poll_loop_resyncs_before_applying_orders_after_a_mailbox_gap():
+    script = _scripts(portal_screen_page.screen_page().decode())[0]
+    start = script.index("async function loop(){")
+    loop_code = script[start:script.index("function banner(", start)]
+    harness = f"""
+const log=[];let seq=1,screenId="s1",started=true,stopped=false,polling=false,failures=0,current={{item:"aaa"}};
+const POLL_TIMEOUT=1,READY="Ready";
+const answers=[
+  {{seq:20,queue_empty:false,resync:{{from:17}},
+    orders:[{{kind:"play",seq:18,item:"bbb"}},{{kind:"pause",seq:19}}]}},
+  {{seq:21,queue_empty:false,orders:[{{kind:"seek",seq:21,value:5}}]}}];
+async function api(method,path){{log.push("poll "+path.split("?")[1].split("&")[0]);
+  const d=answers.shift();if(!answers.length)stopped=true;return d}}
+function stopPlayback(){{log.push("stop-local");current=null}}
+function apply(o){{log.push("apply "+o.kind+"@"+o.seq)}}
+function banner(){{}}function setSlate(){{}}function slateLayout(){{}}
+function relogin(){{}}async function register(){{}}
+{loop_code}
+loop().then(()=>console.log(JSON.stringify({{log,seq}})));
+"""
+    result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    import json
+    got = json.loads(result.stdout)
+    # Stale playback is torn down once, before B's order; nothing is applied to A.
+    assert got["log"] == [
+        "poll since=1", "stop-local", "apply play@18", "apply pause@19",
+        "poll since=19", "apply seek@21",
+    ]
+    assert got["seq"] == 21
+
