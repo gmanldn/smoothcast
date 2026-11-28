@@ -112,5 +112,7 @@ def test_prefs_explicitly_explain_no_dock_badges():
     ui = source("cast_ui.py")
     prefs = source("preferences_ui.py")
     assert "Ubuntu Dock counted them" in ui
-    assert "never add a counter to the OS dock" in prefs
+    import settings_catalog
+    assert any("never add a counter to the OS dock" in summary
+               for _page, groups in settings_catalog.PREFERENCES for _group, summary in groups)
     assert "Show in-app playback alerts" in prefs

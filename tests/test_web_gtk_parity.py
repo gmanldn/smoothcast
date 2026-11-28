@@ -1,4 +1,5 @@
 """#708: the web Now Playing card keeps the desktop hero-card vocabulary."""
+import gui_source
 import portal
 import settings_catalog
 import ui_theme
@@ -21,9 +22,7 @@ def test_front_page_has_at_a_glance_tiles_fed_by_room_state():
 
 
 def test_room_glance_labels_are_shared_by_gtk_and_web():
-    from pathlib import Path
-
-    gtk = (Path(__file__).resolve().parents[1] / "src" / "cast_ui.py").read_text(encoding="utf-8")
+    gtk = gui_source.combined_source()
     assert ui_tokens.web_glance_html() in portal._HTML
     assert "for field in ui_tokens.ROOM_GLANCE_FIELDS" in gtk
     assert 'if field["gtk_slot"] != "summary"' in gtk

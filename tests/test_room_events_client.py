@@ -148,6 +148,7 @@ const $=id=>fields[id], matchingBuild=()=>true;
 function acceptRoomSnapshot(d){if(d.state.snapshot_version<last)return false;last=d.state.snapshot_version;return true}
 function renderQueue(q,r){queues.push([q,r])}
 function renderHomeQueue(q){assert.equal(q.length,1)}
+function renderGlanceQueue(q){}
 function renderRoomTransfers(s){progress.push(s.snapshot_version)}
 function renderLibraryCopies(s){}
 function renderLinkJobs(s){observed.push(["links",s.link_jobs])}

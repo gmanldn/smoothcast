@@ -5,21 +5,6 @@
       "owner": "gmanldn",
       "ticket": 706,
       "expires": "2026-12-12"
-    },
-    "tests/test_no_source_text_tests.py::test_no_new_source_text_tests": {
-      "owner": "gmanldn",
-      "ticket": 708,
-      "expires": "2026-12-05"
-    },
-    "tests/test_notifications.py::test_prefs_explicitly_explain_no_dock_badges": {
-      "owner": "gmanldn",
-      "ticket": 708,
-      "expires": "2026-12-05"
-    },
-    "tests/test_room_events_client.py::test_pending_transport_does_not_hide_committed_queue_or_transfer_updates": {
-      "owner": "gmanldn",
-      "ticket": 708,
-      "expires": "2026-12-05"
     }
   }
 }
