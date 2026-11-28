@@ -7,6 +7,8 @@ competing rooms and stale commands are rejected without touching playback.
 """
 from __future__ import annotations
 
+import math
+
 READY, OFFLINE, BUSY, NOT_ENABLED, NOT_TRUSTED = "ready", "offline", "busy", "not_enabled", "not_trusted"
 LABELS = {READY: "Ready", OFFLINE: "Offline", BUSY: "Playing for another room",
           NOT_ENABLED: "Playback not enabled on that computer", NOT_TRUSTED: "Not paired for control"}
@@ -21,9 +23,10 @@ def targets(peers: list[dict], trusted_control: set[str], owners: dict[str, str]
         seen = p.get("last_seen")
         if pid not in trusted_control:
             status = NOT_TRUSTED
-        elif not isinstance(seen, (int, float)) or now - seen > STALE_S:
+        elif (type(seen) not in (int, float) or not -math.inf < seen < math.inf
+              or not now - STALE_S <= seen <= now):
             status = OFFLINE
-        elif not p.get("accepts_playback"):
+        elif p.get("accepts_playback") is not True:
             status = NOT_ENABLED
         elif pid in owners:
             status = BUSY

@@ -59,3 +59,32 @@ def test_release_requires_the_epoch_and_revoke_is_the_explicit_admin_path():
     assert f.revoke("n") is True and f.owners() == {}
     assert f.revoke("n") is False
     assert f.accept("n", "A", e, "pause")[0] is False
+
+
+def test_readiness_requires_literal_opt_in_and_fresh_numeric_timestamp():
+    """#740: malformed inventory must never advertise a selectable receiver."""
+    cases = [
+        ({"accepts_playback": True, "last_seen": 100}, nt.READY),
+        ({"accepts_playback": True, "last_seen": 80}, nt.READY),
+        ({"accepts_playback": True, "last_seen": 79.999}, nt.OFFLINE),
+        ({"accepts_playback": True, "last_seen": 100.001}, nt.OFFLINE),
+        ({"accepts_playback": True, "last_seen": float("nan")}, nt.OFFLINE),
+        ({"accepts_playback": True, "last_seen": float("inf")}, nt.OFFLINE),
+        ({"accepts_playback": True, "last_seen": -float("inf")}, nt.OFFLINE),
+        ({"accepts_playback": True, "last_seen": 10**400}, nt.OFFLINE),
+        ({"accepts_playback": True, "last_seen": "100"}, nt.OFFLINE),
+        ({"accepts_playback": True}, nt.OFFLINE),
+        ({"accepts_playback": False, "last_seen": 100}, nt.NOT_ENABLED),
+        ({"last_seen": 100}, nt.NOT_ENABLED),
+        ({"accepts_playback": "false", "last_seen": 100}, nt.NOT_ENABLED),
+        ({"accepts_playback": 1, "last_seen": 100}, nt.NOT_ENABLED),
+    ]
+    for fields, expected in cases:
+        row = nt.targets([{"id": "n", **fields}], {"n"}, {}, 100)[0]
+        assert row["status"] == expected, fields
+        assert row["selectable"] is (expected == nt.READY), fields
+
+    for boolean in (False, True):
+        row = nt.targets([{"id": "n", "accepts_playback": True, "last_seen": boolean}],
+                         {"n"}, {}, 10)[0]
+        assert row["status"] == nt.OFFLINE and not row["selectable"]

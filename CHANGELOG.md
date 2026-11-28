@@ -8,13 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: b94b18f086475557bd2743a176e9b46701e984ae -->
+<!-- sc-changelog-through: f363d78f10306f334e151b5d244c6178334358a2 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **02:50:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟥 **02:52:00 · Fix** — fix(mesh): reject malformed or stale playback eligibility observations (Refs #740) <!-- sc-changelog-pending -->
+
+- ⬜ **02:50:50 · Maintenance** — Merge branch 'main' into develop · [`f363d78f1030`](https://github.com/gmanldn/smoothcast/commit/f363d78f10306f334e151b5d244c6178334358a2)
 
 - ⬜ **02:50:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b94b18f08647`](https://github.com/gmanldn/smoothcast/commit/b94b18f086475557bd2743a176e9b46701e984ae)
+
+- ⬜ **02:50:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0658ad562c0a`](https://github.com/gmanldn/smoothcast/commit/0658ad562c0aae7f1e1c9fea220d4658c745ae10)
 
 - 🟥 **02:50:26 · Fix** — fix(cast): serialize status mirror connection teardown per receiver (Refs #202) · [`7ba24a007d6a`](https://github.com/gmanldn/smoothcast/commit/7ba24a007d6a1b2759b032784142ac050810d797)
 
@@ -735,6 +739,8 @@ A provisional entry describes the current publication before its own SHA exists;
 - ⬜ **16:17:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7d466e0ea9c3`](https://github.com/gmanldn/smoothcast/commit/7d466e0ea9c3eebff5fcdafc19f8920f3e11ef0b)
 
 - ⬜ **16:17:34 · Maintenance** — chore: rebaseline update\_managed.py complexity 26-&gt;41; #690 moved setup-module loading into it to drop sys.path mutation (Refs #706) · [`b94e6b37cb1c`](https://github.com/gmanldn/smoothcast/commit/b94e6b37cb1c94aa0bd10279f849570e9eaee7f2)
+
+- ⬜ **16:17:17 · Maintenance** — Merge pull request #716 from gmanldn/develop · [`1122bbb01731`](https://github.com/gmanldn/smoothcast/commit/1122bbb01731536a47bccb76dc05f1c5a70cc676)
 
 - ⬜ **16:14:23 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`1c408ddef26a`](https://github.com/gmanldn/smoothcast/commit/1c408ddef26a3285c6662a000bf5fc0423634d2a)
 
@@ -1511,6 +1517,8 @@ A provisional entry describes the current publication before its own SHA exists;
 - 🟨 **04:01:11 · Documentation** — docs: make hardware qualification non-blocking for develop (Refs #714) · [`2aa97d0bfa1f`](https://github.com/gmanldn/smoothcast/commit/2aa97d0bfa1f0e728ebef0ba943d8117f3006129)
 
 - 🟥 **03:56:59 · Fix** — fix: trim cast\_portal.py comments to stay within size budget · [`ed522d724ede`](https://github.com/gmanldn/smoothcast/commit/ed522d724ede94c9a2a58b7b85274829761dc7f7)
+
+- ⬜ **03:41:14 · Maintenance** — Merge pull request #713 from gmanldn/develop · [`22ab63b67bf4`](https://github.com/gmanldn/smoothcast/commit/22ab63b67bf4691401b4ec60649b05f13a921681)
 
 - ⬜ **03:41:05 · Maintenance** — Merge branch 'main' into develop · [`cf3472700dca`](https://github.com/gmanldn/smoothcast/commit/cf3472700dca33031f91c1860cf22565a231cf77)
 
