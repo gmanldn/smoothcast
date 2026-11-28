@@ -67,3 +67,11 @@ def test_prune_records_drops_unqueued_but_keeps_the_named_extra():
     assert records == {"a": 1, "b": 2}
     QueueComponent.prune_records(records, {"a"})
     assert records == {"a": 1}
+
+
+def test_advance_revision_bumps_only_on_ordered_change():
+    from queue_component import QueueComponent
+    snap, rev = QueueComponent.advance_revision(None, 0, ("a", "b"))
+    assert (snap, rev) == (("a", "b"), 1)
+    assert QueueComponent.advance_revision(snap, rev, ("a", "b")) == (("a", "b"), 1)
+    assert QueueComponent.advance_revision(snap, rev, ("b", "a")) == (("b", "a"), 2)

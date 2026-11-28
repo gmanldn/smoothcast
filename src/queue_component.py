@@ -57,3 +57,10 @@ class QueueComponent:
         for path in tuple(records):
             if path not in queued and path != keep:
                 records.pop(path, None)
+
+    @staticmethod
+    def advance_revision(snapshot: tuple | None, revision: int, item_ids: tuple) -> tuple[tuple, int]:
+        """Revision after observing ``item_ids``: bumps only when the ordered ids changed."""
+        if item_ids != snapshot:
+            return item_ids, revision + 1
+        return snapshot, revision

@@ -36,9 +36,9 @@ class PortalQueueMixin:
     def _portal_observe_queue(self) -> int:
         """Return the main-thread queue revision, advancing on any ordered change."""
         item_ids = tuple(portal_queue_id(path) for path in self.queue)
-        if item_ids != getattr(self, "_portal_queue_snapshot", None):
-            self._portal_queue_snapshot = item_ids
-            self._portal_queue_revision = getattr(self, "_portal_queue_revision", 0) + 1
+        self._portal_queue_snapshot, self._portal_queue_revision = QueueComponent.advance_revision(
+            getattr(self, "_portal_queue_snapshot", None),
+            getattr(self, "_portal_queue_revision", 0), item_ids)
         return self._portal_queue_revision
 
     def _portal_prune_queue_provenance(self) -> None:
