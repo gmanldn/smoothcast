@@ -153,6 +153,23 @@ def _number(value: object, upper: float = MAX_POSITION) -> float | None:
     return min(number, upper)
 
 
+def _intent(action: str, item: object, start: object, value: object,
+            follow: object) -> tuple:
+    """Stable user inputs that identify one order, for command-ID reuse checks.
+
+    Display metadata (title, duration, container suffix) is deliberately left out
+    so a retry that only re-labels the same request still replays its receipt.
+    """
+    if action == "play":
+        return (action, item if isinstance(item, str) else "",
+                _number(start) or 0.0, bool(follow))
+    if action == "seek":
+        return (action, _number(value))
+    if action == "volume":
+        return (action, value if type(value) is int else None)
+    return (action,)
+
+
 @dataclass
 class Screen:
     id: str
@@ -416,9 +433,14 @@ class ScreenRegistry:
             if (expected_play_seq is not None
                     and screen.play_seq != expected_play_seq):
                 raise ScreenError(409, "Playback changed before the next item could start")
+            intent = _intent(action, item, start, value, follow)
             if command_id is not None and command_id in screen.commands:
+                stored_intent, stored_receipt = screen.commands[command_id]
+                if stored_intent != intent:
+                    raise ScreenError(
+                        409, "That command ID was already used for a different request")
                 screen.commands.move_to_end(command_id)
-                return dict(screen.commands[command_id])
+                return dict(stored_receipt)
             if now - screen.last_seen > STALE_AFTER:
                 raise ScreenError(409, "That screen is not responding right now")
             order: dict = {"kind": action}
@@ -472,7 +494,7 @@ class ScreenRegistry:
             screen.orders.append(order)
             receipt = {"ok": True, "seq": screen.seq, "screen": screen.id}
             if command_id is not None:
-                screen.commands[command_id] = receipt
+                screen.commands[command_id] = (intent, receipt)
                 while len(screen.commands) > COMMAND_CACHE:
                     screen.commands.popitem(last=False)
             self._generation += 1

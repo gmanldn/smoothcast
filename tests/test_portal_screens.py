@@ -145,6 +145,52 @@ def test_identical_command_id_is_an_idempotent_retry(registry):
     assert len(registry.poll(screen.id, "k1", 0)["orders"]) == 1
 
 
+def _state(registry, screen):
+    row = registry.snapshot()[0]
+    return (row["state"], row["item"], screen.seq, len(screen.orders))
+
+
+def test_a_reused_command_id_with_a_different_intent_is_a_conflict(registry):
+    screen = make(registry)
+    first = play(registry, screen, item="aaa", command_id="X")
+    assert play(registry, screen, item="aaa", command_id="X") == first
+    # Display metadata is not intent: a retry that renames the film still replays.
+    renamed = registry.command(screen.id, "play", item="aaa", title="Renamed",
+                               duration=61.0, suffix=".mp4", command_id="X")
+    assert renamed == first
+    assert len(screen.orders) == 1
+    settled = _state(registry, screen)
+
+    def conflicts(action, **kw):
+        with pytest.raises(screens.ScreenError) as info:
+            registry.command(screen.id, action, command_id="X", **kw)
+        assert info.value.status == 409
+        assert _state(registry, screen) == settled
+
+    conflicts("stop")
+    conflicts("play", item="bbb", title="Film", duration=60.0, suffix=".mp4")
+    conflicts("play", item="aaa", title="Film", duration=60.0, suffix=".mp4", start=30.0)
+    conflicts("play", item="aaa", title="Film", duration=60.0, suffix=".mp4", follow=True)
+    conflicts("pause")
+    # The original receipt is still replayable afterwards.
+    assert play(registry, screen, item="aaa", command_id="X") == first
+
+
+def test_a_reused_seek_or_volume_id_with_a_changed_value_is_a_conflict(registry):
+    screen = make(registry)
+    play(registry, screen, item="aaa")
+    seek = registry.command(screen.id, "seek", value=40, command_id="S")
+    assert registry.command(screen.id, "seek", value=40.0, command_id="S") == seek
+    volume = registry.command(screen.id, "volume", value=30, command_id="V")
+    settled = _state(registry, screen)
+    for action, value, cid in (("seek", 90, "S"), ("volume", 31, "V"), ("seek", 40, "V")):
+        with pytest.raises(screens.ScreenError) as info:
+            registry.command(screen.id, action, value=value, command_id=cid)
+        assert info.value.status == 409
+        assert _state(registry, screen) == settled
+    assert registry.command(screen.id, "volume", value=30, command_id="V") == volume
+
+
 @pytest.mark.parametrize("kwargs", [
     {"action": "explode"},
     {"action": "volume", "value": 101},
