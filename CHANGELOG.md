@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3453a14d606fae591ffeba25469008cb7d2660af -->
+<!-- sc-changelog-through: b1ae8090ee99d887d228f3ba2980607e6404688d -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:08:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:14:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:14:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b1ae8090ee99`](https://github.com/gmanldn/smoothcast/commit/b1ae8090ee99d887d228f3ba2980607e6404688d)
+
+- 🟥 **07:12:08 · Fix** — fix(screen): bound automatic transcode recovery budget per play generation (Refs #754) · [`203386f61357`](https://github.com/gmanldn/smoothcast/commit/203386f61357d2d7ddaf4a0655399ddca4c4d99e)
 
 - ⬜ **07:08:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3453a14d606f`](https://github.com/gmanldn/smoothcast/commit/3453a14d606fae591ffeba25469008cb7d2660af)
 
 - 🟩 **07:08:08 · Feature** — feat: Stripe Payment Link donate entry in About dialog (Refs #763) · [`71b88a2396fd`](https://github.com/gmanldn/smoothcast/commit/71b88a2396fd326e67798d73b4592701a6745656)
+
+- ⬜ **07:08:08 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`abccc187ca48`](https://github.com/gmanldn/smoothcast/commit/abccc187ca485cc82afa234c8da80a85f8ba4072)
 
 - ⬜ **07:07:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`002bcaa3fc58`](https://github.com/gmanldn/smoothcast/commit/002bcaa3fc58414c7dd3c03e8ef91835daa5b0a3)
 
