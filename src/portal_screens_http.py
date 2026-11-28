@@ -277,7 +277,7 @@ def _play(handler, screen_id: str, item: str, *, follow: bool, start: float = 0.
     duration = info.get("duration")
     if not isinstance(title, str) or not title.strip():
         title = ""
-    if type(duration) not in (int, float) or not 0 < duration < float("inf"):
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not 0 < duration < float("inf"):
         duration = 0.0
     row = _queue_item(rows or [], item)
     if rows is None and (not title or not duration):
