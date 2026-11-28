@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 6577367c7a7491d53fac4855ce8da99ca4cc377c -->
+<!-- sc-changelog-through: a7452864a06ada81567cebe9acd7196e00ccea52 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **11:21:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **11:24:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **11:24:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a7452864a06a`](https://github.com/gmanldn/smoothcast/commit/a7452864a06ada81567cebe9acd7196e00ccea52)
+
+- 🟪 **11:24:17 · Tests** — test(a11y): scale probe re-checks labels at the smallest window the layout allows (Refs #449) · [`240b2b92e48e`](https://github.com/gmanldn/smoothcast/commit/240b2b92e48e32c9013f797da01dfd902cf7c4b4)
 
 - ⬜ **11:21:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6577367c7a74`](https://github.com/gmanldn/smoothcast/commit/6577367c7a7491d53fac4855ce8da99ca4cc377c)
+
+- ⬜ **11:21:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`1ad7f94c2532`](https://github.com/gmanldn/smoothcast/commit/1ad7f94c253289013d1c2ece6d7e6c67354fd64c)
 
 - 🟥 **11:21:14 · Fix** — fix(a11y): scale probe applied font-size to \* which compounds per nesting level; apply to window root (Refs #449) · [`1ecc0ae7b614`](https://github.com/gmanldn/smoothcast/commit/1ecc0ae7b6149342ab3ca761d92cca158cdd590e)
 
