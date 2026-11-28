@@ -69,7 +69,7 @@ def test_no_unconditional_visual_timers_and_close_cleans_sources():
         assert "GLib.timeout_add(100, self._meter_tick)" not in text
         assert "GLib.timeout_add(500, self._tick)" not in text
     lifecycle = (Path(__file__).parents[1] / "src/cast_lifecycle.py").read_text()
-    assert 'plan.run("ui_timers", self._stop_ui_timers)' in lifecycle
+    assert 'plan.run("ui_timers", w._stop_ui_timers)' in lifecycle
 
 
 def test_real_window_timer_callbacks_under_fake_glib_clock():
