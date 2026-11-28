@@ -2053,8 +2053,10 @@ class Session:
                     music_autogain=music_autogain,
                 )
                 return
-            raise StreamError("the encoder failed to produce a stream within "
-                              f"{timeout}s ({plan_reason})" + (f" — {tail}" if tail else " — ffmpeg was silent (large source or subtitle burn-in?)"))
+            raise errors.coded(StreamError(
+                "the encoder failed to produce a stream within "
+                f"{timeout}s ({plan_reason})" + (f" — {tail}" if tail else " — ffmpeg was silent (large source or subtitle burn-in?)")
+            ), "ffmpeg.encoder_stalled")
         if self._vaapi_stalled:
             self._vaapi_stalled = False
             hw_encoder_state.record_failure(

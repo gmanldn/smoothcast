@@ -149,6 +149,16 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Retry the action.
   2. Try a different file if it keeps happening.
 
+<a id="errors-ffmpeg-encoder-stalled"></a>
+## `ffmpeg.encoder_stalled`
+
+- Severity: error; retryable: yes
+- Message: SmoothCast could not start this stream. Try a lower quality or simpler subtitle option.
+- Try:
+  1. Choose a lower stream quality.
+  2. Turn off subtitle burn-in or choose receiver subtitles.
+  3. Retry the cast and include Copy diagnostics if it keeps happening.
+
 <a id="errors-ffmpeg-probe-missing"></a>
 ## `ffmpeg.probe_missing`
 

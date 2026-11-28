@@ -14,6 +14,7 @@ import pytest
 
 import attempt_log
 import diagnose_bundle
+import failure_boundary
 import streamer
 
 SECRET_NAME = "private-holiday-video.mkv"
@@ -91,6 +92,10 @@ def test_successful_start_records_argv_plan_stderr_and_outcome(tmp_path):
 def test_stall_on_software_fails_with_tail_plan_and_a_kept_log(tmp_path):
     cache, error = start(tmp_path, segments=(False,), stderr=("Impossible to convert\n",))
     assert isinstance(error, streamer.StreamError)
+    assert error.code == "ffmpeg.encoder_stalled"
+    failure = failure_boundary.describe(error)
+    assert failure.code == "ffmpeg.encoder_stalled"
+    assert failure.message == streamer.errors.CATALOGUE["ffmpeg.encoder_stalled"].message
     assert "software encode" in str(error) and "Impossible to convert" in str(error)
     (attempt,) = attempts(cache)
     assert attempt["outcome"]["outcome"] == "failed"
