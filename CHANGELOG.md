@@ -8,13 +8,29 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 4a0a1274230ec44ec90204af23e356ffa2a92d7f -->
+<!-- sc-changelog-through: c85e1321b54b20b59bcd7bd64e8d76151b4cbd24 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **01:54:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **01:57:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **01:57:27 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c85e1321b54b`](https://github.com/gmanldn/smoothcast/commit/c85e1321b54b20b59bcd7bd64e8d76151b4cbd24)
+
+- 🟪 **01:57:27 · Tests** — test: de-flake retry-push SHA assertion; make fake scan hermetic (Refs #698) · [`ec77ca9c1883`](https://github.com/gmanldn/smoothcast/commit/ec77ca9c188357c9661ad7fb197f2e88b3418932)
+
+- 🟪 **01:57:27 · Tests** — test: skip GTK-only warmup test when PyGObject is unusable (Refs #698) · [`28abd3991111`](https://github.com/gmanldn/smoothcast/commit/28abd39911119b975ccf12cc11b762dfd9822bee)
+
+- 🟥 **01:57:27 · Fix** — fix(ship): discard generated PATCH/changelog commits when a gate stops the push (Refs #700, #698) · [`9ddf1070c122`](https://github.com/gmanldn/smoothcast/commit/9ddf1070c12272987aac14ee08ac2b29292c2afb)
+
+- 🟪 **01:57:27 · Tests** — test: supply settings to the preview-meter harness (Refs #698, #693) · [`3dc4cc6e2156`](https://github.com/gmanldn/smoothcast/commit/3dc4cc6e21566c8d07073ad761b3d600882f908b)
+
+- 🟩 **01:57:27 · Feature** — feat(diagnostics): every encoder start keeps its own attempt folder; fix GUI test harness imports (settings, QueueComponent) (Refs #698, #693, #691) · [`c9355796ae08`](https://github.com/gmanldn/smoothcast/commit/c9355796ae0838289d8e53d9366dc9669fa3e588)
+
+- 🟩 **01:57:27 · Feature** — feat(diagnostics): every encoder start keeps its own attempt folder (argv, plan, ffmpeg stderr, outcome); start errors name the plan (Refs #698) · [`6e983d0dc183`](https://github.com/gmanldn/smoothcast/commit/6e983d0dc183d63ffecb8322270953624bbb56c2)
 
 - ⬜ **01:54:52 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`4a0a1274230e`](https://github.com/gmanldn/smoothcast/commit/4a0a1274230ec44ec90204af23e356ffa2a92d7f)
+
+- ⬜ **01:54:52 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`6144a258a7fc`](https://github.com/gmanldn/smoothcast/commit/6144a258a7fcbff375dd1037b04eb36076cac3b0)
 
 - 🟥 **01:54:32 · Fix** — fix: stale Chromecast status link; instant, ordered scrub preview · [`622f5c9627d0`](https://github.com/gmanldn/smoothcast/commit/622f5c9627d08c9c5a46175fc797eedf729d3ceb)
 
