@@ -216,6 +216,57 @@ def test_probe_rounds_cover_the_inventory_within_the_slot_budget(slow_probe):
     observer.close()
 
 
+def test_probe_result_for_an_old_address_cannot_overwrite_the_new_address():
+    clock = ms.SimClock()
+    old = mv.Discovered("tv", "cast", "TV", 0, probe=("192.168.1.11", 8009))
+    new = mv.Discovered("tv", "cast", "TV", 0, probe=("192.168.1.12", 8009))
+    inventory = [old]
+    pending = {}
+
+    def probe(item, done):
+        pending[item.probe] = done
+
+    observer = mv.LocalObserver(clock=clock, rng=random.Random(0),
+                                source=lambda: inventory, publish=lambda **_: None,
+                                prober=probe)
+    observer._probe_round()
+    inventory[:] = [new]
+    observer._probe_round()
+    assert len(pending) == 2
+    pending.pop(new.probe)((True, 6, ""))
+    pending.pop(old.probe)((False, None, "timeout"))
+    assert observer.observations()[0].state == "ready"
+    assert observer.edges() == (mm.EdgeObservation("target", "tv", 0, 6),)
+    observer.close()
+
+
+def test_removed_receiver_loses_its_edge_and_rejects_inflight_completion():
+    clock = ms.SimClock()
+    target = mv.Discovered("tv", "cast", "TV", 0, probe=("192.168.1.11", 8009))
+    inventory = [target]
+    pending = []
+    observer = mv.LocalObserver(clock=clock, rng=random.Random(0),
+                                source=lambda: inventory, publish=lambda **_: None,
+                                prober=lambda item, done: pending.append(done))
+    observer._probe_round()
+    pending.pop()((False, None, "timeout"))
+    assert observer.observations()[0].state == "unreachable"
+    assert observer.edges()
+    observer._probe_round()
+
+    inventory.clear()
+    observer.refresh()
+    assert observer.edges() == ()
+    # The same endpoint reappears, but the old probe belongs to the removed
+    # discovery entry. It cannot restore the prior failure or create an edge.
+    inventory.append(target)
+    observer.refresh()
+    pending.pop()((False, None, "timeout"))
+    assert observer.edges() == ()
+    assert observer.observations()[0].state == "ready"
+    observer.close()
+
+
 def test_node_to_node_edges_are_published_quantised():
     w = settled(3, seed=9)
     a = w.running()[0]

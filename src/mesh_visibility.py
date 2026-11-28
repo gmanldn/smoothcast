@@ -97,7 +97,8 @@ class LocalObserver:
         self._probe_timer: TimerHandle | None = None
         self._tick_timer: TimerHandle | None = None
         self._edges: dict[str, mm.EdgeObservation] = {}
-        self._probing: set[str] = set()
+        self._probe_endpoints: dict[str, tuple[tuple[str, int], object]] = {}
+        self._probing: set[object] = set()
         self._probe_after = ""
         self._unreachable: set[str] = set()
         self._last: tuple[Any, ...] = ()
@@ -140,10 +141,8 @@ class LocalObserver:
         now = self._clock.monotonic()
         self.source_calls += 1
         found: dict[str, mm.TargetObservation] = {}
-        for item in self._source():
+        for item in self._inventory(now).values():
             age = max(0.0, now - item.last_seen)
-            if age > EXPIRE_S:
-                continue
             if item.id in self._unreachable:
                 state = "unreachable"
             elif age > READY_S:
@@ -190,34 +189,55 @@ class LocalObserver:
         return True
 
     # -- passive reachability probes ------------------------------------------
+    def _inventory(self, now: float) -> dict[str, Discovered]:
+        items = {item.id: item for item in self._source() if now - item.last_seen <= EXPIRE_S}
+        endpoints = {key: item.probe for key, item in items.items() if item.probe is not None}
+        for key, (address, _) in list(self._probe_endpoints.items()):
+            if endpoints.get(key) != address:
+                del self._probe_endpoints[key]
+                self._edges.pop(key, None)
+                self._unreachable.discard(key)
+        for key, address in endpoints.items():
+            if key not in self._probe_endpoints:
+                self._probe_endpoints[key] = (address, object())
+        return items
+
     def _probe_round(self) -> None:
         if self._closed or self._prober is None:
             return
         slots = PROBE_CONCURRENCY - len(self._probing)
         if slots > 0:
-            eligible = {item.id: item for item in self._source()
-                        if item.probe is not None and item.id not in self._probing}
+            items = self._inventory(self._clock.monotonic())
+            eligible = {key: generation for key, (_, generation) in self._probe_endpoints.items()
+                        if generation not in self._probing}
             ids = sorted(eligible)
             # Resume after the last dispatched ID even if discovery reordered
             # the inventory or that receiver has since disappeared.
             start = bisect_right(ids, self._probe_after)
             for receiver_id in (ids[start:] + ids[:start])[:slots]:
                 self._probe_after = receiver_id
-                self._probing.add(receiver_id)
+                generation = eligible[receiver_id]
+                self._probing.add(generation)
                 self.probes_started += 1
-                item = eligible[receiver_id]
-                self._prober(item, self._probe_callback(item))
+                item = items[receiver_id]
+                self._prober(item, self._probe_callback(item, generation))
         self._probe_timer = self._clock.call_later(
             PROBE_INTERVAL_S * (0.8 + 0.4 * self._rng.random()), self._probe_round)
 
-    def _probe_callback(self, item: Discovered) -> Callable[[ProbeResult], None]:
+    def _probe_callback(self, item: Discovered, generation: object) -> Callable[[ProbeResult], None]:
         def done(result: ProbeResult) -> None:
-            self._probed(item, result)
+            self._probed(item, generation, result)
         return done
 
-    def _probed(self, item: Discovered, result: ProbeResult) -> None:
-        self._probing.discard(item.id)
+    def _probed(self, item: Discovered, generation: object, result: ProbeResult) -> None:
+        self._probing.discard(generation)
         if self._closed:
+            return
+        # The earlier socket still counts toward concurrency while in flight,
+        # but its completion must not change a replacement endpoint's state.
+        self._inventory(self._clock.monotonic())
+        if self._probe_endpoints.get(item.id) != (item.probe, generation):
+            self.changed()
             return
         ok, rtt, reason = result
         if ok:
