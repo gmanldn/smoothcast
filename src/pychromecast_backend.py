@@ -32,11 +32,12 @@ def _fail(code: str) -> tuple[bool, str]:
     return False, errors.CATALOGUE[code].message
 
 
-def _media_call(method: Callable[..., Any], *args: Any, timeout: float) -> Any:
+def _media_call(method: Callable[..., Any], *args: Any, timeout: float,
+                **kwargs: Any) -> Any:
     """Call media APIs across PyChromecast 13 and 14 timeout signatures."""
     if "timeout" in inspect.signature(method).parameters:
-        return method(*args, timeout=timeout)
-    return method(*args)
+        kwargs["timeout"] = timeout
+    return method(*args, **kwargs)
 
 
 class _MediaStatusListener:

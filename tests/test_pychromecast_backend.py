@@ -17,7 +17,24 @@ import pytest
 sys.path.insert(0, "src")
 
 import castctl
-from pychromecast_backend import PyChromecastBackend
+from pychromecast_backend import PyChromecastBackend, _media_call
+
+
+def test_media_call_forwards_supported_timeout_and_preserves_other_keywords():
+    observed = []
+
+    def current_api(url, *, timeout=10, **options):
+        observed.append((url, timeout, options))
+
+    def older_api(url, *, title):
+        observed.append((url, title))
+
+    _media_call(current_api, "media-url", timeout=3, title="Film")
+    _media_call(older_api, "media-url", timeout=3, title="Film")
+    assert observed == [
+        ("media-url", 3, {"title": "Film"}),
+        ("media-url", "Film"),
+    ]
 
 
 class FakeMediaController:
