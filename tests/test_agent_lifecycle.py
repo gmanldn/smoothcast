@@ -28,6 +28,13 @@ def _isolated_worktree_pool(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _scope_expansion_never_reaches_github(monkeypatch):
+    """Lifecycle tests model pushes and handovers; the live-lease scope check is covered in
+    test_agent_coordination.py and would otherwise call load_issue() on a half-faked payload."""
+    monkeypatch.setattr(agent, "ensure_task_scope", lambda task, changed: True)
+
+
+@pytest.fixture(autouse=True)
 def _clones_act_as_private_worktrees(request, monkeypatch):
     """Push-race tests model agents as plain clones; only the #688 test checks the guard."""
     if "primary_checkout" not in request.node.name:
@@ -224,8 +231,12 @@ def test_legacy_assign_patch_flag_does_not_allocate(monkeypatch, tmp_path):
     assert agent.cmd_ship(args) == 0
     shipped = run(successor, "rev-parse", "origin/develop")
     assert shipped != tip
-    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 51")
-    assert run(successor, "show", "--format=", "--name-only", "HEAD") == "native_result.txt"
+    # A nonempty shipment gets exactly one automatic +1 PATCH commit on top (AGENTS.md
+    # "Version and journal"); the legacy --assign-patch flag never mints a second one.
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 52")
+    recent = run(successor, "log", "--format=%s", f"{tip}..HEAD").splitlines()
+    assert sum("[sc-auto-patch]" in subject for subject in recent) == 1
+    assert "native_result.txt" in run(successor, "log", "--format=", "--name-only", f"{tip}..HEAD")
     assert len(deliveries) == 1
     assert agent.cmd_ship(args) == 0
     assert run(successor, "rev-parse", "origin/develop") == shipped
@@ -421,7 +432,9 @@ def test_start_ship_finish_complete_headless_cycle(monkeypatch, tmp_path):
     assert agent.cmd_ship(ship) == 0
     commit_sha = run(worktree, "rev-parse", "HEAD")
     assert commit_sha == run(worktree, "rev-parse", "origin/develop")
-    assert "Refs #584" in run(worktree, "log", "-1", "--format=%s")
+    # The shipment is the feature commit plus generated PATCH/changelog commits on top of it.
+    subjects = run(worktree, "log", "--format=%s", "-6").splitlines()
+    assert any("Refs #584" in subject for subject in subjects)
     assert any("sc-ship v1 sha=" in c["body"] for c in comments)
     assert any("Commit: " + commit_sha in c["body"] for c in comments)
 
@@ -548,15 +561,20 @@ def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp
     monkeypatch.setattr(agent, "publish_ship_handover", lambda *args:
                         handovers.append(args) or True)
     real_run = subprocess.run
-    sha = run(worker, "rev-parse", "HEAD")
+    feature = run(worker, "rev-parse", "HEAD")
     admin = Path(run(worker, "rev-parse", "--absolute-git-dir"))
     journal = admin / "sc-agent-task.json"
     pushes = []
+    pushed_tips = []
 
     def interrupted(command, **kwargs):
         if command[:2] == ["git", "push"]:
             pushes.append(1)
-            assert json.loads(journal.read_text())["pending_push"]["sha"] == sha
+            # The write-ahead receipt names the exact tip being pushed. A shipment is the feature
+            # commit plus generated PATCH/changelog commits, so that tip is not the feature SHA.
+            tip = run(worker, "rev-parse", "HEAD")
+            pushed_tips.append(tip)
+            assert json.loads(journal.read_text())["pending_push"]["sha"] == tip
             result = real_run(command, **kwargs)
             assert result.returncode == 0
             if len(pushes) == 1:
@@ -574,7 +592,10 @@ def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp
     task = json.loads(journal.read_text())
     assert agent.cmd_ship(args) == 0
     assert len(pushes) == 1
-    assert [item[1] for item in handovers] == [sha]
+    assert [item[1] for item in handovers] == [pushed_tips[0]]
+    assert subprocess.run(["git", "-C", str(worker), "merge-base", "--is-ancestor", feature,
+                           pushed_tips[0]]).returncode == 0
+    assert run(worker, "rev-parse", "origin/develop") == pushed_tips[0]
     assert "pending_push" not in json.loads(journal.read_text())
     assert "pending_handover" not in json.loads(journal.read_text())
 
