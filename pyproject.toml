@@ -347,6 +347,7 @@ py-modules = [
     "room_checkpoint",
     "room_checkpoint_ui",
     "room_event_replay",
+    "room_events",
     "room_layout",
     "room_playback",
     "room_queues",
