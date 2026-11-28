@@ -13,7 +13,6 @@ from pathlib import Path
 import sys
 import time
 
-import cast_portal_queue
 import interaction_probe
 
 SAMPLES_ENV = "SMOOTHCAST_INTERACTION_SAMPLES"
@@ -53,7 +52,7 @@ class InteractionBenchmarkMixin:
         window = self._window()
         self._seed_interaction_queue(window)
         def poll() -> None:
-            cast_portal_queue.PortalQueueMixin._portal_queue_status(window)
+            window._portal_queue_status()
 
         def spin() -> None:
             interaction_probe.poll_pressure(poll, pollers=PHONE_POLLERS)

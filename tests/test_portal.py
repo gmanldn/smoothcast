@@ -1069,7 +1069,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",
                       "queue_clear", "next", "previous"):
         assert operation in queue_actions
-    assert "self.clear_queue()" in queue_actions
+    assert "w.clear_queue()" in queue_actions
     assert "queue_revision" in queue_actions
     assert "_portal_observe_queue()" in methods["_portal_handle"]
     assert "portal_queue_id" in methods["_portal_queue_status"]

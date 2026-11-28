@@ -33,7 +33,7 @@ from network_activity_ui import NetworkActivityController
 from cast_portal_host import PortalHostController
 from cast_portal_room import PortalRoomController
 from portal_upload_recovery import PortalUploadRecoveryController
-from cast_portal_queue import PortalQueueMixin
+from cast_portal_queue import PortalQueueController
 from join_slate_ui import JoinSlateController
 import version
 import error_log
@@ -62,10 +62,11 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalQueueMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._portal_queue = PortalQueueController.install(self)
         self._ui_timers = UiTimerController(self)
         self._start_window_timers = self._ui_timers._start_window_timers
         self._publish_core_status = self._ui_timers._publish_core_status
