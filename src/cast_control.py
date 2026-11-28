@@ -30,7 +30,7 @@ import responsive_layout
 import gui_test_safety
 from cast_portal import PortalMixin
 from cast_portal_queue import PortalQueueMixin
-from join_slate_ui import JoinSlateMixin
+from join_slate_ui import JoinSlateController
 import version
 import error_log
 import desktop_failure_notice
@@ -58,10 +58,14 @@ from cast_audio_sync import AudioSyncController
 from room_checkpoint_ui import RoomCheckpointController
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self._retry = RetryController(self)
+        self._join_slate = JoinSlateController(self)
+        self._join_slate_observe = self._join_slate._join_slate_observe  # #691
+        self._join_slate_showing = self._join_slate._join_slate_showing
+        self._join_slate_clear_now = self._join_slate._join_slate_clear_now
         self._find = FindController(self)
         self.action_find_house = self._find.action_find_house  # #691
         self._house_search = self._find.house_search

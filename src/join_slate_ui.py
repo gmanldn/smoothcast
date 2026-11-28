@@ -22,21 +22,25 @@ def add_switch(window, group) -> None:
                    "is playing and no other app is running.")
 
 
-class JoinSlateMixin:
-    _slate_cast: tuple[str, str] | None = None  # (device, url) we last sent
-    _slate_idle_since: float | None = None
-    _slate_armed: str | None = None  # receiver after whose own playback we may show it
-    _slate_inflight = False
-    _slate_backoff_until = 0.0
+class JoinSlateController:
+    """Composition replacement for JoinSlateMixin (#691); owns the slate state, drives the window."""
+
+    def __init__(self, window) -> None:
+        self.w = window
+        self._slate_cast: tuple[str, str] | None = None  # (device, url) we last sent
+        self._slate_idle_since: float | None = None
+        self._slate_armed: str | None = None  # receiver after whose own playback we may show it
+        self._slate_inflight = False
+        self._slate_backoff_until = 0.0
 
     def _join_slate_url(self) -> str | None:
-        portal = getattr(self, "_portal", None)
+        portal = getattr(self.w, "_portal", None)
         return join_slate_policy.slate_url(getattr(portal, "url", None))
 
     def _join_slate_showing(self, info) -> bool:
         """True while the receiver reports the slate we cast (not user playback)."""
         cast = self._slate_cast
-        return (cast is not None and cast[0] == self._device()
+        return (cast is not None and cast[0] == self.w._device()
                 and join_slate_policy.is_showing(info, cast[1]))
 
     def _join_slate_observe(self, info) -> None:
@@ -47,11 +51,11 @@ class JoinSlateMixin:
             error_log.log("Join slate check failed", exc_info=True)
 
     def _join_slate_step(self, info) -> None:
-        enabled = bool(self.cfg.get("idle_join_slate", False))
+        enabled = bool(self.w.cfg.get("idle_join_slate", False))
         url = self._join_slate_url()
-        device = self._device()
+        device = self.w._device()
         now = time.monotonic()
-        mine_idle = (self.session is None and not self.external and not self.queue)
+        mine_idle = (self.w.session is None and not self.w.external and not self.w.queue)
         free = join_slate_policy.receiver_is_free(info) or self._join_slate_showing(info)
         if not enabled and self._slate_cast is not None and not self._slate_inflight:
             # Switched off: take our slate down, but only if it is still ours.
@@ -65,7 +69,7 @@ class JoinSlateMixin:
                       failed=lambda _m: cleared(None), domain="transport")
         if not enabled or self._slate_armed not in (None, device):
             self._slate_armed = None
-        if self.session is not None or self.external:
+        if self.w.session is not None or self.w.external:
             self._slate_armed = device  # only after our own playback: the TV is already on
         if not (enabled and mine_idle and free and self._slate_armed == device):
             self._slate_idle_since = None
@@ -73,9 +77,9 @@ class JoinSlateMixin:
         if self._slate_idle_since is None:
             self._slate_idle_since = now
         if not join_slate_policy.should_show(
-            enabled=enabled, is_cast_target=self._dlna_renderer(device) is None,
-            session_active=self.session is not None, external=self.external,
-            queue_len=len(self.queue), busy=bool(self.busy) or self._slate_inflight,
+            enabled=enabled, is_cast_target=self.w._dlna_renderer(device) is None,
+            session_active=self.w.session is not None, external=self.w.external,
+            queue_len=len(self.w.queue), busy=bool(self.w.busy) or self._slate_inflight,
             info=info, url=url, idle_seconds=now - self._slate_idle_since,
             backoff_remaining=self._slate_backoff_until - now,
         ):
@@ -92,15 +96,15 @@ class JoinSlateMixin:
             if ok:
                 self._slate_cast = (device, url)
                 self._slate_armed = None  # shown once per playback; never re-cast on its own
-                self._console(f"Join code shown on {device}")
+                self.w._console(f"Join code shown on {device}")
             else:
                 self._slate_backoff_until = time.monotonic() + join_slate_policy.BACKOFF_SECONDS
-                self._console(f"Join code not shown on {device}: {message or 'receiver refused'}")
+                self.w._console(f"Join code not shown on {device}: {message or 'receiver refused'}")
 
         def failed(message):
             self._slate_inflight = False
             self._slate_backoff_until = time.monotonic() + join_slate_policy.BACKOFF_SECONDS
-            self._console(f"Join code not shown on {device}: {message}")
+            self.w._console(f"Join code not shown on {device}: {message}")
 
         Async.run(work, done=done, failed=failed, domain="transport")
 

@@ -12,8 +12,9 @@ URL = ROOM + "join-slate.png"
 FREE = {"player_state": "IDLE", "app_id": ""}
 
 
-class Host(join_slate_ui.JoinSlateMixin):
+class Host(join_slate_ui.JoinSlateController):
     def __init__(self, enabled=True):
+        super().__init__(self)  # the host is its own window
         self.cfg = {"device": "Lounge", "idle_join_slate": enabled}
         self.session = None
         self.external = False
