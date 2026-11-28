@@ -40,3 +40,52 @@ def test_unmeasured_plan_is_trusted_and_not_degraded():
     plan, degraded = choose(Media(), HW)
     assert plan.profile == "hardware" and not degraded
     assert [p.profile for p in plan_sequence(Media(), HW)][:2] == ["hardware", "software"]
+
+
+import pytest
+
+NO_HW = Capabilities()
+SW = ("-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p")
+VA = ("-c:v", "h264_vaapi")
+# (media, caps, expected profile, expected argv): the golden matrix. Rotation filters mirror
+# streamer._ROTATION_FILTERS; VAAPI round trips mirror streamer._filter_args.
+GOLDEN = [
+    (Media(), NO_HW, "software", SW),
+    (Media(bit_depth=10), NO_HW, "software", SW + ("-vf", "format=yuv420p")),
+    (Media(codec="hevc", height=2160, width=3840), NO_HW, "software", SW),
+    (Media(rotation=90), NO_HW, "software", SW + ("-vf", "transpose=1")),
+    (Media(rotation=180), NO_HW, "software", SW + ("-vf", "transpose=2,transpose=2")),
+    (Media(rotation=270, bit_depth=10), NO_HW, "software",
+     SW + ("-vf", "transpose=2,format=yuv420p")),
+    (Media(burn_subtitles=True), HW, "software", SW),
+    (Media(), HW, "hardware", VA),
+    (Media(codec="hevc"), HW, "hardware", VA),
+    (Media(codec="vp9"), HW, "software", SW),
+    (Media(bit_depth=10), HW, "hardware",
+     VA + ("-vf", "hwdownload,format=p010le,format=nv12,hwupload")),
+    (Media(rotation=90), HW, "hardware",
+     VA + ("-vf", "hwdownload,format=nv12,transpose=1,hwupload")),
+]
+
+
+@pytest.mark.parametrize("media,caps,profile,argv", GOLDEN)
+def test_golden_argv_matrix(media, caps, profile, argv):
+    plan = plan_encode(media, caps)
+    assert (plan.profile, plan.argv) == (profile, argv)
+    assert plan.reason  # every plan says why it chose hardware or software
+
+
+def test_rotated_portrait_is_scaled_by_its_output_height():
+    # 1920x1080 rotated 90 degrees is 1080 wide x 1920 tall: the 720p profile scales that.
+    plan = plan_sequence(Media(rotation=90), NO_HW)[1]
+    assert plan.profile == "software-720p" and plan.height == 720
+    assert plan.argv[-1] == "transpose=1,scale=-2:720,format=yuv420p"
+    # An unrotated 1080p source has no 1080p+ profile above it either way.
+    assert [p.profile for p in plan_sequence(Media(width=1280, height=720), NO_HW)] == [
+        "software", "software-480p"]
+
+
+def test_hardware_failure_sequence_falls_back_to_software_with_rotation_kept():
+    seq = plan_sequence(Media(rotation=90), HW)
+    assert [p.profile for p in seq][:2] == ["hardware", "software"]
+    assert seq[1].argv[-1] == "transpose=1"

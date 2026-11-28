@@ -4,7 +4,7 @@
 No I/O, no ffmpeg calls: capabilities and measured speed are passed in. If the
 chosen plan cannot sustain real time (``measured_speed < 1.0``), ``plan_sequence``
 yields lighter plans in order, so the caller steps down explicitly instead of
-timing out. Not wired into streamer.py yet.
+timing out. Rotation follows streamer's transpose table. Not wired into streamer.py yet.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ class Media:
     height: int = 1080
     bit_depth: int = 8
     burn_subtitles: bool = False
+    rotation: int = 0                    # degrees clockwise: 0/90/180/270
 
 
 @dataclass(frozen=True)
@@ -39,26 +40,43 @@ class EncodePlan:
     argv: tuple = ()
 
 
+_ROTATE = {90: ["transpose=1"], 180: ["transpose=2", "transpose=2"], 270: ["transpose=2"]}
+
+
 def _plan(profile: str, encoder: str, height: int, preset: str, reason: str, media: Media) -> EncodePlan:
-    scale = f"scale=-2:{height}" if height < media.height else ""
-    vf = [f for f in (scale, "format=yuv420p" if media.bit_depth > 8 or scale else "") if f]
+    rotated = media.rotation in (90, 270)
+    out_h = media.width if rotated else media.height     # picture height after rotation
+    chain = list(_ROTATE.get(media.rotation, []))
+    scaled = height < out_h
+    if scaled:
+        chain.append(f"scale=-2:{height}")
     argv = ["-c:v", encoder]
     if encoder == "libx264":
         argv += ["-preset", preset, "-pix_fmt", "yuv420p"]
-    if vf:
-        argv += ["-vf", ",".join(vf)]
-    return EncodePlan(profile, encoder, min(height, media.height), preset, reason, tuple(argv))
+        if media.bit_depth > 8 or scaled:
+            chain.append("format=yuv420p")
+        if chain:
+            argv += ["-vf", ",".join(chain)]
+    elif chain or media.bit_depth > 8:
+        # VAAPI frames live on the GPU; any software filter needs a download/upload round trip.
+        head = "hwdownload,format=p010le,format=nv12" if media.bit_depth > 8 else "hwdownload,format=nv12"
+        argv += ["-vf", ",".join([head, *chain, "hwupload"])]
+    return EncodePlan(profile, encoder, min(height, out_h), preset, reason, tuple(argv))
+
+
+def _out_height(media: Media) -> int:
+    return media.width if media.rotation in (90, 270) else media.height
 
 
 def plan_encode(media: Media, caps: Capabilities) -> EncodePlan:
     # Burned subtitles need frames in software, so they keep the software path.
     if caps.hw_encoder and not media.burn_subtitles and media.codec in caps.hw_decodes:
-        return _plan("hardware", caps.hw_encoder, media.height, "", "hardware encoder qualified and "
+        return _plan("hardware", caps.hw_encoder, _out_height(media), "", "hardware encoder qualified and "
                      f"hardware decodes {media.codec}", media)
     why = ("burned subtitles require software frames" if media.burn_subtitles else
            "no qualified hardware encoder" if not caps.hw_encoder else
            f"hardware cannot decode {media.codec}")
-    return _plan("software", "libx264", media.height, "veryfast", why, media)
+    return _plan("software", "libx264", _out_height(media), "veryfast", why, media)
 
 
 def plan_sequence(media: Media, caps: Capabilities) -> list[EncodePlan]:
@@ -66,10 +84,10 @@ def plan_sequence(media: Media, caps: Capabilities) -> list[EncodePlan]:
     first = plan_encode(media, caps)
     plans = [first]
     if first.profile == "hardware" and media.burn_subtitles is False:
-        plans.append(_plan("software", "libx264", media.height, "veryfast",
+        plans.append(_plan("software", "libx264", _out_height(media), "veryfast",
                            "hardware path unavailable at runtime", media))
     for height in (720, 480):
-        if height < media.height:
+        if height < _out_height(media):
             plans.append(_plan(f"software-{height}p", "libx264", height, "ultrafast",
                                f"lighter profile: {height}p ultrafast to sustain real time", media))
     return plans

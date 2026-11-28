@@ -87,7 +87,7 @@
   "doctor_ssdp.py": 41,
   "doctor_vpn.py": 26,
   "drain.py": 81,
-  "encode_plan.py": 85,
+  "encode_plan.py": 103,
   "encoder_ladder.py": 67,
   "energy_aware.py": 50,
   "entry_name.py": 105,
