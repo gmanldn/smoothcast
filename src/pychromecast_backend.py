@@ -18,6 +18,7 @@ from typing import Any, cast
 from urllib.parse import unquote, urlsplit
 
 import errors
+from idle_slate import MEDIA_RECEIVER_APP_ID
 from castctl import (
     CastError, Device, NO_DEVICE_MESSAGE, ReceiverInfo, log_backend_failure, validate_manual_target,
 )
@@ -460,7 +461,10 @@ class PyChromecastBackend:
             status["volume_level"] = getattr(media_status, "volume_level", 1.0)
             status["volume_muted"] = bool(getattr(media_status, "volume_muted", False))
         elif cast_status is not None:
-            status["player_state"] = "IDLE"
+            app_id = getattr(cast_status, "app_id", None)
+            status["player_state"] = (
+                "IDLE" if app_id == MEDIA_RECEIVER_APP_ID else "UNKNOWN"
+            )
         if cast_status is not None:
             # Receiver-level facts let callers prove the TV is on its backdrop
             # before showing anything unprompted (#420); absent means unknown.
