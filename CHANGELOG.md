@@ -8,15 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 99b173037272e1947a1939f31ae78835ca207734 -->
+<!-- sc-changelog-through: 081ea3db194793c681e52d11ba3b0b1986949a59 -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **03:56:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **03:56:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **03:56:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`081ea3db1947`](https://github.com/gmanldn/smoothcast/commit/081ea3db194793c681e52d11ba3b0b1986949a59)
+
+- 🟦 **03:56:44 · Performance** — perf: run receiver discovery protocols concurrently (Refs #718) · [`567f44c2ab5a`](https://github.com/gmanldn/smoothcast/commit/567f44c2ab5ae9aa31e97b005b3432a1106c78e7)
 
 - ⬜ **03:56:33 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`99b173037272`](https://github.com/gmanldn/smoothcast/commit/99b173037272e1947a1939f31ae78835ca207734)
 
 - 🟥 **03:56:33 · Fix** — fix: explain stalled encoder failures (Refs #207) · [`a71bf6755805`](https://github.com/gmanldn/smoothcast/commit/a71bf67558058924b7caf3121bef9dfca3c21b3d)
+
+- ⬜ **03:56:33 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b16145f8978a`](https://github.com/gmanldn/smoothcast/commit/b16145f8978a4313a112b5d1d650e5ff764f0da6)
 
 - ⬜ **03:53:24 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`20a66e817c26`](https://github.com/gmanldn/smoothcast/commit/20a66e817c26e665c7bf9b71b4afed964b25038c)
 
