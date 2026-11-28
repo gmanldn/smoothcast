@@ -52,6 +52,8 @@ ROUTES: tuple[Route, ...] = (
     _post("/api/search/magnets", "search_magnets", throttle="mutation"),
     _post("/api/search/youtube", "search_youtube", throttle="mutation"),
     _post("/api/profile", "profile", throttle="mutation"),
+    _get("/api/settings", "settings", throttle="read"),
+    _post("/api/settings", "settings_update", throttle="mutation"),
     _post("/api/action", "action", throttle="mutation"),
 )
 

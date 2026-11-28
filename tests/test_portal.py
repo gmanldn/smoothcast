@@ -26,6 +26,7 @@ class PortalRig:
     def __init__(self, uploads=None, clock=None, queue=None):
         self.calls = []
         self.queue = list(queue or [])
+        self.settings = portal.settings_catalog.host_setting_values({})
 
         def dispatch(action, payload):
             self.calls.append((action, payload))
@@ -34,6 +35,15 @@ class PortalRig:
             if action == "room_rename":
                 self.server.room.set_name(payload["name"])
                 return {"name": self.server.room.name}
+            if action == "settings_read":
+                return dict(self.settings)
+            if action == "settings_update":
+                key, value = portal.settings_catalog.validate_host_setting(
+                    payload.get("key"), payload.get("value"))
+                self.settings[key] = value
+                if key == "color_scheme":
+                    self.settings["auto_theme"] = False
+                return dict(self.settings)
             return "accepted"
 
         self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch,
@@ -718,6 +728,48 @@ def test_room_rename_is_visible_and_available_only_to_host_session(rig):
     assert status == 200 and decode(body)["state"]["room"]["can_rename"] is False
     status, body, _ = rig.request("GET", "/api/status", cookie=host_cookie)
     assert status == 200 and decode(body)["state"]["room"]["can_rename"] is True
+
+
+def test_host_settings_are_private_allowlisted_csrf_protected_and_validated(rig):
+    host_token, host_csrf, _ = rig.server.login("127.0.0.1", PIN, "Host")
+    guest_token, guest_csrf, _ = rig.server.login("127.0.0.2", PIN, "Guest")
+    host_cookie = f"sc_portal_session={host_token}"
+    guest_cookie = f"sc_portal_session={guest_token}"
+    origin = f"http://{rig.host}"
+
+    status, body, _ = rig.request("GET", "/api/settings", cookie=guest_cookie)
+    assert status == 403 and "settings" not in decode(body)
+    assert not any(action == "settings_read" for action, _payload in rig.calls)
+
+    status, body, _ = rig.request("GET", "/api/settings", cookie=host_cookie)
+    assert status == 200
+    values = decode(body)["settings"]
+    assert set(values) == set(portal.settings_catalog.HOST_CONTROLS)
+
+    status, _body, _ = rig.request(
+        "POST", "/api/settings", {"key": "accent", "value": "default"},
+        cookie=guest_cookie, csrf=guest_csrf, origin=origin)
+    assert status == 403
+    status, _body, _ = rig.request(
+        "POST", "/api/settings", {"key": "accent", "value": "default"},
+        cookie=host_cookie, origin=origin)
+    assert status == 403  # CSRF is required even for the host
+    before = len(rig.calls)
+    for payload in ({"key": "config_path", "value": "/etc/passwd"},
+                    {"key": "auto_theme", "value": "true"},
+                    {"key": "density", "value": "huge"}):
+        status, _body, _ = rig.request(
+            "POST", "/api/settings", payload, cookie=host_cookie,
+            csrf=host_csrf, origin=origin)
+        assert status == 400
+    assert len(rig.calls) == before
+
+    status, body, _ = rig.request(
+        "POST", "/api/settings", {"key": "color_scheme", "value": "force-light"},
+        cookie=host_cookie, csrf=host_csrf, origin=origin)
+    assert status == 200
+    assert decode(body)["settings"]["color_scheme"] == "force-light"
+    assert decode(body)["settings"]["auto_theme"] is False
 
 
 def test_queue_votes_are_per_person_and_require_a_live_item():

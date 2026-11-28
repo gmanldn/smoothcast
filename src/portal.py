@@ -1192,6 +1192,22 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(exc.status, exc.message)
         return self._send(200, payload)
 
+    def _get_host_settings(self) -> None:
+        if not self._authorized("/api/settings", "GET"):
+            return
+        if self._throttle("read"):
+            return
+        token = self._cookie_token()
+        try:
+            result = self.server.dispatch("settings_read", {
+                "_portal_auth_key": self.server._session_key(token or ""),
+            })
+        except PortalRequestError as exc:
+            return self._exception_error(exc)
+        if not isinstance(result, dict):
+            return self._error(503, "Host appearance settings are unavailable")
+        return self._send(200, {"ok": True, "settings": result})
+
     _ROUTED_GET = {
         "libraries": lambda self, path: self._libraries(),
         "search_stream": lambda self, path: self._search_stream(),
@@ -1199,6 +1215,7 @@ class _Handler(BaseHTTPRequestHandler):
         "mesh_library": lambda self, path: self._mesh_library(path),
         "mesh_file": lambda self, path: self._mesh_file(path, head=False),
         "session": lambda self, path: self._get_session(),
+        "settings": lambda self, path: self._get_host_settings(),
         "status": lambda self, path: self._get_status(),
     }
 
@@ -1242,11 +1259,11 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
-        if (path in {"/api/login", "/api/action", "/api/profile", "/api/room/rename", "/api/link-jobs", "/api/link-jobs/cancel",
+        if (path in {"/api/login", "/api/action", "/api/profile", "/api/room/rename", "/api/settings", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
-        if (path in {"/api/action", "/api/profile", "/api/room/rename", "/api/link-jobs", "/api/link-jobs/cancel",
+        if (path in {"/api/action", "/api/profile", "/api/room/rename", "/api/settings", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
             if not self._authorized(path, "POST", csrf=True):
@@ -1418,6 +1435,23 @@ class _Handler(BaseHTTPRequestHandler):
             room = self.server.room.snapshot(participant_id)
             room["can_rename"] = True
             return self._send(200, {"ok": True, "room": room})
+        if path == "/api/settings":
+            try:
+                key, value = settings_catalog.validate_host_setting(
+                    body.get("key"), body.get("value"))
+            except ValueError as exc:
+                return self._error(400, str(exc))
+            token = self._cookie_token()
+            try:
+                values = self.server.dispatch("settings_update", {
+                    "key": key, "value": value,
+                    "_portal_auth_key": self.server._session_key(token or ""),
+                })
+            except PortalRequestError as exc:
+                return self._exception_error(exc)
+            if not isinstance(values, dict):
+                return self._error(503, "Host appearance setting could not be saved")
+            return self._send(200, {"ok": True, "settings": values})
         if path == "/api/search/magnets":
             if not self._authorized("/api/search/magnets", "POST", csrf=True):
                 return
@@ -2230,6 +2264,9 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .preference-map ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .preference-map li{display:grid;gap:2px;line-height:1.4}
 .preference-map li span{color:var(--muted);font-size:.92em}
+.host-setting-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.host-setting{display:grid;gap:6px;align-content:start}
+.host-setting select{width:100%;min-height:40px}
 #homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
 #homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
 #homePanel .home-action span:not(.home-icon){display:none}
@@ -2445,7 +2482,7 @@ $("roomLinkCopy").addEventListener("click",async()=>{
 async function post(path,body){
   if(stalePage)throw Error("Reload required");
   // A missing action response must not indefinitely block every room control.
-  const controller=["/api/action","/api/profile","/api/room/rename"].includes(path)?new AbortController():null;
+  const controller=["/api/action","/api/profile","/api/room/rename","/api/settings"].includes(path)?new AbortController():null;
   const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
   try{
     const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
@@ -2455,7 +2492,7 @@ async function post(path,body){
     if(!r.ok)throw Error(d.error||"Request failed");
     return d;
   }catch(error){
-    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":path==="/api/room/rename"?"Room rename timed out; check the displayed room name before retrying.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    if(controller?.signal.aborted)throw Error(path==="/api/profile"?"Name update timed out; check your current name and retry.":path==="/api/room/rename"?"Room rename timed out; check the displayed room name before retrying.":path==="/api/settings"?"Setting update timed out; reload Preferences to confirm its value.":"Command response timed out; playback may have changed. Check Now Playing before retrying.");
     throw error;
   }finally{if(deadline!==null)clearTimeout(deadline)}
 }
@@ -3238,8 +3275,43 @@ function renderGlance(room){
   const online=people.filter(p=>p.online).length;
   set("glanceWho",!people.length?"Just you":online===people.length?(online===1?"Just you":online+" people"):online+" of "+people.length+" here");
 }
+let hostSettingsLoaded=false,hostSettingsLoading=false;
+function renderHostSettings(values){
+  for(const [key,value] of Object.entries(values||{})){
+    const input=$("hostSetting-"+key);if(!input)continue;
+    if(input.type==="checkbox")input.checked=value===true;
+    else input.value=String(value);
+    input.disabled=false;
+    if(!input.dataset.bound){input.dataset.bound="1";input.addEventListener("change",()=>saveHostSetting(key,input))}
+  }
+}
+async function loadHostSettings(){
+  if(hostSettingsLoaded||hostSettingsLoading||!csrf||stalePage)return;
+  hostSettingsLoading=true;
+  try{
+    const response=await fetch("/api/settings",{credentials:"same-origin",cache:"no-store",headers:clientHeaders});
+    const data=await response.json();
+    if(!response.ok)throw Error(data.error||"Host settings are unavailable");
+    renderHostSettings(data.settings);$("hostAppearanceControls").hidden=false;
+    $("hostSettingsStatus").textContent="Saved on this computer. Changes apply to its interface immediately.";
+  }catch(_){$("hostAppearanceControls").hidden=true}
+  finally{hostSettingsLoaded=true;hostSettingsLoading=false}
+}
+async function saveHostSetting(key,input){
+  if(stalePage||!csrf)return;
+  input.disabled=true;$("hostSettingsStatus").textContent="Saving host setting…";
+  const value=input.type==="checkbox"?input.checked:input.value;
+  try{
+    const data=await post("/api/settings",{key,value});
+    renderHostSettings(data.settings);
+    $("hostSettingsStatus").textContent="Saved on this computer. Changes apply to its interface immediately.";
+  }catch(error){$("hostSettingsStatus").textContent=error.message||"Could not save this setting.";input.disabled=false}
+}
 function renderRoomIdentity(room){
   const canRename=room?.can_rename===true;
+  const hostControls=$("hostAppearanceControls");
+  if(!canRename&&hostControls)hostControls.hidden=true;
+  if(canRename)void loadHostSettings();
   const renameLink=$("roomRenameLink"),renameForm=$("roomNameForm"),renameInput=$("roomNameInput");
   if(renameLink)renameLink.hidden=!canRename;
   if(renameForm)renameForm.hidden=!canRename;

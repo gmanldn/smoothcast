@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-API_VERSION = "1.2"  # bumped only when the HTTP contract changes
+API_VERSION = "1.3"  # bumped only when the HTTP contract changes
 
 JSON = "application/json"
 ERR = {"description": "Error", "content": {JSON: {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -45,6 +45,10 @@ PATHS: dict[str, dict] = {
     "/api/profile": {"post": _op("Rename yourself in the room", csrf=True, method_body="Profile")},
     "/api/room/rename": {"post": _op("Rename the shared room from its host computer",
                                       csrf=True, method_body="RoomName")},
+    "/api/settings": {
+        "get": _op("Read the host's safe appearance settings", tag="settings"),
+        "post": _op("Update one allowlisted host appearance setting", csrf=True,
+                     method_body="HostSetting", tag="settings")},
     "/api/status": {"get": _op("Playback, queue, room presence, receiver state and link acquisitions")},
     "/api/link-jobs": {"post": _op("Acquire an authorised YouTube video or magnet into Up Next",
                                    csrf=True, method_body="LinkStart", tag="acquisition")},
@@ -174,6 +178,8 @@ ROUTE_CAPABILITIES: dict[tuple[str, str], str | None] = {
     # State-changing: cookie plus CSRF token.
     ("/api/profile", "post"): "room:write",
     ("/api/room/rename", "post"): "room:host",
+    ("/api/settings", "get"): "room:host",
+    ("/api/settings", "post"): "room:host",
     ("/api/action", "post"): "room:write",
     ("/api/screens", "post"): "room:write",
     ("/api/screens/{id}", "delete"): "room:write",
@@ -211,6 +217,9 @@ SCHEMAS = {
     "Profile": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
     "RoomName": {"type": "object", "required": ["name"], "properties": {
         "name": {"type": "string", "maxLength": 40}}},
+    "HostSetting": {"type": "object", "required": ["key", "value"], "properties": {
+        "key": {"type": "string", "enum": ["color_scheme", "auto_theme", "accent", "density"]},
+        "value": {}}},
     "Action": {"type": "object", "required": ["action"], "properties": {
         "action": {"type": "string"}, "value": {}, "id": {"type": "string"},
         "key": {"type": "string", "pattern": "^qh:[0-9a-f]{32}$"},

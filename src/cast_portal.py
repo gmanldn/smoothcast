@@ -5,6 +5,7 @@ import guest_messages
 import pathlib
 import threading
 import time
+from typing import Any
 
 import action_state
 import castctl
@@ -16,6 +17,7 @@ import portal
 import portal_status
 import portal_commands
 import settings
+import settings_catalog
 import command_trace
 import peer_discovery_ui
 import network_activity
@@ -220,6 +222,38 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
             name = clean_room_name(payload.get("name"))
             self._rename_portal_room(name)
             return {"name": name}
+        if operation in {"settings_read", "settings_update"}:
+            owner: Any = self  # the window supplies this mixin's GTK owner fields
+            current = getattr(self, "_portal", None)
+            if (current is None or session_key is None
+                    or not current.server.session_key_is_host(session_key)):
+                raise portal.PortalRequestError(403, "Only the host computer can change these settings")
+            if operation == "settings_read":
+                return settings_catalog.host_setting_values(owner.cfg)
+            try:
+                key, value = settings_catalog.validate_host_setting(
+                    payload.get("key"), payload.get("value"))
+            except ValueError as exc:
+                raise portal.PortalRequestError(400, str(exc)) from exc
+            owner.cfg[key] = value
+            if key == "color_scheme":
+                # Selecting a fixed scheme ends time-of-day switching just as
+                # it does in desktop Preferences.
+                owner.cfg["auto_theme"] = False
+                owner.app.scheme_action.set_state(GLib.Variant("s", value))
+                owner._apply_color_scheme()
+            elif key == "auto_theme":
+                owner._apply_color_scheme()
+            elif key == "accent":
+                owner.app.apply_accent(value)
+            elif key == "density":
+                owner.app.apply_density(value)
+                owner._refresh_responsive_layout()
+            save_config(owner.cfg)
+            preferences = getattr(self, "_preferences_window", None)
+            if preferences is not None:
+                preferences.sync_from_owner()
+            return settings_catalog.host_setting_values(owner.cfg)
         if operation == "upload_target":
             return self._portal_upload_target()
         if operation == "music_autogain":
