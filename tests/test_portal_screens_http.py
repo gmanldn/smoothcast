@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
@@ -22,6 +24,91 @@ import portal_screens_http
 
 PIN = "234567"
 CAPS = ["video/mp4", "audio/mpeg", "audio/mp4"]
+
+
+@pytest.fixture
+def headless_screen_command(monkeypatch):
+    monkeypatch.setattr(portal_media, "can_transcode", lambda: False)
+    server = SimpleNamespace(clock=time.monotonic, _session_key=lambda token: "owner",
+                             session_participant=lambda token: "participant",
+                             room=SimpleNamespace(record=mock.Mock()), status_snapshot=None)
+    portal_screens_http.attach(server)
+    screen = server.screens.register("owner", "participant", "TV", CAPS)
+    handler = SimpleNamespace(server=server, _authenticated=lambda *, csrf: csrf,
+                              _cookie_token=lambda: "paired", _body=lambda: {
+                                  "action": "play", "item": "item999", "follow": True},
+                              _send=mock.Mock(), _error=mock.Mock())
+
+    def play():
+        assert portal_screens_http.route(handler, "POST", f"/api/screens/{screen.id}/command")
+        return server.screens.poll(screen.id, "owner", 0)["orders"]
+
+    return server, handler, play
+
+
+def test_play_with_authorised_meta_skips_the_full_status_dispatch(headless_screen_command):
+    server, handler, play = headless_screen_command
+    queue = [{"id": f"item{i}", "title": f"Title {i}", "duration": 17.0} for i in range(1000)]
+    server.dispatch = mock.Mock(side_effect=lambda action, payload: {
+        "media_path": {"path": "film.mp4", "title": "Resolved title", "duration": 21.0},
+        "status": {"queue": queue},
+    }[action])
+    orders = play()
+    server.dispatch.assert_called_once_with("media_path", {"id": "item999", "_portal_auth_key": "owner"})
+    assert len(orders) == 1
+    assert (orders[0]["title"], orders[0]["duration"], orders[0]["follow"]) == (
+        "Resolved title", 21.0, True)
+    handler._send.assert_called_once()
+    assert handler._send.call_args.args[0] == 202
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_play_with_incomplete_meta_falls_back_to_queue_metadata(headless_screen_command, cached):
+    server, _, play = headless_screen_command
+    status = {"queue": [{"id": "item999", "title": "Queue title", "duration": 42.0}]}
+    if cached:
+        server.status_snapshot = lambda: status
+    server.dispatch = mock.Mock(side_effect=lambda action, payload: {
+        "media_path": {"path": "film.mp4", "duration": 0},
+        "status": status,
+    }[action])
+    order, = play()
+    assert (order["title"], order["duration"]) == ("Queue title", 42.0)
+    assert [call.args[0] for call in server.dispatch.call_args_list] == (
+        ["media_path"] if cached else ["media_path", "status"])
+
+
+def test_follow_uses_queue_order_and_resolves_the_next_item(headless_screen_command):
+    server, handler, play = headless_screen_command
+    server.dispatch = mock.Mock(return_value={
+        "path": "film.mp4", "title": "First", "duration": 21.0})
+    first, = play()
+    screen_id = server.screens.snapshot()[0]["id"]
+    server.dispatch.reset_mock()
+    server.dispatch.side_effect = lambda action, payload: {
+        "media_path": {"path": "next.mp4", "title": "Second", "duration": 19.0},
+        "status": {"queue": [{"id": "item999"}, {"id": "next", "duration": 23.0},
+                             {"id": "later", "duration": 15.0}]},
+    }[action]
+    handler._body = lambda: {"state": "ended", "play_seq": first["seq"]}
+    assert portal_screens_http.route(handler, "POST", f"/api/screens/{screen_id}/report")
+    next_order, = server.screens.poll(screen_id, "owner", first["seq"])["orders"]
+    assert (next_order["item"], next_order["title"], next_order["duration"]) == (
+        "next", "Second", 23.0)
+    assert [call.args for call in server.dispatch.call_args_list] == [
+        ("status", {}), ("media_path", {"id": "next", "_portal_auth_key": "owner"}),
+    ]
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_play_revalidates_a_cached_item_before_ordering(headless_screen_command, status):
+    server, handler, play = headless_screen_command
+    server.media_paths.put("item999", {"path": "film.mp4", "title": "Old title", "duration": 50.0})
+    server.dispatch = mock.Mock(side_effect=portal.PortalRequestError(status, "Item unavailable"))
+    assert play() == []
+    server.dispatch.assert_called_once_with("media_path", {"id": "item999", "_portal_auth_key": "owner"})
+    handler._error.assert_called_once_with(status, "Item unavailable")
+    handler._send.assert_not_called()
 
 
 class Rig:

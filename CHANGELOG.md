@@ -8,15 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2e4c34be979638c1366335784cd381a762b9abd5 -->
+<!-- sc-changelog-through: c2243c8a265feea72a3f7ecae6d796d9fbd8687c -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **07:31:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- 🟦 **07:33:33 · Performance** — perf(screens): avoid fetching full room status to start playback (Refs #756) <!-- sc-changelog-pending -->
 
 - ⬜ **07:31:13 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2e4c34be9796`](https://github.com/gmanldn/smoothcast/commit/2e4c34be979638c1366335784cd381a762b9abd5)
 
 - 🟦 **07:31:13 · Refactor** — refactor(queue): clear\_queue uses QueueComponent (Refs #691) · [`6b4ec84bf84f`](https://github.com/gmanldn/smoothcast/commit/6b4ec84bf84fcbeaf46460a5f4d8d541479cfb5d)
+
+- ⬜ **07:31:13 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c2243c8a265f`](https://github.com/gmanldn/smoothcast/commit/c2243c8a265feea72a3f7ecae6d796d9fbd8687c)
 
 - 🟥 **07:30:49 · Fix** — fix(hls): recover completed playback on its advertised port (Refs #730) · [`84c83d7ad5b7`](https://github.com/gmanldn/smoothcast/commit/84c83d7ad5b7399b4efe8c63e30b6a5116021a05)
 

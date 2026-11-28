@@ -191,18 +191,21 @@ def _poll(handler, screen_id: str) -> None:
     handler._send(200, {"ok": True, **result, **_queue_hint(handler)})
 
 
-def _queue_hint(handler) -> dict:
-    """``queue_empty`` from the cached status snapshot; never blocks on the GTK thread.
-
-    Omitted when unknown so the screen keeps its default layout (#420).
-    """
+def _cached_queue(handler) -> list | None:
+    """Read the last queue snapshot without calling the GTK thread."""
     snapshot = handler.server.status_snapshot
     try:
         state = snapshot() if snapshot is not None else None
     except Exception:  # noqa: BLE001 - status snapshot is optional
-        return {}
+        return None
     queue = state.get("queue") if isinstance(state, dict) else None
-    return {"queue_empty": not queue} if isinstance(queue, list) else {}
+    return queue if isinstance(queue, list) else None
+
+
+def _queue_hint(handler) -> dict:
+    """Omit the hint when unknown so the screen keeps its default layout."""
+    queue = _cached_queue(handler)
+    return {"queue_empty": not queue} if queue is not None else {}
 
 
 def _report(handler, screen_id: str) -> None:
@@ -221,11 +224,12 @@ def _queue_rows(handler) -> list[dict]:
             and isinstance(row.get("id"), str)] if isinstance(rows, list) else []
 
 
-def _resolve(handler, item: str) -> dict:
+def _resolve(handler, item: str, *, allow_cached: bool = True) -> dict:
     """Ask the GTK owner for a queue item's path; validate it before use."""
-    cached = handler.server.media_paths.get(item)
-    if cached is not None:
-        return cached
+    if allow_cached:
+        cached = handler.server.media_paths.get(item)
+        if cached is not None:
+            return cached
     info = handler.server.dispatch("media_path", {
         "id": item, "_portal_auth_key": _key(handler)})
     if (not isinstance(info, dict) or not isinstance(info.get("path"), str)
@@ -259,14 +263,29 @@ def _advance(handler, screen_id: str, finished: str, expected_play_seq: int) -> 
             return
 
 
+def _queue_item(rows: list, item: str) -> dict:
+    return next((row for row in rows if isinstance(row, dict) and row.get("id") == item), {})
+
+
 def _play(handler, screen_id: str, item: str, *, follow: bool, start: float = 0.0,
           command_id: object = None, rows: list[dict] | None = None,
           expected_play_seq: int | None = None) -> dict:
-    info = _resolve(handler, item)
-    row = next((r for r in (rows if rows is not None else _queue_rows(handler))
-                if r.get("id") == item), {})
-    title = info.get("title") or row.get("title") or "Untitled"
-    duration = row.get("duration") or info.get("duration") or 0.0
+    # A new order must revalidate membership and access. The short path
+    # cache is for repeat HTTP range reads of an already requested resource.
+    info = _resolve(handler, item, allow_cached=False)
+    title = info.get("title")
+    duration = info.get("duration")
+    if not isinstance(title, str) or not title.strip():
+        title = ""
+    if type(duration) not in (int, float) or not 0 < duration < float("inf"):
+        duration = 0.0
+    row = _queue_item(rows or [], item)
+    if rows is None and (not title or not duration):
+        row = _queue_item(_cached_queue(handler) or [], item)
+        if not (title or row.get("title")) or not (duration or row.get("duration")):
+            row = _queue_item(_queue_rows(handler), item) or row
+    title = title or row.get("title") or "Untitled"
+    duration = row.get("duration") or duration
     return handler.server.screens.command(
         screen_id, "play", command_id=command_id, item=item, title=title,
         duration=duration if isinstance(duration, (int, float)) else 0.0,
