@@ -35,6 +35,11 @@
       "owner": "unassigned",
       "ticket": 700,
       "expires": "2026-12-11"
+    },
+    "tests/test_agent_token_efficiency.py::AgentTokenEfficiencyTests::test_gui_modules_stay_small_enough_to_read_narrowly": {
+      "owner": "gmanldn",
+      "ticket": 706,
+      "expires": "2026-12-12"
     }
   }
 }

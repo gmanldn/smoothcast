@@ -122,7 +122,12 @@ class OptOutTests(RepoCase):
         self.assertIn("v1.0.2 downloaded", notice)
 
     def test_settings_exist_with_the_documented_defaults_and_reach_the_updater(self):
-        import cast_widgets
+        try:
+            import cast_widgets
+        except ImportError as exc:  # GTK tests skip without a usable PyGObject, never fail
+            if (exc.name or "").split(".")[0] != "gi":
+                raise
+            self.skipTest("requires a working PyGObject (gi)")
         import settings
         self.assertIs(cast_widgets.DEFAULTS["check_release_updates"], False)
         self.assertIs(cast_widgets.DEFAULTS["release_check_verify"], True)
