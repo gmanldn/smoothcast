@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: fc9eaa73d0fcc6bca5a6dc9e840ff8247041f2cf -->
+<!-- sc-changelog-through: f8aed8863487655292326c30183e081e08f6218a -->
 
 ## 2026-11-28 · UTC
 
-- ⬜ **04:57:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **05:00:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **05:00:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f8aed8863487`](https://github.com/gmanldn/smoothcast/commit/f8aed8863487655292326c30183e081e08f6218a)
+
+- 🟩 **04:59:39 · Feature** — feat(room): name online people in Home glance (Refs #709) · [`2a366b25b95a`](https://github.com/gmanldn/smoothcast/commit/2a366b25b95a7e694baf75c37dd113ca99e20319)
+
+- ⬜ **04:57:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`0975a9494e19`](https://github.com/gmanldn/smoothcast/commit/0975a9494e19e833113f0c2113bb4c8cfe76957b)
 
 - ⬜ **04:57:08 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`fc9eaa73d0fc`](https://github.com/gmanldn/smoothcast/commit/fc9eaa73d0fcc6bca5a6dc9e840ff8247041f2cf)
 
