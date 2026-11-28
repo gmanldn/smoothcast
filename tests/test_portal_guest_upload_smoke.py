@@ -501,3 +501,47 @@ def test_guest_upload_resume_rejects_a_different_file_then_accepts_original(gues
         finally:
             context.close()
             browser.close()
+
+
+@pytest.mark.skipif(os.environ.get("SMOOTHCAST_BROWSER_SMOKE") != "1",
+                    reason="explicit opt-in: installed Playwright Chromium")
+def test_two_phones_upload_at_once_without_crosstalk(guest_room, tmp_path):
+    """#570: two guests upload different files concurrently; each is delivered once, bytes intact."""
+    from playwright.sync_api import expect, sync_playwright
+
+    rig, _uploads, deliveries = guest_room
+    files = {}
+    for name, extra in (("phone-a.wav", b""), ("phone-b.wav", b"\x00" * 128)):
+        path = tmp_path / name
+        path.write_bytes(_audio_bytes() + extra)
+        files[name] = path
+    origin = f"http://{rig.host}"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        pages = []
+        try:
+            for guest in ("Phone A", "Phone B"):
+                context = browser.new_context(viewport={"width": 390, "height": 844},
+                                              service_workers="block")
+                page = context.new_page()
+                page.set_default_timeout(15000)
+                page.route("**/*", lambda route: route.continue_()
+                           if route.request.url.startswith(origin + "/") else route.abort())
+                page.goto(origin + "/", wait_until="domcontentloaded")
+                page.locator("#name").fill(guest)
+                page.locator("#loginForm button").click()
+                expect(page.locator("#uploadCard")).to_be_visible()
+                pages.append(page)
+            for page, name in zip(pages, files):
+                page.locator("#videoFile").set_input_files(str(files[name]))
+            for page in pages:
+                page.locator("#uploadButton").click()
+            for page in pages:
+                expect(page.locator("#transferDelivery")).to_have_text(
+                    "Added to Up Next", timeout=20000)
+            expected = sorted(
+                ("queue_add", name, hashlib.sha256(path.read_bytes()).hexdigest())
+                for name, path in files.items())
+            assert sorted(deliveries) == expected
+        finally:
+            browser.close()
