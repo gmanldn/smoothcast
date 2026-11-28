@@ -5,6 +5,11 @@
       "owner": "gmanldn",
       "ticket": 706,
       "expires": "2026-12-12"
+    },
+    "tests/test_complexity_budget.py::test_repository_stays_within_the_committed_baseline": {
+      "owner": "agent-4aeb9cd4",
+      "ticket": 743,
+      "expires": "2026-12-12"
     }
   }
 }

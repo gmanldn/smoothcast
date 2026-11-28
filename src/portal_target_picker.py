@@ -18,28 +18,18 @@ REASONS = {
 
 def _row(e, me: str | None) -> dict:
     fresh_ready = [s for s in e.seen_by if ready_observation_is_fresh(s)]
-    fresh_busy_foreign = [s for s in e.seen_by
-                          if s.state == "busy"
-                          and type(s.age_ms) is int
-                          and 0 <= s.age_ms <= TARGET_FRESH_MS
-                          and e.owner_hint
-                          and e.owner_hint != me]
-    if fresh_ready and fresh_busy_foreign:
-        # Conflicting fresh reports: one node says ready while another
-        # reports the target is busy for someone else. Treat as
-        # temporarily unavailable pending authoritative recheck so the
-        # user is not handed a selectable target that preflight rejects.
-        state = "busy"
-        reason = REASONS["foreign"]
-        ready_nodes = []
-    else:
-        state = "ready" if fresh_ready else (e.state if e.state in REASONS else "unreachable")
-        reason = ""
-        if state != "ready":
-            reason = REASONS["foreign"] if state == "busy" and e.owner_hint and e.owner_hint != me else REASONS.get(state, REASONS["unreachable"])
-        ready_nodes = fresh_ready
+    if fresh_ready and any(
+            s.state == "busy" and type(s.age_ms) is int
+            and 0 <= s.age_ms <= TARGET_FRESH_MS and e.owner_hint and e.owner_hint != me
+            for s in e.seen_by):
+        # Fresh ready and fresh foreign-busy conflict: temporarily
+        # unavailable pending authoritative recheck.
+        return {"id": e.id, "name": e.name, "kind": (e.kinds or ("",))[0], "state": "busy", "ready": False,
+                "reason": REASONS["foreign"], "via": None}
+    state = "ready" if fresh_ready else (e.state if e.state in REASONS else "unreachable")
+    reason = REASONS["foreign"] if state == "busy" and e.owner_hint and e.owner_hint != me else REASONS.get(state, REASONS["unreachable"]) if state != "ready" else ""
     return {"id": e.id, "name": e.name, "kind": (e.kinds or ("",))[0], "state": state, "ready": state == "ready", "reason": reason,
-            "via": ready_nodes[0].node_id if ready_nodes else None}
+            "via": fresh_ready[0].node_id if fresh_ready else None}
 
 
 def rows(entries, me: str | None = None, *, ready_only: bool = False) -> list[dict]:
