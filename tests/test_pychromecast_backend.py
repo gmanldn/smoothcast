@@ -5,6 +5,8 @@ import sys
 import uuid
 import os
 import subprocess
+import threading
+import time
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -131,6 +133,59 @@ def test_scan_keeps_one_browser_and_returns_device_identity():
     backend.close()
     assert browser.stopped
     assert cast.disconnected == [2]
+
+
+def test_warm_scan_returns_snapshot_without_waiting_and_sees_later_advertisements():
+    first, second, third = FakeCast(name="Den"), FakeCast(name="Lounge"), FakeCast(name="Bedroom")
+    browser = FakeBrowser()
+    callbacks = []
+    discover_calls = []
+
+    def discover(*, callback, **_kwargs):
+        discover_calls.append(1)
+        callbacks.append(callback)
+        callback(first)
+        callback(second)
+        return browser
+
+    backend = PyChromecastBackend(discover=discover, connect_from_host=mock.Mock())
+    try:
+        initial = backend.scan(timeout=0)
+        assert len(initial) == 2
+        backend._changed.wait = mock.Mock(side_effect=AssertionError("warm scan must not wait"))
+
+        assert backend.scan(timeout=30) == initial
+        callbacks[0](third)
+        updated = backend.scan(timeout=30)
+
+        assert len(updated) == 3 and {device.name for device in updated} == {"Den", "Lounge", "Bedroom"}
+        assert discover_calls == [1]
+        backend._changed.wait.assert_not_called()
+    finally:
+        backend.close()
+
+
+def test_cold_scan_still_collects_late_advertisements_and_closed_scan_fails():
+    first, second = FakeCast(name="Den"), FakeCast(name="Lounge")
+    browser = FakeBrowser()
+    callbacks = []
+
+    def discover(*, callback, **_kwargs):
+        callbacks.append(callback)
+        callback(first)
+
+        def advertise_later():
+            time.sleep(0.01)
+            callback(second)
+
+        threading.Thread(target=advertise_later, daemon=True).start()
+        return browser
+
+    backend = PyChromecastBackend(discover=discover, connect_from_host=mock.Mock())
+    assert len(backend.scan(timeout=0.5)) == 2
+    backend.close()
+    with pytest.raises(castctl.CastError, match="backend is closed"):
+        backend.scan(timeout=30)
 
 
 def test_status_commands_and_direct_media_use_the_persistent_cast():

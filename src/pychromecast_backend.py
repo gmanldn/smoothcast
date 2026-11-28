@@ -117,13 +117,15 @@ class PyChromecastBackend:
     def scan(self, timeout: float = 30) -> list[Device]:
         """Start one ongoing mDNS browser and return discovered receivers.
 
-        The first call waits up to ``timeout`` for discovery. Later calls reuse
-        the same browser and persistent receiver connections while they wait
-        for new records. PyChromecast maintains receiver connection threads.
+        A cold call waits up to ``timeout`` for discovery. Once the persistent
+        browser has known receivers, later calls return the current snapshot
+        immediately while discovery continues in the background. PyChromecast
+        maintains receiver connection threads.
         """
         with self._changed:
             if self._closed:
                 raise CastError("Cast backend is closed")
+            warm_populated = self._browser is not None and bool(self._devices)
             if self._browser is None:
                 try:
                     self._browser = self._discover(
@@ -136,7 +138,7 @@ class PyChromecastBackend:
                 except Exception as exc:  # noqa: BLE001 - third-party discovery failure is re-raised as a coded CastError
                     raise errors.coded(CastError(f"Google Cast discovery failed: {exc}"), "discovery.failed") from exc
 
-            if timeout > 0:
+            if timeout > 0 and not warm_populated:
                 deadline = time.monotonic() + timeout
                 while not self._closed:
                     remaining = deadline - time.monotonic()
